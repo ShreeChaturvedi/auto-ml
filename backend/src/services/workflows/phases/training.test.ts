@@ -162,6 +162,23 @@ describe('trainingPhaseConfig.resolveNextStage', () => {
     });
   });
 
+  describe('generate_code stage gate', () => {
+    it('stays at generate_code when the latest notebook execution failed', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('write_cell', { output: { cellId: 'c-1' } }),
+        makeRunCellError()
+      ])).toBe('generate_code');
+    });
+
+    it('advances generate_code → write_code after a successful dependency install', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('write_cell', { output: { cellId: 'c-1' } }),
+        makeRunCellError(),
+        makeToolResult('install_package', { output: { success: true, message: 'ok' } })
+      ])).toBe('write_code');
+    });
+  });
+
   describe('write_code stage gate', () => {
     it('stays at write_code when no run_cell in history', () => {
       expect(resolve('write_code', [
@@ -183,6 +200,14 @@ describe('trainingPhaseConfig.resolveNextStage', () => {
 
     it('stays at write_code when run_cell succeeded but final training marker is missing', () => {
       expect(resolve('write_code', [makeRunCellSuccessWithoutCompletionMarker()])).toBe('write_code');
+    });
+
+    it('stays at write_code after a successful rerun resolves an earlier notebook failure', () => {
+      expect(resolve('write_code', [
+        makeRunCellError(),
+        makeToolResult('install_package', { output: { success: true, message: 'ok' } }),
+        makeRunCellSuccessWithoutCompletionMarker()
+      ])).toBe('write_code');
     });
 
     it('advances write_code → execute_training when run_cell succeeded', () => {
@@ -513,6 +538,42 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
+  it('registers the executed algorithm when prep segments show a specific library-backed model', async () => {
+    const config = trainingPhaseConfig.getStageConfig('register_model');
+    const action = config.deterministicAction;
+    expect(action).toBeTypeOf('function');
+
+    const state = createTrainingState([
+      makeEvaluateResultsSuccess()
+    ]);
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'catboost baseline',
+      modelType: 'gradient_boosting_classifier',
+      splitStrategy: 'time_series',
+      evaluationMetrics: { accuracy: 0.91, f1: 0.88 },
+      workflowPrepSegments: [
+        'from catboost import CatBoostClassifier',
+        'model = CatBoostClassifier(iterations=200)'
+      ],
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const toolCalls = await action!(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'register_model',
+        args: expect.objectContaining({
+          experimentId: 'exp-1',
+          modelName: 'catboost baseline',
+          modelType: 'catboost',
+          tags: ['baseline', 'time_series', 'catboost'],
+        })
+      })
+    ]);
+  });
+
   it('auto-builds execute/evaluate/register for the next approved experiment after one model is already registered in the same turn', async () => {
     const state = createTrainingState([
       makeToolResult('execute_training', {
@@ -703,6 +764,49 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
+  it('installs missing model libraries before attempting notebook-cell repair', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'feature_v2.csv',
+      columns: [
+        { name: 'feat1', dtype: 'number' },
+        { name: 'target', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([
+      makeToolResult('run_cell', {
+        output: {
+          status: 'error',
+          stderr: "ModuleNotFoundError: No module named 'catboost'",
+          cellId: 'cell-1'
+        }
+      })
+    ]);
+    state.run.currentNode = 'generate_code';
+
+    const client = {
+      complete: vi.fn(),
+    };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(client.complete).not.toHaveBeenCalled();
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'install_package',
+        args: {
+          packageName: 'catboost',
+        }
+      })
+    ]);
+  });
+
   it('passes configured hyperparameters and runtime-safe random-forest guidance into code generation', async () => {
     const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
     const action = generateCode.delegatedAction;
@@ -840,6 +944,118 @@ describe('trainingPhaseConfig.getStageConfig', () => {
               segmentIndex: 1
             })
           })
+        })
+      })
+    ]);
+  });
+
+  it('re-runs the failed draft cell after a missing library has been installed', async () => {
+    const action = trainingPhaseConfig.getStageConfig('write_code').deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'error',
+          stderr: "ModuleNotFoundError: No module named 'catboost'",
+          cellId: 'cell-1',
+        }
+      }),
+      makeToolResult('install_package', {
+        output: {
+          success: true,
+          message: 'Successfully installed catboost'
+        }
+      })
+    ]);
+    state.toolCallHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'from catboost import CatBoostClassifier' },
+                { title: 'Train', content: 'print("train")' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } },
+      { id: 'install-1', tool: 'install_package', args: { packageName: 'catboost' } }
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'run_cell',
+        args: { cellId: 'cell-1' }
+      })
+    ]);
+  });
+
+  it('writes the next segment after the failed cell reruns successfully post-install', async () => {
+    const action = trainingPhaseConfig.getStageConfig('write_code').deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'error',
+          stderr: "ModuleNotFoundError: No module named 'catboost'",
+          cellId: 'cell-1',
+        }
+      }),
+      makeToolResult('install_package', {
+        output: {
+          success: true,
+          message: 'Successfully installed catboost'
+        }
+      }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: 'catboost import ok',
+          stderr: '',
+          cellId: 'cell-1',
+        }
+      })
+    ]);
+    state.toolCallHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'from catboost import CatBoostClassifier' },
+                { title: 'Train', content: 'print("train")' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } },
+      { id: 'install-1', tool: 'install_package', args: { packageName: 'catboost' } },
+      { id: 'rerun-1', tool: 'run_cell', args: { cellId: 'cell-1' } }
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          title: 'Train',
+          content: 'print("train")',
         })
       })
     ]);

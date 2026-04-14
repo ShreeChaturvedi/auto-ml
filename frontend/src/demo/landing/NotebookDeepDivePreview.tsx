@@ -35,9 +35,10 @@ const CELLS: NotebookCell[] = [
     content: [
       'import pandas as pd',
       '',
-      "df = pd.read_csv('customers.csv')",
+      'metrics = ["mrr_usd", "avg_session_minutes", "api_calls"]',
       '',
-      "summary = df[['mrr_usd', 'avg_session_minutes', 'api_calls']].describe()",
+      'df = pd.read_csv("customers.csv")',
+      'summary = df[metrics].describe().rename_axis("stat").reset_index()',
       'summary',
     ].join('\n'),
     position: 0,

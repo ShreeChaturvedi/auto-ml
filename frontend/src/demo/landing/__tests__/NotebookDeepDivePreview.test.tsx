@@ -21,4 +21,19 @@ describe('NotebookDeepDivePreview', () => {
     expect(screen.getByText('pandas').getAttribute('style')).toBeNull();
     expect(screen.getAllByText('summary')[0].getAttribute('style')).toBeNull();
   });
+
+  it('shows a more polished exploratory python snippet in the demo cell', () => {
+    render(<NotebookDeepDivePreview />);
+
+    expect(
+      screen.getByText((_, element) => (
+        element?.textContent === 'metrics = ["mrr_usd", "avg_session_minutes", "api_calls"]'
+      )),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => (
+        element?.textContent === 'summary = df[metrics].describe().rename_axis("stat").reset_index()'
+      )),
+    ).toBeInTheDocument();
+  });
 });

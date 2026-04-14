@@ -184,6 +184,11 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     if (!resolvedProjectId) return;
 
     try {
+      set({
+        currentProjectId: resolvedProjectId,
+        isLoading: true,
+        error: null
+      });
       const notebooks = await notebooksApi.listNotebooks(resolvedProjectId);
       set((state: NotebookState) => {
         const nextActiveNotebookId =
@@ -195,14 +200,20 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
           notebooks.find((entry) => entry.notebookId === nextActiveNotebookId) ?? null;
 
         return {
+          currentProjectId: resolvedProjectId,
           notebooks,
           activeNotebookId: nextActiveNotebookId,
-          notebook: nextNotebook
+          notebook: nextNotebook,
+          isLoading: false
         };
       });
     } catch (error) {
       console.error('[notebookStore] Failed to load notebooks:', error);
-      set({ error: error instanceof Error ? error.message : 'Failed to load notebooks' });
+      set({
+        currentProjectId: resolvedProjectId,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to load notebooks'
+      });
     }
   },
 

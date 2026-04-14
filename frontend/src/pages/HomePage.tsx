@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useLayoutEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -76,8 +76,9 @@ export function HomePage() {
   const isLoading = useProjectStore((state) => state.isLoading);
   const error = useProjectStore((state) => state.error);
 
-  // Clear active project when HomePage mounts (fixes navigation bug)
-  useEffect(() => {
+  // Clear the active project before the first Home paint so the sidebar
+  // never flashes the previous project's phase tree on the root route.
+  useLayoutEffect(() => {
     if (activeProjectId !== null) {
       setActiveProject(null);
     }

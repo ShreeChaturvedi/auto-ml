@@ -53,5 +53,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cursor-outline::before { display: none; }
-  .cursor-outline { outline: 1px solid var(--border); outline-offset: 0; }
+  .cursor-outline { outline: 1px solid hsl(var(--border)); outline-offset: 0; }
 }

@@ -75,7 +75,7 @@
  * ------------------------------------------------------------------------- */
 .toolsStrip {
   background: var(--surface-1);
-  border: 0.8px solid var(--border);
+  border: 0.8px solid hsl(var(--border));
   border-radius: 8px;
   padding: 6px 4px;
   animation: tools-strip-in 520ms var(--ease-out-quart);

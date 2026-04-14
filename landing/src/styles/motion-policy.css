@@ -21,6 +21,6 @@
     display: none !important;
   }
   .cursor-outline {
-    outline: 1px solid var(--border);
+    outline: 1px solid hsl(var(--border));
   }
 }

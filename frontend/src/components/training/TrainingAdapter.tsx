@@ -10,6 +10,7 @@ import { Target, TrendingUp, Layers, AlertTriangle, FileText, Bug, GitCompare } 
 import type { ChatMessage } from '@/types/llmUi';
 import type { NotebookCell } from '@/types/notebook';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
+import { toast } from 'sonner';
 
 export interface TrainingAdapterConfig {
   projectId: string;
@@ -279,6 +280,12 @@ function buildTrainingToolRegistry(): Record<string, ToolHandlers> {
             status: 'registered',
             metrics: (output.metrics as Record<string, unknown>) ?? {}
           });
+        }
+        if (!result.error) {
+          const modelName = typeof output?.modelName === 'string' && output.modelName.trim().length > 0
+            ? output.modelName
+            : 'Model';
+          toast.success(`${modelName} saved`);
         }
       }
     },

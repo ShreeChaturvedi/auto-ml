@@ -14,6 +14,8 @@ import {
   DEFAULT_WORKBOOK_ID,
   createDefaultWorkbook,
   createEmptyTabSnapshot,
+  formatWorkbookName,
+  inferNextWorkbookIndex,
   normalizeWorkbookNames
 } from '../preprocessingTabUtils';
 import type { PreprocessingWorkbook } from '../preprocessingTabUtils';
@@ -37,6 +39,7 @@ export interface UseTabPersistenceResult {
   activeTabIdRef: React.MutableRefObject<string>;
   buildTabStorageKey: (tabId: string) => string;
   buildScopedTabStorageKey: (tabId: string) => string;
+  reserveNextWorkbookName: () => string;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,10 +55,12 @@ export function useTabPersistence({
 
   const [tabs, setTabs] = useState<PreprocessingWorkbook[]>([createDefaultWorkbook()]);
   const [activeTabId, setActiveTabId] = useState<string>(DEFAULT_WORKBOOK_ID);
+  const [nextDefaultWorkbookIndex, setNextDefaultWorkbookIndex] = useState(2);
   const [tabsReady, setTabsReady] = useState(false);
 
   const tabsRef = useRef<PreprocessingWorkbook[]>([]);
   const activeTabIdRef = useRef<string>(DEFAULT_WORKBOOK_ID);
+  const nextDefaultWorkbookIndexRef = useRef(2);
   const hydratedTabsProjectRef = useRef<string | null>(null);
   const suppressStoredRunHydrationRef = useRef(false);
   const prevRunIdRef = useRef<string | null>(null);
@@ -125,6 +130,10 @@ export function useTabPersistence({
       recoveredTabs.push(createDefaultWorkbook());
     }
     const normalizedRecoveredTabs = normalizeWorkbookNames(recoveredTabs);
+    const resolvedNextDefaultWorkbookIndex = Math.max(
+      persistedTabsState?.nextDefaultWorkbookIndex ?? 0,
+      inferNextWorkbookIndex(normalizedRecoveredTabs)
+    );
 
     const persistedActiveTabId = persistedTabsState?.activeTabId ?? normalizedRecoveredTabs[0].id;
     const recoveredActiveTabId = normalizedRecoveredTabs.some((tab) => tab.id === persistedActiveTabId)
@@ -135,6 +144,8 @@ export function useTabPersistence({
     setTabs(normalizedRecoveredTabs);
     tabsRef.current = normalizedRecoveredTabs;
     setActiveTabId(recoveredActiveTabId);
+    nextDefaultWorkbookIndexRef.current = resolvedNextDefaultWorkbookIndex;
+    setNextDefaultWorkbookIndex(resolvedNextDefaultWorkbookIndex);
     applyTabSnapshot(activeRecoveredTab.snapshot);
     setTabsReady(true);
   }, [applyTabSnapshot, buildScopedTabStorageKey, buildTabStorageKey, projectId]);
@@ -148,6 +159,10 @@ export function useTabPersistence({
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
+
+  useEffect(() => {
+    nextDefaultWorkbookIndexRef.current = nextDefaultWorkbookIndex;
+  }, [nextDefaultWorkbookIndex]);
 
   // ---- Ensure activeTabId points to an existing tab ------------------------
 
@@ -174,6 +189,7 @@ export function useTabPersistence({
       buildWorkbookTabsStateKey(projectId),
       JSON.stringify({
         activeTabId: persistedActiveTabId,
+        nextDefaultWorkbookIndex,
         tabs: tabs.map((tab) => ({
           id: tab.id,
           name: tab.name,
@@ -183,7 +199,15 @@ export function useTabPersistence({
         }))
       })
     );
-  }, [activeTabId, projectId, tabs, tabsReady]);
+  }, [activeTabId, nextDefaultWorkbookIndex, projectId, tabs, tabsReady]);
+
+  const reserveNextWorkbookName = useCallback(() => {
+    const nextIndex = nextDefaultWorkbookIndexRef.current;
+    const reservedName = formatWorkbookName(nextIndex);
+    nextDefaultWorkbookIndexRef.current = nextIndex + 1;
+    setNextDefaultWorkbookIndex(nextIndex + 1);
+    return reservedName;
+  }, []);
 
   // ---- Restore stored run id when active tab changes -----------------------
 
@@ -245,6 +269,7 @@ export function useTabPersistence({
     tabsRef,
     activeTabIdRef,
     buildTabStorageKey,
-    buildScopedTabStorageKey
+    buildScopedTabStorageKey,
+    reserveNextWorkbookName
   };
 }

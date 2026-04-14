@@ -4,6 +4,8 @@ import { isAbsolute, join } from 'node:path';
 import { getOrCreateContainer } from '../services/containerManager.js';
 import { syncWorkspaceDatasets } from '../services/executionWorkspace.js';
 import * as kernelManager from '../services/kernelManager.js';
+import { installPackage, listPackages } from '../services/packageManager.js';
+import { normalizeRuntimeDependencies } from '../services/runtimeDependencies.js';
 
 /**
  * Configuration for orchestrating container execution.
@@ -16,6 +18,7 @@ export interface ContainerOrchestrationConfig {
     permanentPath: string;
     workspacePath: string;
   }>;
+  packagesToInstall?: string[];
   timeoutMs: number;
   containerOutputDir: string;
   onOutput?: (output: RichOutput) => void;
@@ -69,6 +72,28 @@ export async function orchestrateContainerExecution(
     await syncWorkspaceDatasets(config.projectId, container.workspacePath).catch(() => {
       // Ignore sync errors — datasets may already be present
     });
+  }
+
+  const runtimeDependencies = normalizeRuntimeDependencies(config.packagesToInstall);
+  if (runtimeDependencies.length > 0) {
+    const installedPackages = await listPackages(container);
+    const installedNames = new Set(
+      installedPackages
+        .map((pkg) => pkg.name?.trim().toLowerCase().replace(/_/g, '-'))
+        .filter((name): name is string => Boolean(name))
+    );
+
+    for (const requirement of runtimeDependencies) {
+      const packageBase = requirement.match(/^[a-z0-9][a-z0-9.-]*/)?.[0] ?? requirement;
+      if (installedNames.has(packageBase)) {
+        continue;
+      }
+      const installResult = await installPackage(container, requirement);
+      if (!installResult.success) {
+        throw new Error(`Failed to install runtime dependency "${requirement}": ${installResult.message}`);
+      }
+      installedNames.add(packageBase);
+    }
   }
 
   // Step 3: Copy input files

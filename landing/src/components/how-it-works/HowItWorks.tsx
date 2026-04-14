@@ -1,57 +1,55 @@
-import { Suspense, lazy, useEffect, useRef, useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import { PHASE_SCENES, type PhaseScene as PhaseSceneData } from './scenes';
+import { WorkspaceDiorama } from './dioramas/WorkspaceDiorama';
+import type { Phase } from '@frontend/types/phase';
 import styles from './HowItWorks.module.css';
 
-// Lazy-load the 7 diorama components so their JS (and Recharts pulled in by
-// Train/Deploy) is only fetched when the user actually scrolls into this
-// section. IntersectionObserver inside each diorama already gates ambient
-// intervals, so eager-rendered dioramas off-screen are idle — this change
-// further ensures the bytes themselves don't ship in the initial HowItWorks
-// chunk.
-const IngestDiorama = lazy(() =>
-  import('./dioramas/IngestDiorama').then((m) => ({ default: m.IngestDiorama })),
-);
-const ExploreDiorama = lazy(() =>
-  import('./dioramas/ExploreDiorama').then((m) => ({ default: m.ExploreDiorama })),
-);
-const PreprocessDiorama = lazy(() =>
-  import('./dioramas/PreprocessDiorama').then((m) => ({ default: m.PreprocessDiorama })),
-);
-const EngineerDiorama = lazy(() =>
-  import('./dioramas/EngineerDiorama').then((m) => ({ default: m.EngineerDiorama })),
-);
-const TrainDiorama = lazy(() =>
-  import('./dioramas/TrainDiorama').then((m) => ({ default: m.TrainDiorama })),
-);
-const ExperimentsDiorama = lazy(() =>
-  import('./dioramas/ExperimentsDiorama').then((m) => ({ default: m.ExperimentsDiorama })),
-);
-const DeployDiorama = lazy(() =>
-  import('./dioramas/DeployDiorama').then((m) => ({ default: m.DeployDiorama })),
-);
-
-const DIORAMA_MAP: Record<PhaseSceneData['dioramaId'], ComponentType> = {
-  ingest:      IngestDiorama,
-  explore:     ExploreDiorama,
-  preprocess:  PreprocessDiorama,
-  engineer:    EngineerDiorama,
-  train:       TrainDiorama,
-  experiments: ExperimentsDiorama,
-  deploy:      DeployDiorama,
+const DIORAMA_META: Record<PhaseSceneData['dioramaId'], { label: string; phase: Phase }> = {
+  ingest: {
+    label: '1.0 INGEST — real workspace preview',
+    phase: 'upload',
+  },
+  explore: {
+    label: '2.0 EXPLORE — real data viewer',
+    phase: 'data-viewer',
+  },
+  preprocess: {
+    label: '3.0 PREPROCESS — real preprocessing workspace',
+    phase: 'preprocessing',
+  },
+  engineer: {
+    label: '4.0 ENGINEER — real feature workspace',
+    phase: 'feature-engineering',
+  },
+  train: {
+    label: '5.0 TRAIN — real training workspace',
+    phase: 'training',
+  },
+  experiments: {
+    label: '6.0 EXPERIMENTS — real leaderboard workspace',
+    phase: 'experiments',
+  },
+  deploy: {
+    label: '7.0 DEPLOY — real deployment workspace',
+    phase: 'deployment',
+  },
 };
 
 interface PhaseSceneProps {
   scene: PhaseSceneData;
-  showDiorama?: boolean;
+  preloadAllDioramaPhases?: boolean;
 }
 
 // File-local shared scene markup. Both the reduced-motion static list and
 // the pinned scrollytelling grid render this so the per-scene DOM is
 // identical (counter + headline + diorama).
-function PhaseScene({ scene, showDiorama = true }: PhaseSceneProps) {
-  const Diorama = DIORAMA_MAP[scene.dioramaId];
+function PhaseScene({
+  scene,
+  preloadAllDioramaPhases = true,
+}: PhaseSceneProps) {
+  const diorama = DIORAMA_META[scene.dioramaId];
   return (
     <>
       <div className={styles.sceneCounter}>
@@ -63,13 +61,11 @@ function PhaseScene({ scene, showDiorama = true }: PhaseSceneProps) {
         <span className={styles.sceneHeadlineMuted}>{scene.headlineMuted}</span>
       </h3>
       <div className={styles.sceneDiorama}>
-        {showDiorama ? (
-          <Suspense fallback={<div className={styles.sceneFallback} aria-hidden />}>
-            <Diorama />
-          </Suspense>
-        ) : (
-          <div className={styles.sceneFallback} aria-hidden />
-        )}
+        <WorkspaceDiorama
+          label={diorama.label}
+          phase={diorama.phase}
+          preloadAll={preloadAllDioramaPhases}
+        />
       </div>
     </>
   );
@@ -81,24 +77,6 @@ export default function HowItWorks() {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const prevIdxRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [shouldLoadDiorama, setShouldLoadDiorama] = useState(false);
-
-  useEffect(() => {
-    if (!pinRef.current || shouldLoadDiorama) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          setShouldLoadDiorama(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '320px 0px' },
-    );
-
-    observer.observe(pinRef.current);
-    return () => observer.disconnect();
-  }, [shouldLoadDiorama]);
 
   useEffect(() => {
     if (reducedMotion || !pinRef.current) return;
@@ -170,7 +148,7 @@ export default function HowItWorks() {
             <li key={scene.code} className={styles.fallbackItem}>
               <span className={styles.fallbackCode}>{scene.code}</span>
               <figure className={styles.fallbackFigure}>
-                <PhaseScene scene={scene} showDiorama={false} />
+                <PhaseScene scene={scene} preloadAllDioramaPhases={false} />
               </figure>
             </li>
           ))}
@@ -232,7 +210,7 @@ export default function HowItWorks() {
 
           <div className={styles.sceneWrap}>
             <figure className={cn(styles.scene, styles.sceneActive)}>
-              <PhaseScene scene={PHASE_SCENES[activeIndex]} showDiorama={shouldLoadDiorama} />
+              <PhaseScene scene={PHASE_SCENES[activeIndex]} />
             </figure>
           </div>
         </div>

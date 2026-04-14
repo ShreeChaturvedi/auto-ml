@@ -1,0 +1,29 @@
+---
+const loginUrl = import.meta.env.PUBLIC_APP_LOGIN_URL
+  || (import.meta.env.DEV ? 'http://localhost:5173/login' : '');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redirecting to sign in</title>
+    {loginUrl ? <meta http-equiv="refresh" content={`0;url=${loginUrl}`} /> : null}
+  </head>
+  <body style="background:#0A0A0B;color:#F7F8F8;font-family:Inter,system-ui,sans-serif;display:grid;min-height:100vh;place-items:center;margin:0;">
+    <main style="max-width:32rem;padding:2rem;text-align:center;">
+      <p>Redirecting to sign in…</p>
+      {!loginUrl ? (
+        <p style="color:#8A8F98;">
+          Set <code>PUBLIC_APP_LOGIN_URL</code> to enable the landing sign-in redirect in deployed environments.
+        </p>
+      ) : null}
+    </main>
+    <script is:inline define:vars={{ loginUrl }}>
+      if (loginUrl) {
+        window.location.replace(loginUrl);
+      }
+    </script>
+  </body>
+</html>

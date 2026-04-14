@@ -7,7 +7,17 @@ const frontendRoot = path.resolve(landingRoot, '../../frontend/src');
 const dioramaRoot = path.resolve(landingRoot, 'components/how-it-works/dioramas');
 
 describe('preview source guardrails', () => {
-  it('mounts the frontend demo workspace instead of the landing preview shell', () => {
+  it('mounts the hero preview and how-it-works separately from the page shell', () => {
+    const pageSource = readFileSync(
+      path.resolve(landingRoot, 'pages/index.astro'),
+      'utf8',
+    );
+    expect(pageSource).toContain('<AppPreviewFrame client:load />');
+    expect(pageSource).toContain('<HowItWorks client:load />');
+    expect(pageSource).not.toContain('LandingPreviewExperience');
+  });
+
+  it('mounts the hero preview as a real frontend demo workspace in normal document flow', () => {
     const source = readFileSync(
       path.resolve(landingRoot, 'components/AppPreviewFrame.tsx'),
       'utf8',
@@ -15,10 +25,11 @@ describe('preview source guardrails', () => {
 
     expect(source).toContain('@frontend/demo/landing');
     expect(source).toContain('<DemoWorkspaceComponent initialPhase="upload" />');
+    expect(source).not.toContain('SharedWorkspacePreviewHost');
     expect(source).not.toContain('PreviewShell');
   });
 
-  it('builds the preview out of real frontend surfaces', () => {
+  it('builds the hero preview out of real frontend surfaces without fixed overlay runtime', () => {
     const source = readFileSync(
       path.resolve(frontendRoot, 'demo/landing/DemoWorkspace.tsx'),
       'utf8',
@@ -29,7 +40,7 @@ describe('preview source guardrails', () => {
     expect(source).toContain('path="/project/:projectId/:phase"');
     expect(source).toContain('element={<ProjectWorkspace />}');
     expect(source).toContain('data-testid="landing-demo-workspace"');
-    expect(source).toContain("pointerEvents: 'none'");
+    expect(source).not.toContain("pointerEvents: 'none'");
     expect(source).not.toContain('DemoSidebar');
     expect(source).not.toContain('TrainingProgressCard');
     expect(source).not.toContain('OverviewColumnCards');
@@ -46,11 +57,22 @@ describe('preview source guardrails', () => {
     const workspaceDiorama = readFileSync(path.resolve(dioramaRoot, 'WorkspaceDiorama.tsx'), 'utf8');
     expect(workspaceDiorama).toContain('/workspace-preview?phase=');
     expect(workspaceDiorama).toContain('<iframe');
-    expect(workspaceDiorama).toContain('pointer-events-none');
+    expect(workspaceDiorama).toContain('WORKSPACE_PREVIEW_MESSAGE_TYPE');
+    expect(workspaceDiorama).toContain("postMessage(message, '*')");
+    expect(workspaceDiorama).toContain("loading={preloadAll ? 'eager' : 'lazy'}");
+    expect(workspaceDiorama).not.toContain('SharedWorkspacePreviewHost');
+
+    const howItWorksSource = readFileSync(
+      path.resolve(landingRoot, 'components/how-it-works/HowItWorks.tsx'),
+      'utf8',
+    );
+    expect(howItWorksSource).toContain('preloadAllDioramaPhases={false}');
 
     const previewPage = readFileSync(path.resolve(landingRoot, 'components/WorkspacePreviewPage.tsx'), 'utf8');
     expect(previewPage).toContain('DemoWorkspace');
     expect(previewPage).toContain('enableDemoMode');
+    expect(previewPage).toContain('preloadProjectWorkspacePhase');
+    expect(previewPage).toContain('WORKSPACE_PREVIEW_READY_MESSAGE_TYPE');
     expect(previewPage).toContain("return 'upload'");
 
     const sceneFiles = [
@@ -69,5 +91,58 @@ describe('preview source guardrails', () => {
       expect(source).not.toContain('LineChart');
       expect(source).not.toContain('barFill');
     }
+  });
+
+  it('does not use a fixed shared overlay provider for landing previews', () => {
+    expect(existsSync(path.resolve(landingRoot, 'components/LandingPreviewExperience.tsx'))).toBe(false);
+    expect(existsSync(path.resolve(landingRoot, 'components/preview/SharedWorkspacePreviewProvider.tsx'))).toBe(false);
+  });
+
+  it('keeps landing theme tokens compatible with real frontend components', () => {
+    const themeSource = readFileSync(path.resolve(landingRoot, 'styles/theme.css'), 'utf8');
+    expect(themeSource).toContain('--border: 0 0% 18%;');
+    expect(themeSource).not.toContain('--border:        rgba(255, 255, 255, 0.06);');
+  });
+
+  it('suppresses overlay primitives in demo mode instead of freezing the whole workspace', () => {
+    const dialogSource = readFileSync(
+      path.resolve(frontendRoot, 'components/ui/dialog.tsx'),
+      'utf8',
+    );
+    expect(dialogSource).toContain('isDemoMode');
+
+    const popoverSource = readFileSync(
+      path.resolve(frontendRoot, 'components/ui/popover.tsx'),
+      'utf8',
+    );
+    expect(popoverSource).toContain('isDemoMode');
+
+    const dropdownSource = readFileSync(
+      path.resolve(frontendRoot, 'components/ui/dropdown-menu.tsx'),
+      'utf8',
+    );
+    expect(dropdownSource).toContain('isDemoMode');
+  });
+
+  it('renders notebook deep-dive from real notebook cell components', () => {
+    const notebookSource = readFileSync(
+      path.resolve(landingRoot, 'components/deep-dives/NotebookDeepDive.tsx'),
+      'utf8',
+    );
+    expect(notebookSource).toContain('@frontend/demo/landing');
+    expect(notebookSource).not.toContain('ResponsiveContainer');
+    expect(notebookSource).not.toContain('BarChart');
+
+    const frontendNotebookSource = readFileSync(
+      path.resolve(frontendRoot, 'demo/landing/NotebookDeepDivePreview.tsx'),
+      'utf8',
+    );
+    expect(frontendNotebookSource).toContain('NotebookCellComponent');
+  });
+
+  it('provides a concrete login route for landing sign-in links', () => {
+    expect(existsSync(path.resolve(landingRoot, 'pages/login.astro'))).toBe(true);
+    const loginPage = readFileSync(path.resolve(landingRoot, 'pages/login.astro'), 'utf8');
+    expect(loginPage).toContain('PUBLIC_APP_LOGIN_URL');
   });
 });

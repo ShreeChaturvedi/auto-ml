@@ -38,6 +38,8 @@ export default defineConfig({
           /@tanstack\/react-table/,
           /@tanstack\/react-virtual/,
           /recharts/,
+          /react-dropzone/,
+          /react-resizable-panels/,
           /react-router/,
           /react-router-dom/,
         ],

@@ -107,14 +107,26 @@ declare module '@frontend/lib/demoMode' {
   export function enableDemoMode(): void;
 }
 
+declare module '@frontend/pages/projectWorkspacePhaseLoaders' {
+  export function preloadProjectWorkspacePhase(phase: string): Promise<unknown> | undefined;
+}
+
 declare module '@frontend/demo/landing' {
   import type { ComponentType } from 'react';
 
   export const DemoWorkspace: ComponentType<{
     initialPhase?: string;
+    phase?: string;
   }>;
 
+  export const NotebookDeepDivePreview: ComponentType<Record<string, never>>;
   export function resetLandingDemoState(): void;
+}
+
+declare module '@frontend/demo/landing/NotebookDeepDivePreview' {
+  import type { ComponentType } from 'react';
+
+  export const NotebookDeepDivePreview: ComponentType<Record<string, never>>;
 }
 
 declare module '@frontend/stores/projectStore' {

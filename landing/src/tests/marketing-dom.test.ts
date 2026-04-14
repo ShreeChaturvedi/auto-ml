@@ -29,11 +29,11 @@ describe('marketing DOM (post-build)', () => {
   });
 
   it('contains the pulse announcement', () => {
-    expect(readDist()).toContain('GPT 5.4 class reasoning, now live');
+    expect(readDist()).toContain('Now supporting GPT 5.4 class reasoning');
   });
 
   it('contains the primary CTA', () => {
-    expect(readDist()).toContain('Sign in to get started');
+    expect(readDist()).toContain('Get Started');
   });
 
   it('contains all 3 nav link labels', () => {

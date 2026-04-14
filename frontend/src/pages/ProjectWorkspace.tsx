@@ -5,14 +5,23 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
 import type { Phase } from '@/types/phase';
+import {
+  loadDataViewerTab,
+  loadDeploymentDashboard,
+  loadExperimentsDashboard,
+  loadFeatureEngineeringPanel,
+  loadPreprocessingPanel,
+  loadTrainingPanel,
+  loadUploadArea,
+} from './projectWorkspacePhaseLoaders';
 
-const UploadArea = lazy(() => import('@/components/upload/UploadArea').then(m => ({ default: m.UploadArea })));
-const DataViewerTab = lazy(() => import('@/components/data/DataViewerTab').then(m => ({ default: m.DataViewerTab })));
-const PreprocessingPanel = lazy(() => import('@/components/preprocessing/PreprocessingPanel').then(m => ({ default: m.PreprocessingPanel })));
-const FeatureEngineeringPanel = lazy(() => import('@/components/features/FeatureEngineeringPanel').then(m => ({ default: m.FeatureEngineeringPanel })));
-const TrainingPanel = lazy(() => import('@/components/training/TrainingPanel').then(m => ({ default: m.TrainingPanel })));
-const ExperimentsDashboard = lazy(() => import('@/components/experiments/ExperimentsDashboard').then(m => ({ default: m.ExperimentsDashboard })));
-const DeploymentDashboard = lazy(() => import('@/components/deployment/DeploymentDashboard').then(m => ({ default: m.DeploymentDashboard })));
+const UploadArea = lazy(loadUploadArea);
+const DataViewerTab = lazy(loadDataViewerTab);
+const PreprocessingPanel = lazy(loadPreprocessingPanel);
+const FeatureEngineeringPanel = lazy(loadFeatureEngineeringPanel);
+const TrainingPanel = lazy(loadTrainingPanel);
+const ExperimentsDashboard = lazy(loadExperimentsDashboard);
+const DeploymentDashboard = lazy(loadDeploymentDashboard);
 
 const PHASE_BACKED_NOTEBOOK_PHASES = new Set<Phase>([
   'preprocessing',

@@ -30,6 +30,8 @@ export default defineConfig({
       noExternal: [
         /^@frontend\//,
         'recharts',
+        'react-dropzone',
+        'react-resizable-panels',
         'streamdown',
         'react-router',
         'react-router-dom',

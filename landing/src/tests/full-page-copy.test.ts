@@ -21,7 +21,7 @@ describe('full-page marketing copy', () => {
     const phrases = [
       'The fastest way to build production ML models,',
       'agentically.',
-      'GPT 5.4 class reasoning, now live',
+      'Now supporting GPT 5.4 class reasoning',
       'Upload a CSV. Describe your goal.',
       'HOW IT WORKS',
       'From raw data to a deployed model',
@@ -39,7 +39,7 @@ describe('full-page marketing copy', () => {
       'Stop babysitting',
       'your notebooks.',
       '© 2026 Agentic AutoML Platform',
-      'AGENTIC AUTOML',
+      'Agentic AutoML',
     ];
     for (const phrase of phrases) {
       expect(html).toContain(phrase);

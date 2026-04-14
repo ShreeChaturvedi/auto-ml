@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DemoWorkspace, resetLandingDemoState } from '@frontend/demo/landing';
 import { useProjectStore } from '@frontend/stores/projectStore';
 import { useDataStore } from '@frontend/stores/dataStore';
@@ -78,16 +78,46 @@ describe('DemoWorkspace navigation', () => {
     });
   });
 
-  it('renders the landing demo as an inert preview shell', async () => {
+  it('renders the landing demo without freezing the whole workspace surface', async () => {
     render(<DemoWorkspace initialPhase="data-viewer" />);
 
     const demoRoot = await screen.findByTestId('landing-demo-workspace');
-    expect(demoRoot).toHaveStyle({ pointerEvents: 'none' });
+    expect(demoRoot).not.toHaveStyle({ pointerEvents: 'none' });
     expect(await screen.findByTestId('workflow-phase-button-data-viewer')).toBeInTheDocument();
     await waitFor(() => {
       expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('data-viewer');
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows demo workflow phase buttons to switch visible phases', async () => {
+    render(<DemoWorkspace initialPhase="upload" />);
+
+    const trainingButton = await screen.findByTestId('workflow-phase-button-training');
+    fireEvent.click(trainingButton);
+
+    expect(await screen.findByText(/Champion search/i)).toBeInTheDocument();
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 1200);
+    });
+    expect(useProjectStore.getState().getActiveProject()?.currentPhase).toBe('training');
+    expect(screen.getByText(/Champion search/i)).toBeInTheDocument();
+  });
+
+  it('switches across preprocessing, feature engineering, and training without hitting the phase error boundary', async () => {
+    render(<DemoWorkspace initialPhase="upload" />);
+
+    fireEvent.click(await screen.findByTestId('workflow-phase-button-preprocessing'));
+    expect(await screen.findByText(/Normalize spend/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Something went wrong in this phase\./i)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByTestId('workflow-phase-button-feature-engineering'));
+    expect(await screen.findByText(/Retention features/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Something went wrong in this phase\./i)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByTestId('workflow-phase-button-training'));
+    expect(await screen.findByText(/Champion search/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Something went wrong in this phase\./i)).not.toBeInTheDocument();
   });
 });

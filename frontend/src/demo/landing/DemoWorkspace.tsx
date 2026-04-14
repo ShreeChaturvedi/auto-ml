@@ -1,5 +1,5 @@
-import { useRef, useMemo } from 'react';
-import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useRef, useMemo } from 'react';
+import { MemoryRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { ProjectWorkspace } from '@/pages/ProjectWorkspace';
@@ -14,9 +14,24 @@ import './demoWorkspace.css';
 
 export interface DemoWorkspaceProps {
   initialPhase?: Phase;
+  phase?: Phase;
 }
 
-export function DemoWorkspace({ initialPhase = DEFAULT_PHASE }: DemoWorkspaceProps) {
+function DemoWorkspaceRouteSync({ phase }: { phase: Phase }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const nextPath = `/project/${DEMO_PROJECT_ID}/${phase}`;
+    if (location.pathname !== nextPath) {
+      navigate(nextPath, { replace: true });
+    }
+  }, [location.pathname, navigate, phase]);
+
+  return null;
+}
+
+export function DemoWorkspace({ initialPhase = DEFAULT_PHASE, phase }: DemoWorkspaceProps) {
   const initialEntries = useMemo(
     () => [`/project/${DEMO_PROJECT_ID}/${initialPhase}`],
     [initialPhase],
@@ -36,9 +51,9 @@ export function DemoWorkspace({ initialPhase = DEFAULT_PHASE }: DemoWorkspacePro
           <div
             className="landing-demo-workspace h-full bg-background text-foreground"
             data-testid="landing-demo-workspace"
-            style={{ pointerEvents: 'none' }}
           >
             <AppShell viewportMode="container">
+              {phase ? <DemoWorkspaceRouteSync phase={phase} /> : null}
               <Routes>
                 <Route path="/project/:projectId" element={<Navigate to={`/project/${DEMO_PROJECT_ID}/${initialPhase}`} replace />} />
                 <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />

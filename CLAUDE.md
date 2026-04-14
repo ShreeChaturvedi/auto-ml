@@ -59,3 +59,11 @@ Use `projectColorClasses` from `@/types/project` with `activeProjectId` from `us
 **Proactively suggest improvements.** When implementing or fixing a feature, brainstorm and present alternatives: better architectural patterns, more suitable libraries, stronger UI/UX approaches, or performance optimizations. Think critically about the bigger picture.
 
 **Write strong tests.** If all tests pass but users encounter errors, the tests are pointless. Write strong tests that almost guarantee no errors in real QA testing. When running a test suite, never ignore failing tests. Always attempt to fix with my approval.
+
+# Local Chat History Workflow
+
+- Maintain a project-local `chat_history.md` for every project we work on.
+- If `chat_history.md` does not exist, create it at the project root before continuing substantial work.
+- Update `chat_history.md` after every 5 assistant responses in the working thread so the running context stays current.
+- `chat_history.md` is local workflow state, not project source. Never commit or push it.
+- Preserve `chat_history.md` across branch switches using local git-only controls such as `skip-worktree` for tracked files or `.git/info/exclude` for untracked files.

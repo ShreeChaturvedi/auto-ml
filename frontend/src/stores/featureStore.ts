@@ -40,6 +40,7 @@ interface FeatureState {
   toggleFeature: (id: string) => void;
   removeFeature: (id: string) => void;
   clearProjectFeatures: (projectId: string) => void;
+  clearVersionFeatures: (projectId: string, versionId?: string) => void;
   getFeaturesByProject: (projectId: string) => FeatureSpec[];
   hydrateFromProject: (projectId: string, options?: { force?: boolean }) => void;
   syncFeaturesToProject: (projectId: string) => Promise<void>;
@@ -127,6 +128,9 @@ export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
           ...feature,
           id: feature.id ?? makeId(),
           projectId: feature.projectId ?? projectId,
+          versionId: typeof feature.versionId === 'string' && feature.versionId.trim()
+            ? feature.versionId
+            : (currentVid || undefined),
           secondaryColumn: feature.secondaryColumn ?? secondaryFromParams,
           featureName: feature.featureName || `${feature.sourceColumn}_${feature.method}`,
           enabled: feature.enabled ?? true,
@@ -237,6 +241,17 @@ export const useFeatureStore = create<FeatureState>()(persist((set, get) => ({
   clearProjectFeatures(projectId) {
     set((state) => ({
       features: state.features.filter((feature) => feature.projectId !== projectId)
+    }));
+    void get().syncFeaturesToProject(projectId);
+  },
+
+  clearVersionFeatures(projectId, versionId) {
+    set((state) => ({
+      features: state.features.filter((feature) => {
+        if (feature.projectId !== projectId) return true;
+        if (!versionId) return false;
+        return feature.versionId !== versionId;
+      })
     }));
     void get().syncFeaturesToProject(projectId);
   },

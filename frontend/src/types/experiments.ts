@@ -3,6 +3,7 @@ export interface EvaluationResult {
   taskType: 'classification' | 'regression' | 'clustering';
   timestamp: string;
   computeMs: number;
+  warnings?: string[];
   confusion_matrix?: { matrix: number[][]; matrix_normalized: number[][]; labels: string[] };
   roc_curves?: Record<string, { fpr: number[]; tpr: number[]; auc: number }>;
   precision_recall_curves?: Record<string, { precision: number[]; recall: number[]; ap: number }>;
@@ -11,15 +12,15 @@ export interface EvaluationResult {
   class_distribution?: { train: Record<string, number>; test: Record<string, number> };
   residuals?: { y_true: number[]; y_pred: number[]; residuals: number[] };
   residual_histogram?: { bin_edges: number[]; counts: number[] };
-  feature_importance: {
+  feature_importance?: {
     model_based?: { features: string[]; importances: number[]; std?: number[] };
     permutation: { features: string[]; importances_mean: number[]; importances_std: number[] };
   };
-  learning_curve: {
+  learning_curve?: {
     train_sizes: number[]; train_scores_mean: number[]; train_scores_std: number[];
     test_scores_mean: number[]; test_scores_std: number[];
   };
-  cross_validation: { scores: number[]; mean: number; std: number; scoring: string };
+  cross_validation?: { scores: number[]; mean: number; std: number; scoring: string };
 }
 
 // ── SHAP ──

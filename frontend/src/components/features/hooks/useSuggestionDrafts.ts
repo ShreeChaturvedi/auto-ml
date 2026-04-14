@@ -35,11 +35,12 @@ export type SuggestionDraft = {
 
 interface UseSuggestionDraftsOptions {
   projectId: string;
+  currentVersionId?: string;
   featureById: Map<string, FeatureSpec>;
   setPanelError: (error: string | null) => void;
 }
 
-export function useSuggestionDrafts({ projectId, featureById, setPanelError }: UseSuggestionDraftsOptions) {
+export function useSuggestionDrafts({ projectId, currentVersionId, featureById, setPanelError }: UseSuggestionDraftsOptions) {
   const upsertFeature = useFeatureStore((state) => state.upsertFeature);
   const removeFeature = useFeatureStore((state) => state.removeFeature);
 
@@ -91,6 +92,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
       const feature: FeatureSpec = {
         id: item.id,
         projectId,
+        ...(currentVersionId ? { versionId: currentVersionId } : {}),
         sourceColumn: item.feature.sourceColumn,
         secondaryColumn: item.feature.secondaryColumn,
         featureName: item.feature.featureName,
@@ -104,7 +106,7 @@ export function useSuggestionDrafts({ projectId, featureById, setPanelError }: U
 
       upsertFeature(feature);
     },
-    [featureById, projectId, removeFeature, upsertFeature, setPanelError]
+    [currentVersionId, featureById, projectId, removeFeature, upsertFeature, setPanelError]
   );
 
   const toggleSuggestion = useCallback(

@@ -122,15 +122,22 @@ describe('executeTraining', () => {
   });
 
   it('works without cellIds (records state only)', async () => {
-    const result = await executeTraining(buildCtx({
+    const ctx = buildCtx({
       experimentId: 'exp-1',
       succeeded: true,
-      metrics: { accuracy: 0.85 }
-    }));
+      metrics: { accuracy: 0.85 },
+      prepSegments: ['df = pd.read_csv("data.csv")', 'X_train = df[["feat"]].copy()']
+    });
+    const result = await executeTraining(ctx);
 
     expect(mockExecuteMcpTool).not.toHaveBeenCalled();
     expect(result.output).toBeDefined();
     expect((result.output as Record<string, unknown>).status).toBe('training');
+    const experiments = ctx.run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    expect(experiments['exp-1'].workflowPrepSegments).toEqual([
+      'df = pd.read_csv("data.csv")',
+      'X_train = df[["feat"]].copy()'
+    ]);
   });
 
   it('returns error for missing experimentId', async () => {

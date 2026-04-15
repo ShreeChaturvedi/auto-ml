@@ -84,7 +84,6 @@ landing:build:
   extends: .run_on_branch_or_mr
   stage: build
   script:
-    - npm --prefix landing ci
     - npm --prefix landing run typecheck
     - npm --prefix landing run build
     - npm --prefix landing run test
@@ -92,10 +91,12 @@ landing:build:
   cache:
     key:
       files:
-        - landing/package-lock.json
+        - backend/package-lock.json
+        - frontend/package-lock.json
     paths:
+      - frontend/node_modules/
       - landing/node_modules/
-    policy: pull-push
+    policy: pull
   artifacts:
     paths:
       - landing/dist/

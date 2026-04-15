@@ -211,6 +211,8 @@ const resourceLinks = [
     width: 100vw;
     height: 462px;
     overflow: visible;
+    /* Nudge down so caps / stroke antialias clear the overflow clip by a hair */
+    transform: translateY(12px);
   }
   .footer-giant-svg text {
     font-family: 'Inter Variable', sans-serif;

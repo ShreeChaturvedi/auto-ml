@@ -38,6 +38,9 @@ lint:
   extends: .run_on_branch_or_mr
   stage: check
   script:
+    - test -x backend/node_modules/.bin/eslint || npm --prefix backend ci --no-audit --no-fund
+    - test -x frontend/node_modules/.bin/eslint || npm --prefix frontend ci --no-audit --no-fund
+    - test -x video/node_modules/.bin/eslint || npm --prefix video ci --no-audit --no-fund
     - npm run lint
   cache:
     key:
@@ -54,6 +57,8 @@ build:
   extends: .run_on_branch_or_mr
   stage: build
   script:
+    - test -x backend/node_modules/.bin/tsc || npm --prefix backend ci --no-audit --no-fund
+    - test -x frontend/node_modules/.bin/tsc || npm --prefix frontend ci --no-audit --no-fund
     - npm run build
   cache:
     key:
@@ -69,6 +74,8 @@ test:
   extends: .run_on_branch_or_mr
   stage: test
   script:
+    - test -x backend/node_modules/.bin/vitest || npm --prefix backend ci --no-audit --no-fund
+    - test -x frontend/node_modules/.bin/vitest || npm --prefix frontend ci --no-audit --no-fund
     - npm run test
   cache:
     key:

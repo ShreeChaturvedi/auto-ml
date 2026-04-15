@@ -4,6 +4,7 @@ import { MONOSPACE_FONT, REGULAR_FONT, TITLE_FONT } from "../../../config/fonts"
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
+import { BrandChip } from "../../primitives/BrandChip";
 import { MotionLine } from "../../primitives/MotionLine";
 import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
@@ -16,12 +17,13 @@ import type { SlideBodyProps } from "./index";
 // -----------------------------------------------------------------------------
 // Finance-deck cards (14s / 840f). Per column, top to bottom:
 //
-//   photo, name, major, divider, role, bullets
+//   photo, name, major, divider, role, company chip, bullets
 //
-// The divider separates the identity block (photo + name + major) from the
-// working identity (role). Bullets use a Monaspace numeric counter (01, 02, 03)
-// for editorial structure; no ACCENT_COLOR is used anywhere on the slide,
-// typography is the only differentiator.
+// The divider separates the identity block (photo, name, major) from the
+// working identity (role + company). Each role carries the company wordmark
+// immediately below it so the job and its employer read as a unit. Bullets
+// use a Monaspace 01/02/03 counter for editorial structure; no ACCENT_COLOR
+// is used anywhere on the slide, typography is the only differentiator.
 //
 // Six-phase budget. Each phase-end sets the next element's delay; per-column
 // offsets (COL_STAGGER) stagger the second column behind the first so the
@@ -31,10 +33,10 @@ import type { SlideBodyProps } from "./index";
 //   2.   20- 70   both columns rise (photo + name visible)
 //   3.   70-160   major types in
 //   4.  160-200   subtle divider draws
-//   5.  200-260   role fades in
-//   6.  260-840   bullets stagger, then hold
+//   5.  200-280   role fades, then company chip fades
+//   6.  280-840   bullets stagger, then hold
 // -----------------------------------------------------------------------------
-const PHASES = [20, 50, 90, 40, 60, 580] as const;
+const PHASES = [20, 50, 90, 40, 80, 560] as const;
 type SixPhases = [PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo];
 type TwoCols = [StaggeredItem, StaggeredItem];
 
@@ -53,19 +55,22 @@ const DIVIDER_FRAMES = 28;
 const MAJORS_AFTER = 20;
 const DIVIDER_AFTER = 120;
 const ROLE_AFTER = 160;
-const BULLETS_AFTER = 200;
+const CHIP_AFTER = 185;
+const BULLETS_AFTER = 225;
 
 // Vertical spacing within MemberColumn.
 const AVATAR_TO_NAME = 20;
 const NAME_TO_MAJOR = 10;
 const MAJOR_TO_DIVIDER = 20;
 const DIVIDER_TO_ROLE = 16;
-const ROLE_TO_BULLETS = 28;
+const ROLE_TO_CHIP = 10;
+const CHIP_TO_BULLETS = 24;
 const BULLET_GAP = 14;
 
 type Member = {
   name: string;
   role: string;
+  company: { src: string; logoHeight: number; label?: string };
   major: string;
   avatar: string;
   bullets: readonly string[];
@@ -75,6 +80,10 @@ const TEAM: readonly Member[] = [
   {
     name: "Shree Chaturvedi",
     role: "Strategy Consultant",
+    // EBC is a self-labeled wordmark. The asset already contains the company
+    // name, so pairing it with a sibling label would duplicate it. Render at
+    // 40 px so the inline "EAST BRIDGE CONSULTANCY" text stays readable.
+    company: { src: "branding/ebc.webp", logoHeight: 40 },
     major: "Computer Science, Mathematics",
     avatar: "team/shree.jpeg",
     bullets: [
@@ -86,6 +95,8 @@ const TEAM: readonly Member[] = [
   {
     name: "Ayush Yadav",
     role: "Data Integration Intern",
+    // Miami letter-mark is tiny on its own, pair with a label.
+    company: { src: "branding/miami-m.svg", logoHeight: 26, label: "Miami University" },
     major: "Computer Science",
     avatar: "team/ayush.jpeg",
     bullets: [
@@ -166,10 +177,10 @@ const BULLET_COUNTER_STYLE: React.CSSProperties = {
 
 /**
  * TeamSlide is the "built by" slide, 14s (840f). Two engineers in a
- * finance-deck format: photo, name, major, short divider, role, then
- * monospace-numbered supporting bullets. The heading, photos, names, and
- * card chrome are identical per column; all differentiation is in the content
- * and the 30-frame column stagger.
+ * finance-deck format: photo, name, major, short divider, role, company
+ * wordmark, then monospace-numbered supporting bullets. The heading, photos,
+ * names, and card chrome are identical per column; all differentiation is in
+ * the content and the 30-frame column stagger.
  */
 export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const c = COLORS[theme];
@@ -293,7 +304,7 @@ const MemberColumn: React.FC<{
         />
       </div>
 
-      {/* Subtle divider: separates identity (above) from role (below). */}
+      {/* Subtle divider: separates identity (above) from role + employer (below). */}
       <div style={{ marginTop: MAJOR_TO_DIVIDER, marginBottom: DIVIDER_TO_ROLE }}>
         <MotionLine
           x1={0}
@@ -321,12 +332,24 @@ const MemberColumn: React.FC<{
         {member.role}
       </div>
 
+      {/* Company chip: sits with the role to visually bind "intern at X" or
+          "consultant at X" as a single unit. */}
+      <div style={{ marginTop: ROLE_TO_CHIP }}>
+        <BrandChip
+          theme={theme}
+          delay={base + CHIP_AFTER}
+          src={member.company.src}
+          logoHeight={member.company.logoHeight}
+          label={member.company.label}
+        />
+      </div>
+
       {/* Supporting bullets: monospace 01/02/03 counter + prose. */}
       <ul
         style={{
           listStyle: "none",
           padding: 0,
-          margin: `${ROLE_TO_BULLETS}px 0 0 0`,
+          margin: `${CHIP_TO_BULLETS}px 0 0 0`,
           display: "flex",
           flexDirection: "column",
           gap: BULLET_GAP,

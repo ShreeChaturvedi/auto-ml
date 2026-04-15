@@ -20,10 +20,12 @@ install:
       files:
         - backend/package-lock.json
         - frontend/package-lock.json
+        - video/package-lock.json
     paths:
       - backend/node_modules/
       - frontend/node_modules/
       - testing/node_modules/
+      - video/node_modules/
     policy: pull-push
 
 lint:
@@ -35,9 +37,11 @@ lint:
       files:
         - backend/package-lock.json
         - frontend/package-lock.json
+        - video/package-lock.json
     paths:
       - backend/node_modules/
       - frontend/node_modules/
+      - video/node_modules/
     policy: pull
 
 build:

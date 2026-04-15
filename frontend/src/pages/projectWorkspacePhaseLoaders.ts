@@ -15,12 +15,6 @@ export const loadFeatureEngineeringPanel = () =>
 export const loadTrainingPanel = () =>
   import('@/components/training/TrainingPanel').then((m) => ({ default: m.TrainingPanel }));
 
-export const loadExperimentsDashboard = () =>
-  import('@/components/experiments/ExperimentsDashboard').then((m) => ({ default: m.ExperimentsDashboard }));
-
-export const loadDeploymentDashboard = () =>
-  import('@/components/deployment/DeploymentDashboard').then((m) => ({ default: m.DeploymentDashboard }));
-
 export function preloadProjectWorkspacePhase(phase: Phase): Promise<unknown> | undefined {
   switch (phase) {
     case 'upload':
@@ -33,10 +27,6 @@ export function preloadProjectWorkspacePhase(phase: Phase): Promise<unknown> | u
       return loadFeatureEngineeringPanel();
     case 'training':
       return loadTrainingPanel();
-    case 'experiments':
-      return loadExperimentsDashboard();
-    case 'deployment':
-      return loadDeploymentDashboard();
     default:
       return undefined;
   }

@@ -1,14 +1,14 @@
 import React, { lazy, Suspense, useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
+import { DeploymentDashboard } from '@/components/deployment/DeploymentDashboard';
 import { useProjectStore } from '@/stores/projectStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
 import type { Phase } from '@/types/phase';
 import {
   loadDataViewerTab,
-  loadDeploymentDashboard,
-  loadExperimentsDashboard,
   loadFeatureEngineeringPanel,
   loadPreprocessingPanel,
   loadTrainingPanel,
@@ -20,8 +20,6 @@ const DataViewerTab = lazy(loadDataViewerTab);
 const PreprocessingPanel = lazy(loadPreprocessingPanel);
 const FeatureEngineeringPanel = lazy(loadFeatureEngineeringPanel);
 const TrainingPanel = lazy(loadTrainingPanel);
-const ExperimentsDashboard = lazy(loadExperimentsDashboard);
-const DeploymentDashboard = lazy(loadDeploymentDashboard);
 
 const NOTEBOOK_SESSION_PRESERVED_PHASES = new Set<Phase>([
   'preprocessing',

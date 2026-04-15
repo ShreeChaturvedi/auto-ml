@@ -128,11 +128,12 @@ export function AgenticShell({
     onValueChange: setChatInput,
     inputRef: mentionInputRef
   });
+  const dismissMention = mention.dismiss;
 
   useEffect(() => {
     setChatInput('');
-    mention.dismiss();
-  }, [storageKey, sessionVersion, mention.dismiss]);
+    dismissMention();
+  }, [dismissMention, sessionVersion, storageKey]);
 
   const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
 

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain/badges/sprint9/pipeline.svg?style=flat-square" alt="pipeline">
+  <img src="https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain/badges/main/pipeline.svg?style=flat-square" alt="pipeline">
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license">
   <img src="https://img.shields.io/badge/node-22%20LTS-brightgreen?style=flat-square&logo=nodedotjs" alt="node">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="typescript">
@@ -14,11 +14,11 @@
 
 ---
 
-**Agentic AutoML Platform** turns datasets and domain documents into production ML models through LLM-orchestrated pipelines. An agentic core powered by LangGraph and MCP tools handles everything from data exploration to model training, with human-in-the-loop approval gates at every step.
+**Agentic AutoML Platform** turns datasets and domain documents into production ML models through LLM-orchestrated pipelines. An agentic core powered by LangGraph and MCP tools handles everything from data exploration to deployment, with human-in-the-loop approval gates at every step.
 
 ## Workflow
 
-Six phases mirror the ML lifecycle. Each phase is driven by an LLM agent that proposes actions, generates code, and validates results while the operator approves or edits before execution.
+Seven phases mirror the ML lifecycle. Each phase is driven by an LLM agent that proposes actions, generates code, and validates results while the operator approves or edits before execution.
 
 ### Upload & Planning
 
@@ -68,6 +68,10 @@ Train models through an interactive notebook workspace. The agent generates trai
 
 Compare trained models on a leaderboard with automatic champion detection and a natural language filter bar. Run Optuna hyperparameter optimization studies with real-time progress streaming. Analyze model errors with decision tree attribution and explore interpretability with SHAP.
 
+### Deployment
+
+Deploy trained models through a dedicated deployment phase with readiness checks, build orchestration, prediction playgrounds, logs, monitoring, and real-time status updates.
+
 ## Under the Hood
 
 **LangGraph Orchestration.** A state-machine engine coordinates multi-step ML pipelines through MCP tool calls, with phase-aware routing that selects the right tools for each workflow stage.
@@ -93,7 +97,7 @@ Compare trained models on a leaderboard with automatic champion detection and a 
 **Prerequisites:** Node.js 22 LTS, Docker
 
 ```bash
-npm run install:all    # Install backend + frontend + testing dependencies
+npm run install:all    # Install backend + frontend + testing + landing + video dependencies
 npm run dev            # Boot managed Postgres, run migrations, start dev servers
 ```
 
@@ -114,7 +118,8 @@ frontend/             Vite + React 19 SPA
   src/components/     UI components (shadcn/ui + custom)
   src/stores/         Zustand state management
   src/lib/api/        Typed fetch wrappers
-migrations/           Postgres schema migrations (001-008)
+landing/              Astro marketing site + public workspace preview
+video/                Remotion-based product and branding videos
 scripts/dev/          Dev orchestrator (Docker + migrations + servers)
 testing/              Playwright E2E benchmarks + eval runner
 docs/                 Branding assets, API contracts, design system
@@ -124,15 +129,24 @@ docs/                 Branding assets, API contracts, design system
 
 | Command | Description |
 |---------|-------------|
+| `npm run install:all` | Install backend, frontend, testing, landing, and video dependencies |
 | `npm run audit` | Audit root, backend, frontend, and testing dependencies |
 | `npm run dev` | Start development environment (managed Postgres + migrations + servers) |
 | `npm run build` | Build backend (tsc) + frontend (Vite) |
-| `npm run test` | Run all tests (Vitest) |
-| `npm run lint` | Lint across workspaces |
+| `npm run build:landing` | Build the Astro landing site |
+| `npm run test` | Run backend + frontend Vitest suites |
+| `npm run test:landing` | Run the landing Vitest suite |
+| `npm run lint` | Lint backend, frontend, and video |
+| `npm run lint:landing` | Lint the landing workspace |
 | `npm run db:migrate` | Run pending migrations (idempotent) |
 | `npm run benchmark` | Playwright E2E benchmarks (headless) |
 | `npm run eval` | NL-to-SQL + RAG evaluation suite |
 | `npm run benchmark:api` | API load benchmarking (autocannon) |
+| `npm run vercel:landing:pull:preview` | Pull preview settings for the Vercel landing project |
+| `npm run vercel:landing:pull:production` | Pull production settings for the Vercel landing project |
+| `npm run vercel:landing:build` | Build the landing app with Vercel's Build Output API |
+| `npm run vercel:landing:deploy:preview` | Deploy a preview-safe prebuilt landing artifact to Vercel |
+| `npm run vercel:landing:deploy:production` | Promote a prebuilt landing artifact to Vercel production |
 
 ## Documentation
 

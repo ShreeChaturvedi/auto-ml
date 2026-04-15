@@ -11,6 +11,10 @@ import {
 } from '../utils/containerOrchestrator.js';
 import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
+import {
+  extractWorkflowPrepSegmentsFromToolCalls,
+  normalizeWorkflowPrepSegments,
+} from './llm/trainingTools/workflowPrepSegments.js';
 import { resolveModelTestSize } from './modelTestSize.js';
 import {
   buildDatasetLoadLines,
@@ -19,10 +23,6 @@ import {
   buildStandardImports,
   buildTrainTestSplitLines,
 } from './pythonScriptUtils.js';
-import {
-  extractWorkflowPrepSegmentsFromToolCalls,
-  normalizeWorkflowPrepSegments,
-} from './llm/trainingTools/workflowPrepSegments.js';
 import {
   inferRuntimeDependenciesFromCode,
   inferRuntimeDependenciesFromModelType,

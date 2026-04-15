@@ -1,10 +1,10 @@
 import { appLogger } from '../../../logging/logger.js';
 import { executeMcpTool } from '../../mcp/mcpAdapter.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
-import { normalizeWorkflowPrepSegments } from './workflowPrepSegments.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
+import { normalizeWorkflowPrepSegments } from './workflowPrepSegments.js';
 
 function normalizeMetricsRecord(metrics: unknown): Record<string, number> {
   if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) {

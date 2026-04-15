@@ -12,13 +12,13 @@ import {
   normalizeRuntimeDependencies,
 } from '../../runtimeDependencies.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
+
+import { resolveExperiment } from './types.js';
+import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 import {
   extractWorkflowPrepSegmentsFromToolCalls,
   normalizeWorkflowPrepSegments,
 } from './workflowPrepSegments.js';
-
-import { resolveExperiment } from './types.js';
-import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
 

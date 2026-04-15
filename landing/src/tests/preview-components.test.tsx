@@ -217,4 +217,18 @@ describe('preview source guardrails', () => {
     expect(vercelConfig).toContain('X-Frame-Options');
     expect(vercelConfig).toContain('SAMEORIGIN');
   });
+
+  it('pins the landing Vercel CLI flow and keeps preview deploys off the production alias', () => {
+    const rootPackage = readFileSync(path.resolve(landingRoot, '../../package.json'), 'utf8');
+    const gitlabCi = readFileSync(path.resolve(landingRoot, '../../.gitlab-ci.yml'), 'utf8');
+
+    expect(rootPackage).toContain('vercel@51.2.1');
+    expect(rootPackage).toContain('deploy --prebuilt --yes --target=preview');
+    expect(rootPackage).toContain('deploy --prebuilt --yes --target=production');
+
+    expect(gitlabCi).toContain('--environment=preview --git-branch="$CI_COMMIT_REF_NAME"');
+    expect(gitlabCi).toContain('build --yes --target=preview');
+    expect(gitlabCi).toContain('deploy --prebuilt --yes --target=preview');
+    expect(gitlabCi).toContain('deploy --prebuilt --yes --target=production');
+  });
 });

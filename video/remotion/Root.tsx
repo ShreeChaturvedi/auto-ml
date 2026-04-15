@@ -56,15 +56,45 @@ const DEFAULT_SCENES: SelectableScene[] = [
     durationInFrames: 1620,
     meta: { chapters: DEFAULT_CHAPTERS },
   },
-  // Beat 2 de-risk: 4s smoke scene that mounts the real HomePage inside
-  // Remotion's rendering pipeline via AppScene + the frontend-bridge shims.
-  // Kept at the end of the list so slide previews earlier in the composition
-  // aren't affected; remove or replace once Beat 3+ builds the full demo flow.
+  // === Beat 1: Landing scroll (full-bleed) ===
+  {
+    type: "app",
+    screen: "landing",
+    chrome: "none",
+    voiceoverFile: "scene-landing.mp3",
+    durationInFrames: 3600, // 60s at 60 fps — overridden by MP3 duration when present
+  },
+
+  // === Beat 2: Auth flow → Home ===
+  //
+  // Only the SignupScreen references `scene-signup-ayush.mp3`. Login + Home
+  // deliberately omit `voiceoverFile` because `calc-metadata.resolveSceneData`
+  // calls `loadDuration` per scene — if all three referenced the same MP3, its
+  // duration would be summed 3× into the composition length. Once the MP3
+  // lands, the narration window for login-pause + home-dwell plays inside the
+  // Signup scene's resolved duration, and those bracketing scenes use their
+  // local `durationInFrames` as-is. If finer-grained alignment is needed
+  // later, split the script into separate MP3s per scene.
+  {
+    type: "app",
+    screen: "login",
+    chrome: "browser",
+    url: "app.agentic-automl.dev/login",
+    durationInFrames: 400, // Login pause before signup-link click
+  },
+  {
+    type: "app",
+    screen: "signup",
+    chrome: "browser",
+    url: "app.agentic-automl.dev/signup",
+    voiceoverFile: "scene-signup-ayush.mp3",
+    durationInFrames: 900, // ~15s typing + submit — overridden by MP3 duration when present
+  },
   {
     type: "app",
     screen: "home",
     chrome: "mac",
-    durationInFrames: 240,
+    durationInFrames: 240, // 4s arrival dwell
   },
 ];
 

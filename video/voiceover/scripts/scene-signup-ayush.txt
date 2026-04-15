@@ -1,0 +1,11 @@
+{{CTA}} Meet Ayush. He's a data science student at Miami, and he
+has a dataset he wants a model for.
+
+{{SIGNUP}} No account yet — let's fix that.
+
+{{TYPE_NAME}} Name, school email. {{TYPE_PASSWORD}} Something he
+won't forget on his second day.
+
+{{SUBMIT}} And he's in.
+
+{{HOMEPAGE}} No project, no data, no starter scripts — yet.

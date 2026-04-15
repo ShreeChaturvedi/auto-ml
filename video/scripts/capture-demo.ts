@@ -45,6 +45,38 @@ const CAPTURES_DIR = path.join(VIDEO_ROOT, "public", "captures");
 const VOICEOVER_DIR = path.join(VIDEO_ROOT, "public", "voiceover", "main");
 
 // ---------------------------------------------------------------------------
+// Signal cleanup — Node's default SIGINT/SIGTERM exits skip `finally` blocks,
+// which orphans any dev server we spawned + leaves Chromium's child processes
+// hanging. Acquire sites push idempotent cleanup fns here; the handler below
+// drains the list once on first signal, awaits everything, then `exit(130)`.
+//
+// A safety timer caps total cleanup at 5s so a hung child can't pin the
+// process forever — if that fires we force-exit and accept the orphan risk.
+// ---------------------------------------------------------------------------
+
+const cleanupFns: Array<() => void | Promise<void>> = [];
+let signalHandled = false;
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.once(sig, () => {
+    if (signalHandled) return;
+    signalHandled = true;
+    // Safety net: if cleanup stalls (e.g. Chromium IPC deadlock), exit anyway.
+    const forceExit = setTimeout(() => process.exit(130), 5000);
+    forceExit.unref();
+    void (async () => {
+      for (const fn of cleanupFns) {
+        try {
+          await fn();
+        } catch {
+          /* best-effort cleanup; swallow */
+        }
+      }
+      process.exit(130);
+    })();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Beat config
 // ---------------------------------------------------------------------------
 
@@ -169,6 +201,11 @@ async function ensureServer(cfg: BeatConfig): Promise<ServerHandle> {
   });
   proc.stdout?.pipe(logStream);
   proc.stderr?.pipe(logStream);
+  // Register signal cleanup for the spawned child BEFORE awaiting readiness —
+  // if the user Ctrl+C's during `waitForHttp`, the child would otherwise orphan.
+  cleanupFns.push(() => {
+    if (!proc.killed) proc.kill("SIGTERM");
+  });
   const up = await waitForHttp(cfg.url, 60_000);
   if (!up) {
     proc.kill();
@@ -213,7 +250,9 @@ const DETERMINISM_SCRIPT = `
     return s / 0x100000000;
   };
 
-  window.__captureStart = performance.now();
+  // __captureStart is pinned by a subsequent init script anchored to the
+  // context-creation wall moment -- not set here to avoid a redundant write
+  // that would mask the intended offset.
 })();
 `;
 
@@ -300,7 +339,7 @@ const rafScroll: RafScroll = async (page, targetY, durationMs) => {
 // Mark-to-ms pacer — reads `<beat>.alignment.json` if present
 // ---------------------------------------------------------------------------
 
-async function makeMarkPacer(cfg: BeatConfig, startMs: number): Promise<MarkPacer> {
+async function makeMarkPacer(cfg: BeatConfig, page: Page): Promise<MarkPacer> {
   const alignmentPath = path.join(VOICEOVER_DIR, cfg.alignmentFile);
   if (!existsSync(alignmentPath)) {
     return {
@@ -315,17 +354,35 @@ async function makeMarkPacer(cfg: BeatConfig, startMs: number): Promise<MarkPace
       rawScript?: string;
     };
     // ElevenLabs alignment JSONs we ship bundle `rawScript` alongside the
-    // `characters` arrays. If the file's schema drifts, fall back to a no-op.
+    // `characters` arrays. If the file's schema drifts, warn loudly — a
+    // silent no-op lets drivers fall back to hardcoded timing with no signal
+    // that VO sync is broken.
     const script = raw.rawScript;
-    if (!script) return { hasAlignment: false, waitForMark: async () => {} };
+    if (!script) {
+      console.warn(
+        `[capture] ${cfg.alignmentFile} is present but missing \`rawScript\` — mark pacing disabled, using hardcoded timing`,
+      );
+      return { hasAlignment: false, waitForMark: async () => {} };
+    }
     const marks = resolveMarks(script, raw, FPS);
     return {
       hasAlignment: true,
+      // Read elapsed from the *page* clock rather than the driver clock. The
+      // cursor recorder also measures in page-clock space (`__captureStart`),
+      // so both sides of the capture agree without Playwright cross-process
+      // IPC drift polluting the timing.
       waitForMark: async (markName: string) => {
         const frame = marks[markName];
-        if (frame === undefined) return;
+        if (frame === undefined) {
+          console.warn(`[capture] unknown mark: ${markName}`);
+          return;
+        }
         const targetMs = (frame / FPS) * 1000;
-        const elapsed = performance.now() - startMs;
+        const elapsed = await page.evaluate(
+          () =>
+            performance.now() -
+            (window as Window & { __captureStart?: number }).__captureStart!,
+        );
         const wait = targetMs - elapsed;
         if (wait > 0) await sleep(wait);
       },
@@ -347,15 +404,34 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
 
   const server = await ensureServer(cfg);
   const browser = await chromium.launch({ headless: true });
+  // Register browser cleanup so Ctrl+C doesn't leave a headless Chromium alive.
+  // Returning the Promise lets the signal-handler loop await it; Playwright's
+  // `browser.close()` is idempotent, so the normal-path `finally` below also
+  // calls it and both no-op on an already-closed instance.
+  cleanupFns.push(() => browser.close().catch(() => {}));
   let context: BrowserContext | null = null;
-  const captureStartWall = performance.now();
   try {
+    // Anchor `__captureStart` to *context-creation* wall time rather than
+    // document-init time. The webm recording begins at `newContext`; pinning
+    // the page's capture origin there keeps cursor `t_ms` values and the
+    // video's t=0 in lockstep, instead of drifting by the ~1-2s pre-nav gap.
+    const contextStartWall = performance.now();
     context = await browser.newContext({
       viewport: cfg.viewport,
       recordVideo: { dir: videoTmpDir, size: cfg.viewport },
       deviceScaleFactor: 1,
     });
     await context.addInitScript({ content: DETERMINISM_SCRIPT });
+    // Second init script re-pins `__captureStart` using the elapsed driver
+    // time since context creation. When this runs in the page, the driver's
+    // wall clock has advanced by `offsetMs`; telling the page to subtract
+    // that much from its own `performance.now()` yields the context-creation
+    // moment in page-clock space. IPC latency is single-digit ms — negligible
+    // versus the 1-2s pre-nav gap this removes.
+    await context.addInitScript((offsetMs: number) => {
+      (window as Window & { __captureStart?: number }).__captureStart =
+        performance.now() - offsetMs;
+    }, performance.now() - contextStartWall);
     if (cfg.seedAuth) {
       await context.addInitScript({ content: AUTH_SEED_SCRIPT });
     }
@@ -366,7 +442,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       await page.route("http://localhost:4000/api/**", mockApi);
     }
 
-    const pacer = await makeMarkPacer(cfg, captureStartWall);
+    const pacer = await makeMarkPacer(cfg, page);
     const cursor = makeCursorRecorder();
 
     console.log(`[capture] navigating to ${cfg.url}`);
@@ -397,7 +473,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
     // Persist cursor + derive wall-clock duration; context.close flushes webm.
     const cursorEntries = cursor.entries();
     await page.waitForTimeout(250); // small post-drive tail so last frame is clean
-    const videoWallMs = performance.now() - captureStartWall;
+    const videoWallMs = performance.now() - contextStartWall;
     const videoHandle = page.video();
     await context.close();
     context = null;
@@ -481,6 +557,10 @@ async function main(): Promise<void> {
     try {
       await captureBeat(cfg);
     } catch (err) {
+      // If the user just Ctrl+C'd, the in-flight Playwright call throws as
+      // soon as the signal-handler closes the browser. Don't log those errors
+      // — the handler owns the exit (code 130) and they're just noise.
+      if (signalHandled) return;
       failed += 1;
       console.error(`[capture] ${cfg.name} failed:`, err);
     }
@@ -489,6 +569,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  if (signalHandled) return;
   console.error(err);
   process.exit(1);
 });

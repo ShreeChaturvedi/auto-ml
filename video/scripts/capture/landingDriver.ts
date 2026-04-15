@@ -14,7 +14,10 @@ export type DriverArgs = {
   hasAlignment: boolean;
 };
 
-export async function drive({ page, cursor, rafScroll }: DriverArgs): Promise<void> {
+export async function drive(
+  // landing has no alignment marks (no clicks); waitForMark/hasAlignment intentionally unused
+  { page, cursor, rafScroll }: DriverArgs,
+): Promise<void> {
   // Settle: let fonts/images commit to first frame.
   await page.waitForTimeout(1500);
 

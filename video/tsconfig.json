@@ -10,7 +10,7 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -19,7 +19,18 @@
     "alwaysStrict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@/stores/authStore":               ["./src/frontend-bridge/mockAuthStore.ts"],
+      "@/stores/projectStore":            ["./src/frontend-bridge/mockProjectStore.ts"],
+      "@/stores/notebookStore":           ["./src/frontend-bridge/mockNotebookStore.ts"],
+      "@/lib/api/auth":                   ["./src/frontend-bridge/mockAuthApi.ts"],
+      "@/lib/api/projects":               ["./src/frontend-bridge/mockProjectApi.ts"],
+      "@/components/ui/shooting-stars":   ["./src/frontend-bridge/stars/ShootingStars.tsx"],
+      "@/components/ui/stars-background": ["./src/frontend-bridge/stars/StarsBackground.tsx"],
+      "@/*":                              ["../frontend/src/*"],
+      "*":                                ["./node_modules/@types/*", "./node_modules/*"]
+    }
   },
   "include": ["remotion", "config", "scripts", "src", "fixtures"],
   "exclude": ["remotion.config.ts", "node_modules", "out"]

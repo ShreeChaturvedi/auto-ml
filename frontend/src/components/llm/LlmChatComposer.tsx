@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { isDemoMode } from '@/lib/demoMode';
 import {
   type AssistantModelOption,
   type ReasoningEffort,
@@ -121,6 +122,14 @@ interface LlmChatComposerProps {
   reasoningConfig: ReasoningConfig;
   usageConfig?: UsageConfig;
   slots?: ComposerSlots;
+  /**
+   * Landing-page demo flag. When true, short-circuits the send action so the
+   * composer looks fully active but no message is dispatched. The visual
+   * appearance is identical to `readOnly={false}` — the button is NOT
+   * disabled or styled differently. Non-intrusive: the real app never sets
+   * this, it's purely for the marketing landing page's live demo islands.
+   */
+  readOnly?: boolean;
 }
 
 function useObservedWidth<T extends HTMLElement>(ref: RefObject<T | null>) {
@@ -157,8 +166,10 @@ export function LlmChatComposer({
   modelConfig,
   reasoningConfig,
   usageConfig,
-  slots = {}
+  slots = {},
+  readOnly = false
 }: LlmChatComposerProps) {
+  const demoReadOnly = readOnly || isDemoMode();
   const {
     value,
     onValueChange,
@@ -170,6 +181,19 @@ export function LlmChatComposer({
     onSend,
     onStop
   } = chatInput;
+
+  const handleSend = () => {
+    if (demoReadOnly) return;
+    onSend();
+  };
+
+  const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (demoReadOnly && event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      return;
+    }
+    onKeyDown(event);
+  };
 
   const {
     leftSlot,
@@ -218,7 +242,7 @@ export function LlmChatComposer({
               ref={mentionSlot.inputRef}
               value={value}
               onValueChange={mentionSlot.onValueChange}
-              onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLDivElement>) => void}
+              onKeyDown={handleComposerKeyDown as (event: ReactKeyboardEvent<HTMLDivElement>) => void}
               mentionNames={mentionSlot.mentionNames}
               mentionTypes={mentionSlot.mentionTypes}
               themeColor={mentionSlot.themeColor}
@@ -235,7 +259,7 @@ export function LlmChatComposer({
               name="message"
               value={value}
               onChange={(event) => onValueChange(event.target.value)}
-              onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void}
+              onKeyDown={handleComposerKeyDown as (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void}
               placeholder={placeholder}
               aria-label="Message input"
               disabled={disabled}
@@ -289,7 +313,12 @@ export function LlmChatComposer({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => attachmentInputRef.current?.click()}
+                          onClick={() => {
+                            if (demoReadOnly) {
+                              return;
+                            }
+                            attachmentInputRef.current?.click();
+                          }}
                           disabled={attachment.status === 'uploading'}
                           aria-label="Attach file"
                           className="h-7 px-2 text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2"
@@ -319,7 +348,7 @@ export function LlmChatComposer({
 
               <InputGroupButton
                 size="sm"
-                onClick={isStreaming ? onStop : onSend}
+                onClick={isStreaming ? onStop : handleSend}
                 disabled={isStreaming ? false : !canSend}
                 aria-label={isStreaming ? 'Stop generating' : 'Send message'}
                 variant="ghost"

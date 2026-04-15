@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/authStore';
+import { isDemoMode } from '@/lib/demoMode';
 import type { DeploymentWSEvent } from '@/types/deployment';
 
 type EventCallback = (data: DeploymentWSEvent) => void;
@@ -30,6 +31,13 @@ export class DeploymentWSClient {
     return new Promise((resolve, reject) => {
       if (this.ws?.readyState === WebSocket.OPEN) { resolve(); return; }
       if (this._isConnecting) { resolve(); return; }
+      if (isDemoMode()) {
+        this._isConnecting = false;
+        this._isConnected = false;
+        this._intentionalClose = true;
+        resolve();
+        return;
+      }
       this._intentionalClose = false;
       this._isConnecting = true;
 
@@ -131,6 +139,7 @@ export class DeploymentWSClient {
   }
 
   private maybeReconnect() {
+    if (isDemoMode()) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);

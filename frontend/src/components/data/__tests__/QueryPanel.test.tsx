@@ -16,11 +16,20 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock('@/components/theme-provider', () => ({
   useTheme: () => ({
-    theme: mockState.appTheme
+    theme: mockState.appTheme,
+    resolvedTheme: mockState.appTheme
   })
 }));
 
 vi.mock('@monaco-editor/react', () => ({
+  loader: {
+    init: vi.fn().mockResolvedValue({
+      editor: {
+        defineTheme: vi.fn(),
+        setTheme: vi.fn()
+      }
+    })
+  },
   default: ({
     theme,
     language,

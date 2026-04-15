@@ -1,0 +1,77 @@
+---
+/**
+ * MarqueeRow – horizontally scrolling row of inlined brand wordmarks.
+ * Every mark renders in muted monochrome via CSS filter, brightening
+ * on individual hover. The row pauses on hover and freezes mid-scroll
+ * for prefers-reduced-motion (handled globally in motion-policy.css).
+ */
+import type { LogoEntry } from '@/lib/integrationLogos';
+
+interface Props {
+  logos: LogoEntry[];
+}
+
+const { logos } = Astro.props;
+// Duplicate list so the -50% translate keyframe loops seamlessly.
+const looped = [...logos, ...logos];
+---
+
+<div class="marquee-row" role="list">
+  {looped.map((logo, i) => (
+    <span
+      class="brand-mark"
+      role="listitem"
+      aria-label={logo.name}
+      aria-hidden={i >= logos.length ? 'true' : undefined}
+      style={`--brand-h: ${logo.height ?? 32}px;`}
+      set:html={logo.svg}
+    />
+  ))}
+</div>
+
+<style>
+  .marquee-row {
+    display: flex;
+    align-items: center;
+    gap: 72px;
+    width: max-content;
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+    animation: marquee-scroll 95s linear infinite;
+  }
+  .marquee-row:hover { animation-play-state: paused; }
+
+  @keyframes marquee-scroll {
+    0%   { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(-50%, 0, 0); }
+  }
+
+  .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: var(--brand-h, 32px);
+    opacity: 0.6;
+    filter: brightness(0) saturate(100%) invert(55%);
+    transition:
+      filter 280ms cubic-bezier(0.165, 0.84, 0.44, 1),
+      opacity 280ms cubic-bezier(0.165, 0.84, 0.44, 1);
+  }
+  .brand-mark:hover {
+    opacity: 1;
+    filter: brightness(0) saturate(100%) invert(95%);
+  }
+
+  /* Inline SVGs: override the file's intrinsic width/height. */
+  .brand-mark :global(svg) {
+    height: 100%;
+    width: auto;
+    display: block;
+    image-rendering: -webkit-optimize-contrast;
+  }
+
+  @media (max-width: 720px) {
+    .marquee-row { gap: 48px; }
+    .brand-mark  { --brand-h: 24px; }
+  }
+</style>

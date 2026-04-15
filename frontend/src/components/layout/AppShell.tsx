@@ -16,13 +16,15 @@ import { getSidebarCollapsedPref, setSidebarCollapsedPref } from '@/lib/sidebarP
 
 interface AppShellProps {
   children: React.ReactNode;
+  viewportMode?: 'screen' | 'container';
+  sidebar?: React.ReactNode;
 }
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, viewportMode = 'screen', sidebar }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => getSidebarCollapsedPref());
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className={cn('flex w-full overflow-hidden bg-background', viewportMode === 'screen' ? 'h-screen' : 'h-full')}>
       {/* Sidebar - collapsed = narrow (icons only), expanded = full width */}
       <div
         className={cn(
@@ -30,14 +32,16 @@ export function AppShell({ children }: AppShellProps) {
           sidebarCollapsed ? 'w-16' : 'w-72'
         )}
       >
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => {
-            const next = !sidebarCollapsed;
-            setSidebarCollapsed(next);
-            setSidebarCollapsedPref(next);
-          }}
-        />
+        {sidebar ?? (
+          <Sidebar
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => {
+              const next = !sidebarCollapsed;
+              setSidebarCollapsed(next);
+              setSidebarCollapsedPref(next);
+            }}
+          />
+        )}
       </div>
 
       {/* Main Content Area - no top bar, phase content fills entire area */}

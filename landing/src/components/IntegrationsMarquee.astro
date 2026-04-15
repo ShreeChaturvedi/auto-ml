@@ -1,0 +1,130 @@
+---
+import { LOGOS } from '@/lib/integrationLogos';
+import MarqueeRow from './MarqueeRow.astro';
+---
+
+<section class="marquee-section" aria-labelledby="marquee-heading">
+  <div class="marquee-intro" data-scroll-reveal-marquee>
+    <p class="marquee-eyebrow">ECOSYSTEM</p>
+    <h2 class="marquee-headline" id="marquee-heading">
+      Plug into your data, your models,
+      <span class="marquee-headline-muted">and your frontier LLM of choice.</span>
+    </h2>
+  </div>
+
+  <div
+    class="marquee-container"
+    role="region"
+    aria-roledescription="marquee"
+    aria-label="Supported integrations"
+  >
+    <MarqueeRow logos={LOGOS} />
+
+    <div class="marquee-fade marquee-fade-left" aria-hidden="true"></div>
+    <div class="marquee-fade marquee-fade-right" aria-hidden="true"></div>
+  </div>
+</section>
+
+<script>
+  {
+    const intros = document.querySelectorAll<HTMLElement>('[data-scroll-reveal-marquee]');
+    const reduced =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!reduced && typeof IntersectionObserver !== 'undefined') {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const node = entry.target as HTMLElement;
+            const easing =
+              getComputedStyle(node).getPropertyValue('--ease-out-quart').trim() ||
+              'cubic-bezier(0.165, 0.84, 0.44, 1)';
+            node.animate(
+              [
+                { opacity: 0, transform: 'translateY(20px)' },
+                { opacity: 1, transform: 'translateY(0)' },
+              ],
+              { duration: 500, easing, fill: 'forwards' },
+            );
+            observer.unobserve(node);
+          }
+        },
+        { threshold: 0.2 },
+      );
+
+      for (const intro of intros) {
+        observer.observe(intro);
+      }
+    } else {
+      for (const intro of intros) {
+        intro.style.opacity = '1';
+      }
+    }
+  }
+</script>
+
+<style>
+  .marquee-section { padding: 64px 0; }
+
+  .marquee-intro {
+    max-width: 1280px;
+    margin: 0 auto 56px;
+    padding: 0 32px;
+    text-align: center;
+    opacity: 0;
+    will-change: opacity, transform;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-intro {
+      opacity: 1;
+    }
+  }
+  .marquee-eyebrow {
+    font-family: 'Geist Mono Variable', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 16px;
+  }
+  .marquee-headline {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: clamp(28px, 3.2vw, 40px);
+    font-weight: 510;
+    letter-spacing: -0.022em;
+    line-height: 1.1;
+    margin: 0;
+  }
+  .marquee-headline-muted { color: var(--text-muted); display: block; }
+
+  .marquee-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .marquee-fade {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 120px;
+    pointer-events: none;
+  }
+  .marquee-fade-left {
+    left: 0;
+    background: linear-gradient(to right,
+      var(--bg) 0%,
+      rgba(10, 10, 11, 0.9) 40%,
+      transparent 100%);
+  }
+  .marquee-fade-right {
+    right: 0;
+    background: linear-gradient(to left,
+      var(--bg) 0%,
+      rgba(10, 10, 11, 0.9) 40%,
+      transparent 100%);
+  }
+</style>

@@ -1,0 +1,348 @@
+---
+// Hero — intentionally short so the app preview dominates the fold.
+// Entrance sequence: pill fade → heading deblur → subhead word-fade → CTA rise.
+---
+
+<section class="hero" id="top">
+  <a href="#product" class="hero-pulse-link">
+    <span class="hero-pulse-dot" aria-hidden="true"></span>
+    <span class="hero-pulse-text">Now supporting GPT 5.4 class reasoning</span>
+    <svg class="hero-pulse-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </a>
+
+  <h1 class="hero-title">
+    <span class="hero-title-bright">The fastest way to build production ML models,</span>
+    <span class="hero-title-muted"><span class="hero-agentically">agentically.</span></span>
+  </h1>
+
+  <p class="hero-subhead" id="hero-subhead">
+    Upload a CSV. Describe your goal. Walk away. Come back to deployed models,
+    ranked experiments, and a notebook that explains every decision.
+  </p>
+
+  <div class="hero-cta-row">
+    <a href="/login" class="hero-cta">
+      Get Started
+      <svg class="hero-cta-icon" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+  </div>
+</section>
+
+<script>
+  const reduced =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ── Word-by-word staggered fade-in for the subhead ──
+  // Splits text into <span>s, each with incremental animation-delay.
+  const subhead = document.getElementById('hero-subhead');
+  if (subhead) {
+    if (!reduced) {
+      const text = subhead.textContent?.trim() ?? '';
+      const words = text.split(/\s+/);
+      subhead.innerHTML = '';
+      const BASE_DELAY = 900; // ms after page load (after heading resolves)
+      const STAGGER = 40;    // ms per word
+      words.forEach((word, i) => {
+        const span = document.createElement('span');
+        span.className = 'hero-subhead-word';
+        span.textContent = word;
+        span.style.animationDelay = `${BASE_DELAY + i * STAGGER}ms`;
+        subhead.appendChild(span);
+        // Add a space text node between words
+        if (i < words.length - 1) {
+          subhead.appendChild(document.createTextNode(' '));
+        }
+      });
+    } else {
+      subhead.style.opacity = '1';
+    }
+  }
+
+  // ── Auto-scroll: after entrance animations settle (~3.2s), smoothly
+  // scroll so the announcement pill is hidden above the viewport and
+  // the heading + app preview fill the visible area. ──
+  if (!reduced) {
+    let userScrolled = false;
+    const onScroll = () => { userScrolled = true; };
+    window.addEventListener('scroll', onScroll, { passive: true, once: true });
+
+    setTimeout(() => {
+      window.removeEventListener('scroll', onScroll);
+      // Bail if the user already scrolled (don't fight manual scrolling)
+      if (userScrolled || window.scrollY > 10) return;
+
+      const title = document.querySelector('.hero-title');
+      if (title) {
+        // Position heading just below the fixed nav (72px) + 16px breathing room
+        const offset = title.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+      }
+    }, 3200);
+  }
+</script>
+
+<style>
+  .hero {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 184px 32px 0; /* 72 nav + 112 top gap */
+    text-align: center;
+  }
+
+  /* ── Pulse-dot announcement ── */
+  .hero-pulse-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 16px;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: 0.8px solid transparent;
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    background-image:
+      linear-gradient(var(--bg), var(--bg)),
+      conic-gradient(from var(--pill-angle, 0deg),
+        var(--pill-trail) 0deg,
+        hsl(0 0% 38%)     var(--pill-sweep, 0deg),
+        var(--pill-trail) var(--pill-sweep, 0deg)
+      );
+    opacity: 0;
+    animation: hero-pill-enter 500ms var(--ease-out-quart) 100ms forwards,
+               hero-pill-trace 1250ms var(--ease-out-expo) 200ms forwards;
+    transition: color var(--dur-fast), filter var(--dur-fast);
+  }
+  .hero-pulse-link:hover {
+    color: var(--text);
+    filter: brightness(1.15);
+  }
+
+  @property --pill-sweep {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+  @property --pill-trail {
+    syntax: '<color>';
+    inherits: false;
+    initial-value: rgba(255, 255, 255, 0);
+  }
+  @keyframes hero-pill-trace {
+    0%   { --pill-sweep: 0deg;   --pill-trail: rgba(255, 255, 255, 0); }
+    80%  { --pill-sweep: 360deg; --pill-trail: rgba(255, 255, 255, 0); }
+    100% { --pill-sweep: 360deg; --pill-trail: hsl(0 0% 38%);          }
+  }
+
+  .hero-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 0 0 0 rgba(247, 248, 248, 0.6);
+    animation: hero-pulse 2s ease-in-out infinite;
+  }
+  @keyframes hero-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(247, 248, 248, 0.6); }
+    50%      { box-shadow: 0 0 0 4px rgba(247, 248, 248, 0); }
+  }
+
+  .hero-pulse-arrow {
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+    flex-shrink: 0;
+  }
+  .hero-pulse-link:hover .hero-pulse-arrow {
+    transform: translateX(2px);
+  }
+
+  /* ── H1 — actual deblur entrance ── */
+  .hero-title {
+    margin: 32px 0 0;
+    font-family: 'Inter Variable', sans-serif;
+    font-weight: 510;
+    font-size: clamp(40px, 6vw, 72px);
+    line-height: 1.06;
+    letter-spacing: -0.022em;
+  }
+  .hero-title-bright {
+    color: var(--text);
+    display: block;
+    opacity: 0;
+    filter: blur(18px);
+    transform: translateY(14px) scale(0.985);
+    transform-origin: center;
+    will-change: opacity, transform, filter;
+    backface-visibility: hidden;
+    animation: hero-title-deblur 780ms var(--ease-out-quart) 300ms forwards;
+  }
+  .hero-title-muted {
+    color: var(--text-muted);
+    display: block;
+    padding-bottom: 0.08em;
+    opacity: 0;
+    filter: blur(18px);
+    transform: translateY(14px) scale(0.985);
+    transform-origin: center;
+    will-change: opacity, transform, filter;
+    backface-visibility: hidden;
+    animation: hero-title-deblur 780ms var(--ease-out-quart) 440ms forwards;
+  }
+
+  .hero-agentically {
+    /* Metallic shimmer: matches frontend shimmer-effects.css pattern.
+     * Defined locally because shimmer-effects.css is scoped to the frontend
+     * bundle and is not available in the landing Astro document scope. */
+    background: linear-gradient(
+      90deg,
+      var(--text-muted) 0%,
+      var(--text-muted) 42%,
+      #E2E6ED 50%,
+      var(--text-muted) 58%,
+      var(--text-muted) 100%
+    );
+    background-size: 400% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: hero-shimmer-sweep 3.8s ease-in-out 1350ms infinite;
+  }
+
+  /* 400% background-size keeps the non-highlight portions covering the
+   * visible text at ALL positions between 0%–100%, while the highlight
+   * band (35%–65% of the gradient) moves fully off-screen at both ends.
+   * With 200%, extreme positions left gaps the browser filled via
+   * background-repeat: repeat — tiling the highlight back into view.
+   *
+   * Sweep-then-hold: 0%→40% sweeps left-to-right, 40%→100% holds
+   * off-screen right. Both the hold and the loop-restart are off-screen,
+   * so the transition is invisible. */
+  @keyframes hero-shimmer-sweep {
+    0%   { background-position: 100% 0; }
+    40%  { background-position: 0% 0; }
+    100% { background-position: 0% 0; }
+  }
+
+  @keyframes hero-title-deblur {
+    from {
+      opacity: 0;
+      filter: blur(18px);
+      transform: translateY(14px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      filter: blur(0);
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes hero-pill-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Subhead ── */
+  .hero-subhead {
+    margin: 24px auto 0;
+    max-width: 620px;
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--text-muted);
+    line-height: 1.55;
+    /* Falls back to visible if JS doesn't run */
+    opacity: 1;
+  }
+
+  /* Word-level animation spans — injected by the script above */
+  .hero-subhead-word {
+    display: inline;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: hero-word-in 350ms var(--ease-out-quart) forwards;
+  }
+  @keyframes hero-word-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ── CTA ── */
+  .hero-cta-row {
+    margin-top: 40px;
+    display: flex;
+    justify-content: center;
+    opacity: 0;
+    animation: hero-pill-enter 500ms var(--ease-out-quart) 1600ms forwards;
+  }
+  .hero-cta {
+    font-family: 'Inter Variable', sans-serif;
+    font-size: 16px;
+    font-weight: 510;
+    color: #0A0A0B;
+    text-decoration: none;
+    background: linear-gradient(180deg, #F7F8F8 0%, #E6E6E6 100%);
+    padding: 0 40px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.2),
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 8px 24px rgba(0, 0, 0, 0.08);
+    transition: transform var(--dur-fast) var(--ease-linear-default),
+                gap var(--dur-fast) var(--ease-linear-default);
+  }
+  .hero-cta:hover {
+    transform: translateY(-1px);
+    gap: 12px;
+  }
+  .hero-cta-icon {
+    flex-shrink: 0;
+    transition: transform var(--dur-fast) var(--ease-linear-default);
+  }
+  .hero-cta:hover .hero-cta-icon {
+    transform: translateX(2px);
+  }
+
+  /* ── Reduced motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    .hero-title-bright,
+    .hero-title-muted,
+    .hero-pulse-link,
+    .hero-cta-row {
+      opacity: 1;
+      filter: none;
+      animation: none;
+      transform: none;
+      will-change: auto;
+    }
+    .hero-pulse-link {
+      --pill-sweep: 360deg;
+      --pill-trail: hsl(0 0% 38%);
+    }
+    .hero-subhead-word {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+    .hero-agentically {
+      -webkit-text-fill-color: unset; /* restore text visibility */
+      background: none;
+      animation: none;
+    }
+  }
+</style>

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Logo } from '@/components/ui/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { isDemoMode } from '@/lib/demoMode';
 
 import { WorkflowPhaseTree } from './WorkflowPhaseTree';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
@@ -56,6 +57,9 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   const handleGoHome = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isDemoMode()) {
+      return;
+    }
     const el = sidebarRef.current;
     // Suppress CSS transitions so the sidebar swap doesn't flash.
     if (el) el.dataset.instantNav = '';

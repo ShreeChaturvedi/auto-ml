@@ -1,0 +1,56 @@
+---
+/**
+ * Section 4.5 — three feature deep-dives composed with the shared
+ * `<DeepDive>` Astro wrapper. Each wrapper renders its chrome (eyebrow,
+ * headline, body, kbd hint) server-side so the copy lands in the built
+ * HTML, and slots a live React visual as a `client:only` island. The
+ * visuals must be client-only because they mount real frontend composer
+ * components (LlmChatComposer, etc.) whose hooks rely on browser-only
+ * APIs and crash during Astro's SSR pass.
+ */
+import DeepDive from './DeepDive.astro';
+import ChatDeepDive from './deep-dives/ChatDeepDive.tsx';
+import PlanDeepDive from './deep-dives/PlanDeepDive.tsx';
+import NotebookDeepDive from './deep-dives/NotebookDeepDive.tsx';
+---
+
+<div id="features">
+  <DeepDive
+    id="feature-chat"
+    eyebrow="01 — CHAT"
+    headlineBright="Talk to your data like a colleague."
+    headlineMuted="Voice, text, or keyboard — the agent understands."
+    body="Ask in plain English. Watch tool calls stream in real time as the agent reads your tables, proposes transformations, and explains its reasoning."
+    kbdLabel="to open chat in any tab"
+    kbdBadge="⌘K"
+    reversed={false}
+  >
+    <ChatDeepDive client:only="react" />
+  </DeepDive>
+
+  <DeepDive
+    id="feature-plan"
+    eyebrow="02 — PLAN"
+    headlineBright="Turn intent into a training plan."
+    headlineMuted="Radio buttons, not prompt engineering."
+    body="Four to five cards constrain the plan before training begins — target column, task type, compute budget, interpretability preference. Each answer narrows the model candidates, CV strategy, and feature pipeline the planner will execute."
+    kbdLabel="to advance"
+    kbdBadge="Enter"
+    reversed={true}
+  >
+    <PlanDeepDive client:only="react" />
+  </DeepDive>
+
+  <DeepDive
+    id="feature-notebook"
+    eyebrow="03 — NOTEBOOK"
+    headlineBright="A real notebook, not a pipeline."
+    headlineMuted="Pandas, sklearn, Plotly — every cell editable."
+    body="Every preprocessing step, feature transform, and model fit lands as a Jupyter cell with real sklearn and pandas code. Edit a line, re-run the cell, or drop in your own — the kernel is yours."
+    kbdLabel="to run"
+    kbdBadge="shift+enter"
+    reversed={false}
+  >
+    <NotebookDeepDive client:only="react" />
+  </DeepDive>
+</div>

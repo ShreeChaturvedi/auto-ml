@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" fill="none">
+  <defs>
+    <style>
+      .mo-dash {
+        stroke-dasharray: 4 4;
+        animation: mo-dash-anim 2s linear infinite;
+      }
+      @keyframes mo-dash-anim {
+        0% { stroke-dashoffset: 8; }
+        100% { stroke-dashoffset: 0; }
+      }
+      .mo-token {
+        animation: mo-float 4s ease-in-out infinite alternate;
+      }
+      .mo-token-fast {
+        animation: mo-float 3s ease-in-out infinite alternate-reverse;
+      }
+      @keyframes mo-float {
+        0% { transform: translateY(0px); }
+        100% { transform: translateY(-4px); }
+      }
+      .mo-glow-path {
+        stroke-dasharray: 40 100;
+        stroke-dashoffset: 40;
+        animation: shoot 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        filter: drop-shadow(0px 0px 3px rgba(255,255,255,0.8));
+      }
+      @keyframes shoot {
+        0% { stroke-dashoffset: 40; opacity: 0; }
+        10% { opacity: 1; }
+        90% { stroke-dashoffset: -100; opacity: 1; }
+        100% { stroke-dashoffset: -100; opacity: 0; }
+      }
+      .mo-pulse {
+        animation: pulse 2s ease-in-out infinite alternate;
+      }
+      @keyframes pulse {
+        0% { opacity: 0.3; }
+        100% { opacity: 0.8; }
+      }
+    </style>
+  </defs>
+<polygon points="180.00,70.00 320.00,140.00 180.00,210.00 40.00,140.00" fill="rgba(255,255,255,0.01)" stroke="rgba(255,255,255,0.06)" stroke-width="0.5" />
+
+    <polygon points="145.00,91.00 278.00,157.50 278.00,147.50 145.00,81.00" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="309.50,141.75 278.00,157.50 278.00,147.50 309.50,131.75" fill="rgba(255,255,255,0.05)" stroke="none" />
+    <polygon points="176.50,65.25 309.50,131.75 278.00,147.50 145.00,81.00" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    
+    <polygon points="96.00,115.50 229.00,182.00 229.00,172.00 96.00,105.50" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="264.00,164.50 229.00,182.00 229.00,172.00 264.00,154.50" fill="rgba(255,255,255,0.05)" stroke="none" />
+    <polygon points="131.00,88.00 264.00,154.50 229.00,172.00 96.00,105.50" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    
+    <polygon points="50.50,138.25 183.50,204.75 183.50,194.75 50.50,128.25" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="215.00,189.00 183.50,204.75 183.50,194.75 215.00,179.00" fill="rgba(255,255,255,0.05)" stroke="none" />
+    <polygon points="82.00,112.50 215.00,179.00 183.50,194.75 50.50,128.25" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    <line x1="167.75" y1="74.62" x2="286.75" y2="134.12" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" class="mo-dash" />
+<line x1="120.50" y1="98.25" x2="239.50" y2="157.75" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" class="mo-dash" />
+<line x1="73.25" y1="121.88" x2="192.25" y2="181.38" stroke="rgba(255,255,255,0.35)" stroke-width="1.5" class="mo-dash" />
+<g class="mo-token">
+
+    <polygon points="178.25,83.88 192.25,90.88 192.25,82.88 178.25,75.88" fill="rgba(255,255,255,0.6)" stroke="none" />
+    <polygon points="206.25,83.88 192.25,90.88 192.25,82.88 206.25,75.88" fill="rgba(255,255,255,0.2)" stroke="none" />
+    <polygon points="192.25,68.88 206.25,75.88 192.25,82.88 178.25,75.88" fill="rgba(255,255,255,0.4)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    </g>
+<g class="mo-token-fast">
+
+    <polygon points="164.25,124.12 181.75,132.88 181.75,124.88 164.25,116.12" fill="rgba(255,255,255,0.7)" stroke="none" />
+    <polygon points="195.75,125.88 181.75,132.88 181.75,124.88 195.75,117.88" fill="rgba(255,255,255,0.3)" stroke="none" />
+    <polygon points="178.25,109.12 195.75,117.88 181.75,124.88 164.25,116.12" fill="rgba(255,255,255,0.5)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    </g>
+<g class="mo-token">
+
+    <polygon points="141.50,160.00 166.00,172.25 166.00,164.25 141.50,152.00" fill="rgba(255,255,255,0.5)" stroke="none" />
+    <polygon points="180.00,165.25 166.00,172.25 166.00,164.25 180.00,157.25" fill="rgba(255,255,255,0.15)" stroke="none" />
+    <polygon points="155.50,145.00 180.00,157.25 166.00,164.25 141.50,152.00" fill="rgba(255,255,255,0.3)" stroke="rgba(255,255,255,0.15)" stroke-width="0.5" />
+    </g>
+<line x1="167.75" y1="86.62" x2="167.75" y2="76.62" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="286.75" y1="146.12" x2="286.75" y2="136.12" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="120.50" y1="110.25" x2="120.50" y2="100.25" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="239.50" y1="169.75" x2="239.50" y2="159.75" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="73.25" y1="133.88" x2="73.25" y2="123.88" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<line x1="192.25" y1="193.38" x2="192.25" y2="183.38" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" />
+<path d="M 202.75,92.12 Q 180.00,80.50 155.50,115.75" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
+<path class="mo-glow-path" d="M 202.75,92.12 Q 180.00,80.50 155.50,115.75" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" pathLength="100" style="animation-delay: 0s;" />
+<path d="M 190.50,133.25 Q 169.50,120.75 143.25,156.88" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" />
+<path class="mo-glow-path" d="M 190.50,133.25 Q 169.50,120.75 143.25,156.88" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" pathLength="100" style="animation-delay: 1.5s;" />
+<path d="M 248.25,114.88 Q 201.00,95.50 153.75,162.12" fill="none" stroke="rgba(255,255,255,0.25)" stroke-dasharray="3 3" stroke-width="1.5" />
+<path class="mo-glow-path" d="M 248.25,114.88 Q 201.00,95.50 153.75,162.12" fill="none" stroke="rgba(255,255,255,1)" stroke-width="1.5" pathLength="100" style="animation-delay: 0.8s;" />
+<circle cx="286.75" cy="134.12" r="2.5" fill="rgba(255,255,255,0.95)" class="mo-pulse" />
+<circle cx="239.50" cy="157.75" r="2.5" fill="rgba(255,255,255,0.95)" class="mo-pulse" style="animation-delay: 0.5s;" />
+<circle cx="192.25" cy="181.38" r="3.5" fill="rgba(255,255,255,1)" filter="drop-shadow(0 0 2px rgba(255,255,255,0.5))" />
+</svg>

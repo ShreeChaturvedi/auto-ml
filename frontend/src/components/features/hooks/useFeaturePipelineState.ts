@@ -10,6 +10,7 @@ import { useFeatureVersioning } from './useFeatureVersioning';
 import { useFeatureApply } from './useFeatureApply';
 import { useSuggestionDrafts } from './useSuggestionDrafts';
 import type { FeatureSuggestionItem } from '../featureEngineeringUtils';
+import { isDemoMode } from '@/lib/demoMode';
 
 export type { SuggestionDraft } from './useSuggestionDrafts';
 
@@ -167,6 +168,12 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
       try {
         await hydrateFromBackend(projectId);
         if (cancelled) {
+          return;
+        }
+
+        if (isDemoMode()) {
+          hydrateFeatures(projectId, { force: true });
+          setPanelError(null);
           return;
         }
 

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" width="100%" height="100%" fill="none">
+  <defs>
+    <style>
+      .ms-beam-dash { stroke-dasharray: 2 3; animation: ms-bd 2s linear infinite; }
+      @keyframes ms-bd { to { stroke-dashoffset: -10; } }
+      .ms-bk-pulse { animation: ms-bp 2s ease-in-out infinite alternate; }
+      @keyframes ms-bp { 0% { r: 2; opacity: 0.8; } 100% { r: 2.8; opacity: 1; } }
+      .ms-bk-halo { animation: ms-bh 2.5s ease-in-out infinite alternate; }
+      @keyframes ms-bh { 0% { r: 6; opacity: 0.3; } 100% { r: 9; opacity: 0.15; } }
+      .ms-ri { animation: ms-ri 3s ease-in-out infinite alternate; }
+      @keyframes ms-ri { 0% { opacity: 0.15; } 100% { opacity: 0.35; } }
+      .ms-ro { animation: ms-ro 4s ease-in-out infinite alternate; }
+      @keyframes ms-ro { 0% { opacity: 0.08; } 100% { opacity: 0.2; } }
+      @media (prefers-reduced-motion: reduce) {
+        .ms-subanim * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+      }
+    </style>
+  </defs>
+
+  <polygon id="ms-floor" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.22)" stroke-width="1"/>
+
+  <g stroke="rgba(255,255,255,0.08)" stroke-width="0.5">
+    <line id="ms-gl0"/><line id="ms-gl1"/><line id="ms-gl2"/>
+    <line id="ms-gl3"/><line id="ms-gl4"/><line id="ms-gl5"/>
+  </g>
+
+  <polygon id="ms-w0"/><polygon id="ms-w1"/><polygon id="ms-w2"/><polygon id="ms-w3"/>
+
+  <line id="ms-pil0" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+  <line id="ms-pil1" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+  <line id="ms-pil2" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+  <line id="ms-pil3" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
+
+  <polygon id="ms-scan" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.14)" stroke-width="0.5" stroke-dasharray="2 2"/>
+
+  <g stroke="rgba(255,255,255,0.28)" stroke-width="0.75">
+    <line id="ms-nla"/><circle id="ms-nda" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+    <line id="ms-nlb"/><circle id="ms-ndb" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+    <line id="ms-nlc"/><circle id="ms-ndc" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+    <line id="ms-nld"/><circle id="ms-ndd" r="1.5" fill="rgba(255,255,255,0.55)" stroke="none"/>
+  </g>
+
+  <g class="ms-subanim">
+    <ellipse id="ms-ring-o" cx="180" cy="142" rx="38" ry="19" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="0.5" class="ms-ro"/>
+    <ellipse id="ms-ring-i" cx="180" cy="142" rx="28" ry="14" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.5" stroke-dasharray="1 3" class="ms-ri"/>
+  </g>
+
+  <polygon id="ms-pyr-shadow" fill="rgba(255,255,255,0.06)" stroke="none"/>
+  <polygon id="ms-pyr-base" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.40)" stroke-width="0.5"/>
+  <polygon id="ms-pyrf0"/><polygon id="ms-pyrf1"/><polygon id="ms-pyrf2"/><polygon id="ms-pyrf3"/>
+
+  <g class="ms-subanim">
+    <line id="ms-beam" stroke="rgba(255,255,255,0.35)" stroke-width="1" class="ms-beam-dash"/>
+    <circle id="ms-bk-dot" r="2" fill="rgba(255,255,255,0.60)" class="ms-bk-pulse"/>
+    <circle id="ms-bk-ring" r="6" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="0.5" class="ms-bk-halo"/>
+  </g>
+
+  <polyline id="ms-edge-top" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.25"/>
+
+  <text x="25" y="38" fill="rgba(255,255,255,0.2)" font-family="ui-monospace, monospace" font-size="5" letter-spacing="1">ENV: SANDBOX</text>
+  <text x="335" y="215" fill="rgba(255,255,255,0.2)" font-family="ui-monospace, monospace" font-size="5" letter-spacing="1" text-anchor="end">SYS.READY</text>
+</svg>

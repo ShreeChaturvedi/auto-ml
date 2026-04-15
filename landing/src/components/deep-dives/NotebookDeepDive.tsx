@@ -233,16 +233,17 @@ function NotebookDeepDiveVisual() {
       </div>
 
       {renderCursor && (
-        <MousePointer2
+        <span
           className={cn(
-            styles.cursorSprite,
-            phase === 'cursor-glide' && styles.cursorSpriteGlided,
-            phase === 'cursor-click' && styles.cursorSpriteClick,
+            styles.cursorWrap,
+            phase === 'cursor-glide' && styles.cursorWrapGlided,
+            phase === 'cursor-click' && styles.cursorWrapClick,
           )}
           style={cursorStyle}
           aria-hidden="true"
-          size={16}
-        />
+        >
+          <MousePointer2 className={styles.cursorIcon} size={16} />
+        </span>
       )}
     </div>
   );

@@ -211,7 +211,7 @@
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: hero-shimmer-sweep 7.6s ease-in-out 1350ms infinite;
+    animation: hero-shimmer-sweep 4.2s ease-in-out 1350ms infinite;
   }
 
   /* 400% background-size keeps the non-highlight portions covering the
@@ -220,12 +220,12 @@
    * With 200%, extreme positions left gaps the browser filled via
    * background-repeat: repeat — tiling the highlight back into view.
    *
-   * Sweep-then-hold: 0%→40% sweeps left-to-right, 40%→100% holds
+   * Sweep-then-hold: 0%→65% sweeps left-to-right, 65%→100% holds
    * off-screen right. Both the hold and the loop-restart are off-screen,
    * so the transition is invisible. */
   @keyframes hero-shimmer-sweep {
     0%   { background-position: 100% 0; }
-    40%  { background-position: 0% 0; }
+    65%  { background-position: 0% 0; }
     100% { background-position: 0% 0; }
   }
 

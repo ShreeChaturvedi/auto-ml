@@ -126,7 +126,10 @@
 
 .cursorIcon {
   display: block;
-  color: var(--text);
+  /* Match other deep-dive sprites: filled pointer reads on both dark and light backgrounds. */
+  color: #f8fafc;
+  fill: #0a0a0a;
+  stroke: #f8fafc;
 }
 
 .cursorWrapGlided {

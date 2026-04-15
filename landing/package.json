@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev --port 4321",
+    "dev:fresh": "rm -rf node_modules/.vite && astro dev --port 4321 --force",
     "build": "astro build",
     "preview": "astro preview",
     "postinstall": "node ../scripts/patch-csp-deps.mjs",

@@ -84,6 +84,7 @@ landing:build:
   extends: .run_on_branch_or_mr
   stage: build
   script:
+    - npm --prefix landing ci
     - npm --prefix landing run typecheck
     - npm --prefix landing run build
     - npm --prefix landing run test
@@ -96,7 +97,7 @@ landing:build:
     paths:
       - frontend/node_modules/
       - landing/node_modules/
-    policy: pull
+    policy: pull-push
   artifacts:
     paths:
       - landing/dist/

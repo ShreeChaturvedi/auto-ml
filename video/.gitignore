@@ -29,3 +29,9 @@ lambda.ts
 .env
 cut.ts
 normalize.ts
+
+# Music bed + SFX assets — dropped in locally, not committed.
+public/audio/*
+!public/audio/README.md
+public/sfx/*
+!public/sfx/README.md

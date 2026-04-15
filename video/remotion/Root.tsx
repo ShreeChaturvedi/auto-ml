@@ -1,3 +1,5 @@
+import "../src/frontend-bridge/determinism";
+import "../src/style.css";
 import React from "react";
 import { Composition } from "remotion";
 import { FPS } from "../config/fps";

@@ -1,0 +1,14 @@
+/**
+ * Video-workspace global stylesheet.
+ *
+ * Imported exactly once from `video/remotion/Root.tsx` so Remotion bundles
+ * Tailwind + the real frontend design tokens into the composition. Mirrors
+ * the import set in `frontend/src/index.css` — `theme.css` already contains
+ * the `@tailwind base/components/utilities` directives, so we defer to it
+ * rather than redeclaring them.
+ */
+
+@import "../../frontend/src/styles/theme.css";
+@import "../../frontend/src/styles/ui-utilities.css";
+@import "../../frontend/src/styles/content-effects.css";
+@import "../../frontend/src/styles/surfaces.css";

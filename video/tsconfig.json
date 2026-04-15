@@ -28,6 +28,7 @@
       "@/lib/api/projects":               ["./src/frontend-bridge/mockProjectApi.ts"],
       "@/components/ui/shooting-stars":   ["./src/frontend-bridge/stars/ShootingStars.tsx"],
       "@/components/ui/stars-background": ["./src/frontend-bridge/stars/StarsBackground.tsx"],
+      "@/components/projects/ProjectDialog": ["./src/frontend-bridge/mockProjectDialog.tsx"],
       "@/*":                              ["../frontend/src/*"],
       "*":                                ["./node_modules/@types/*", "./node_modules/*"]
     }

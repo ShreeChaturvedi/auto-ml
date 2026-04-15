@@ -59,6 +59,10 @@ Config.overrideWebpackConfig((currentConfig) => {
       __dirname,
       "./src/frontend-bridge/stars/StarsBackground.tsx",
     ),
+    "@/components/projects/ProjectDialog": path.resolve(
+      __dirname,
+      "./src/frontend-bridge/mockProjectDialog.tsx",
+    ),
   };
   return cfg;
 });

@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { AppScene, AppScreenId, SceneWithMetadata } from "../../../config/scenes";
 
 export type AppScreenProps = {
@@ -24,5 +24,7 @@ export const screenRegistry: Partial<Record<AppScreenId, AppScreenComponent>> = 
   //   landing: lazy(() => import("./screens/LandingScreen").then(m => ({ default: m.LandingScreen }))),
   //   login:   lazy(() => import("./screens/LoginScreen").then(m => ({ default: m.LoginScreen }))),
   //   signup:  lazy(() => import("./screens/SignupScreen").then(m => ({ default: m.SignupScreen }))),
-  //   home:    lazy(() => import("./screens/HomeScreen").then(m => ({ default: m.HomeScreen }))),
+  home: lazy(() =>
+    import("./screens/HomeScreen").then((m) => ({ default: m.HomeScreen })),
+  ),
 };

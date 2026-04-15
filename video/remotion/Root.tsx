@@ -56,6 +56,16 @@ const DEFAULT_SCENES: SelectableScene[] = [
     durationInFrames: 1620,
     meta: { chapters: DEFAULT_CHAPTERS },
   },
+  // Beat 2 de-risk: 4s smoke scene that mounts the real HomePage inside
+  // Remotion's rendering pipeline via AppScene + the frontend-bridge shims.
+  // Kept at the end of the list so slide previews earlier in the composition
+  // aren't affected; remove or replace once Beat 3+ builds the full demo flow.
+  {
+    type: "app",
+    screen: "home",
+    chrome: "mac",
+    durationInFrames: 240,
+  },
 ];
 
 export const RemotionRoot: React.FC = () => {

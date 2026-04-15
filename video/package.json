@@ -10,6 +10,7 @@
     "build:only": "remotion render remotion/index.ts main out/partial.mp4",
     "render:lambda": "tsx scripts/render-lambda.mts",
     "voiceover": "tsx scripts/voiceover.mts",
+    "capture:landing": "tsx scripts/capture-landing.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -46,6 +47,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "@remotion/eslint-config-flat": "4.0.448",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",

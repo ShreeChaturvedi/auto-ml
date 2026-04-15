@@ -126,7 +126,17 @@ landing:vercel:production:
   script:
     - npx --yes vercel@"$VERCEL_CLI_VERSION" pull --yes --environment=production --token="$VERCEL_TOKEN"
     - npx --yes vercel@"$VERCEL_CLI_VERSION" build --yes --target=production --token="$VERCEL_TOKEN"
-    - npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --yes --target=production --token="$VERCEL_TOKEN" -m gitlabDeployment="1" -m gitlabCommitRef="$CI_COMMIT_REF_NAME" -m gitlabCommitSha="$CI_COMMIT_SHA"
+    - |
+      set -e
+      DEPLOYMENT_URL="$(
+        npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --yes --target=production --token="$VERCEL_TOKEN" --format json \
+          -m gitlabDeployment="1" \
+          -m gitlabCommitRef="$CI_COMMIT_REF_NAME" \
+          -m gitlabCommitSha="$CI_COMMIT_SHA" \
+          | node -e "const fs=require('fs');const txt=fs.readFileSync(0,'utf8').trim();const lines=txt.split(/\r?\n/).filter(Boolean);const j=JSON.parse(lines[lines.length-1]);const url=j.url||j.deploymentUrl||(j.deployment&&j.deployment.url);if(!url)process.exit(1);process.stdout.write(String(url).replace(/^https?:\\/\\//,''));"
+      )"
+      echo "Deployment URL: $DEPLOYMENT_URL"
+      npx --yes vercel@"$VERCEL_CLI_VERSION" alias set "$DEPLOYMENT_URL" agentic-automl.vercel.app --token="$VERCEL_TOKEN" --non-interactive
   rules:
     - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       changes:

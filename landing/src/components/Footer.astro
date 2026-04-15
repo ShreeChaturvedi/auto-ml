@@ -88,25 +88,61 @@ const resourceLinks = [
 <div class="footer-giant-wordmark" aria-hidden="true">
   <svg class="footer-giant-svg" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid meet">
     <defs>
-      <linearGradient id="agentic-chase-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1200" y2="0">
+      <!-- Static metallic gradient for the always-visible base layer stroke.
+           Dark at extremes, silver-grey at center — the "brushed metal" tone.
+           Peak is intentionally capped well below the shine color (#F7F8F8)
+           so the moving shine visibly pops against the base everywhere. -->
+      <linearGradient id="agentic-base-grad" gradientUnits="userSpaceOnUse"
+                      x1="0" y1="0" x2="1200" y2="0">
         <stop offset="0%"   stop-color="#4d5056" />
-        <stop offset="25%"  stop-color="#9ea1a6" />
-        <stop offset="50%"  stop-color="#F7F8F8" />
-        <stop offset="75%"  stop-color="#9ea1a6" />
+        <stop offset="25%"  stop-color="#74777c" />
+        <stop offset="50%"  stop-color="#9ea1a6" />
+        <stop offset="75%"  stop-color="#74777c" />
         <stop offset="100%" stop-color="#4d5056" />
       </linearGradient>
 
+      <!-- Bright window for the sweep mask. 16 % band (42–58 %) matches the
+           QA'd width of the hero shimmer at Hero.astro:205-208. -->
+      <linearGradient id="agentic-sheen-band" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%"   stop-color="#000" />
+        <stop offset="42%"  stop-color="#000" />
+        <stop offset="50%"  stop-color="#fff" />
+        <stop offset="58%"  stop-color="#000" />
+        <stop offset="100%" stop-color="#000" />
+      </linearGradient>
+
+      <!-- Mask: white = shine visible, black = only base visible.
+           x-region (-200 to +1400) covers the text's horizontal stroke extent.
+           y-region (-200 to +500) covers the full vertical glyph extent —
+           font-size 483 centered at y=150 means glyphs reach well past the
+           viewBox's y=0..300, so the mask region AND the inner band rect
+           must both extend vertically or the top/bottom of the shine clips.
+           Band gradient varies only in x, so vertical stretch doesn't distort it. -->
+      <mask id="agentic-shine-mask" maskUnits="userSpaceOnUse"
+            x="-200" y="-200" width="1600" height="700">
+        <g class="agentic-sheen-wrap">
+          <rect x="-1200" y="-200" width="2400" height="700"
+                fill="url(#agentic-sheen-band)" />
+        </g>
+      </mask>
     </defs>
 
+    <!-- Layer 1: metallic-gradient stroke, always visible.
+         fill="var(--surface-0)" keeps letter interiors opaque against
+         the page background (preserves the hollow-outline look). -->
     <text class="agentic-base"
           x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
-          textLength="1320" lengthAdjust="spacingAndGlyphs"
-          fill="var(--surface-0)" stroke="hsl(0 0% 22%)" stroke-width="0.5">AGENT</text>
+          textLength="1346.4" lengthAdjust="spacingAndGlyphs"
+          fill="var(--surface-0)" stroke="url(#agentic-base-grad)" stroke-width="1.5">AGENT</text>
 
-    <text class="agentic-chaser"
+    <!-- Layer 2: solid bright-white stroke, only visible through the moving mask window.
+         Punches a consistent highlight through the metallic base gradient.
+         Same fill so the two layers composite identically. -->
+    <text class="agentic-shine"
           x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
-          textLength="1320" lengthAdjust="spacingAndGlyphs"
-          fill="transparent" stroke="url(#agentic-chase-grad)" stroke-width="0.5">AGENT</text>
+          textLength="1346.4" lengthAdjust="spacingAndGlyphs"
+          fill="var(--surface-0)" stroke="#F7F8F8" stroke-width="1.5"
+          mask="url(#agentic-shine-mask)">AGENT</text>
   </svg>
 </div>
 
@@ -222,19 +258,27 @@ const resourceLinks = [
     paint-order: stroke;
   }
 
-  /* Single chasing pulse, same stroke-width as the base outline. */
-  .agentic-chaser {
-    stroke-dasharray: 80 240;
-    stroke-dashoffset: 0;
-    animation: agentic-chase 3s linear infinite;
+  /* Continuous metallic sheen sweep. ~3s matches the prior animation cadence.
+     transform-box: fill-box is LOAD-BEARING — it resolves translateX(%) against
+     the <g>'s own bbox (2400 units), not the outer viewBox (1200 units). Without
+     it, the sweep covers half the distance and the loop restart visibly snaps. */
+  .agentic-sheen-wrap {
+    transform-box: fill-box;
+    transform-origin: 0 0;
+    animation: agentic-sheen 3s linear infinite;
   }
 
-  @keyframes agentic-chase {
-    from { stroke-dashoffset: 0; }
-    to   { stroke-dashoffset: -320; }
+  @keyframes agentic-sheen {
+    from { transform: translateX(-25%); } /* bright center at world-x = -600, off left */
+    to   { transform: translateX(75%);  } /* bright center at world-x = +1800, off right */
   }
 
+  /* motion-policy.css already zeroes animation-duration under prefers-reduced-motion.
+     This local rule only pins the resting position of the bright band. */
   @media (prefers-reduced-motion: reduce) {
-    .agentic-chaser { animation: none; stroke-dasharray: none; opacity: 0.4; }
+    .agentic-sheen-wrap {
+      animation: none;
+      transform: translateX(25%); /* bright center parked at world-x = +600 (center) */
+    }
   }
 </style>

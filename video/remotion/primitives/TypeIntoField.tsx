@@ -1,7 +1,8 @@
 import React, { useEffect } from "react";
 import { spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { SPRING_UI } from "../../config/easing";
-import type { TypeScheduleEntry } from "../../src/frontend-bridge/useFormTyping";
+
+export type TypeScheduleEntry = { char: string; frame: number };
 
 export type TypeIntoFieldProps = {
   schedule: readonly TypeScheduleEntry[];

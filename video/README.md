@@ -62,12 +62,12 @@ video/
 │   │   ├── Scene.tsx      dispatcher (add a case here for new scene types)
 │   │   ├── Slide/         per-id slide dispatch + IntroSlide/TeamSlide/ProblemSlide
 │   │   ├── CodeReveal/    shiki-based code card
-│   │   ├── Demo/          OffthreadVideo inside AppChrome
+│   │   ├── Demo/          OffthreadVideo inside BrowserChrome + overlays
 │   │   ├── Title/         full-screen title card
 │   │   ├── EndCard/       capstone thank-you
 │   │   └── TableOfContents/
 │   ├── calculate-metadata/  resolves scene durations from VO MP3 lengths
-│   └── helpers/           AppChrome, WaitForFonts, small utilities
+│   └── helpers/           BrowserChrome, WaitForFonts, small utilities
 ├── public/
 │   ├── fonts/             self-hosted Monaspace Neon (.woff2)
 │   ├── main/              screen-recording MP4s (gitignored; drop files here)

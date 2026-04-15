@@ -60,51 +60,7 @@ export const codeRevealScene = z.object({
   durationInFrames: z.number().int().positive().default(480),
 });
 
-// ---- Demo (screen recording inside app chrome) ------------------------------
-
-export const demoScene = z.object({
-  type: z.literal("demo"),
-  /** Screen recording path, relative to `public/main/`. */
-  videoFile: z.string(),
-  voiceoverFile,
-  /** Optional chapter label shown in the corner while the clip plays. */
-  chapter: z.string().optional(),
-  /**
-   * Fallback duration in frames when no voiceover is present. If omitted
-   * and no voiceover is provided, defaults to 8 seconds at 60 fps.
-   */
-  durationInFrames: z.number().int().positive().default(480),
-  /** Trim the start of the video clip (in seconds). */
-  startOffset: z.number().default(0),
-});
-
-// ---- Title card -------------------------------------------------------------
-
-export const titleScene = z.object({
-  type: z.literal("title"),
-  title: z.string(),
-  subtitle: z.string().nullable().default(null),
-  voiceoverFile,
-  durationInFrames: z.number().int().positive().default(180),
-});
-
-// ---- End card ---------------------------------------------------------------
-
-export const endcardScene = z.object({
-  type: z.literal("endcard"),
-  durationInFrames: z.number().int().positive().default(360),
-  channel: brand,
-  links: z.array(linkType).default([]),
-});
-
-// ---- Table of contents ------------------------------------------------------
-
-export const tableOfContentsScene = z.object({
-  type: z.literal("tableofcontents"),
-  durationInFrames: z.number().int().positive().default(240),
-});
-
-// ---- App (real app components inside a chrome variant) ---------------------
+// ---- App timeline (shared by `demoScene`) ----------------------------------
 
 /** Reference to a VO alignment mark (resolved at runtime via useVoiceoverAlignment). */
 const markRef = z.object({ mark: z.string() });
@@ -136,42 +92,64 @@ export const appTimelineEvent = z.object({
 
 export type AppTimelineEvent = z.infer<typeof appTimelineEvent>;
 
-/** Which real-app screen to mount inside the chrome. */
-export const appScreenId = z.enum([
-  "landing",
-  "login",
-  "signup",
-  "home",
-  "project.upload",
-  "project.eda",
-  "project.preprocess",
-  "project.features",
-  "project.train",
-  "project.experiments",
-]);
-
-export type AppScreenId = z.infer<typeof appScreenId>;
-
+/** Chrome variant wrapping the demo capture (mac window / browser / full-bleed). */
 export const appChromeVariant = z.enum(["mac", "browser", "none"]);
 export type AppChromeVariant = z.infer<typeof appChromeVariant>;
 
-export const appScene = z.object({
-  type: z.literal("app"),
-  /** Which screen renderer to mount. Maps 1:1 to AppScene/screens/*. */
-  screen: appScreenId,
-  /** Chrome variant wrapping the screen (mac window / browser / full-bleed). */
+// ---- Demo (Playwright capture + Remotion overlay primitives) ----------------
+
+export const demoScene = z.object({
+  type: z.literal("demo"),
+  /** Screen recording filename (no folder prefix). */
+  videoFile: z.string(),
+  /** Which `public/` subfolder the clip lives in. Legacy clips live in `main/`;
+   * Playwright-driven captures live in `captures/`. */
+  videoRoot: z.enum(["main", "captures"]).default("main"),
+  voiceoverFile,
+  /** Optional chapter label shown in the corner while the clip plays. */
+  chapter: z.string().optional(),
+  /**
+   * Fallback duration in frames when no voiceover is present. If omitted
+   * and no voiceover is provided, defaults to 8 seconds at 60 fps.
+   */
+  durationInFrames: z.number().int().positive().default(480),
+  /** Trim the start of the video clip (in seconds). */
+  startOffset: z.number().default(0),
+  /** Chrome variant wrapping the capture. Defaults to macOS window. */
   chrome: appChromeVariant.default("mac"),
   /** URL shown in chrome="browser" variant's address bar. */
   url: z.string().optional(),
-  /** Per-screen fixture payload; consumed by the screen component. */
-  state: z.record(z.string(), z.unknown()).optional(),
-  /** Choreographed events (VO-mark or chain-triggered). */
+  /** Optional cursor path JSON, relative to `public/captures/`. */
+  cursorFile: z.string().optional(),
+  /** Choreographed overlay events (VO-mark or chain-triggered). */
   timeline: z.array(appTimelineEvent).optional(),
-  voiceoverFile,
-  durationInFrames: z.number().int().positive().default(600),
 });
 
-export type AppScene = z.infer<typeof appScene>;
+// ---- Title card -------------------------------------------------------------
+
+export const titleScene = z.object({
+  type: z.literal("title"),
+  title: z.string(),
+  subtitle: z.string().nullable().default(null),
+  voiceoverFile,
+  durationInFrames: z.number().int().positive().default(180),
+});
+
+// ---- End card ---------------------------------------------------------------
+
+export const endcardScene = z.object({
+  type: z.literal("endcard"),
+  durationInFrames: z.number().int().positive().default(360),
+  channel: brand,
+  links: z.array(linkType).default([]),
+});
+
+// ---- Table of contents ------------------------------------------------------
+
+export const tableOfContentsScene = z.object({
+  type: z.literal("tableofcontents"),
+  durationInFrames: z.number().int().positive().default(240),
+});
 
 // ---- Union ------------------------------------------------------------------
 
@@ -182,7 +160,6 @@ export const selectableScenes = z.discriminatedUnion("type", [
   titleScene,
   endcardScene,
   tableOfContentsScene,
-  appScene,
 ]);
 
 export type SelectableScene = z.infer<typeof selectableScenes>;

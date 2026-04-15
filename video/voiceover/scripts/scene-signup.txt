@@ -7,5 +7,3 @@ has a dataset he wants a model for.
 won't forget on his second day.
 
 {{SUBMIT}} And he's in.
-
-{{HOMEPAGE}} No project, no data, no starter scripts — yet.

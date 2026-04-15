@@ -34,7 +34,7 @@ Scene types today:
 | --- | --- | --- |
 | `slide` | `remotion/scenes/Slide/index.tsx` (dispatcher by `id`) | Animated slide (intro, team, problem, …) |
 | `codeReveal` | `remotion/scenes/CodeReveal/index.tsx` | Syntax-highlighted code card |
-| `demo` | `remotion/scenes/Demo/index.tsx` | Screen recording inside `AppChrome` |
+| `demo` | `remotion/scenes/Demo/index.tsx` | Playwright capture inside `BrowserChrome` + cursor/zoom/SFX overlays |
 | `title` | `remotion/scenes/Title/Title.tsx` | Full-screen title card |
 | `tableofcontents` | `remotion/scenes/TableOfContents/index.tsx` | Chapter list |
 | `endcard` | `remotion/scenes/EndCard/index.tsx` | Closing thank-you |

@@ -1,5 +1,3 @@
-import "../src/frontend-bridge/determinism";
-import "../src/style.css";
 import React from "react";
 import { Composition } from "remotion";
 import { FPS } from "../config/fps";
@@ -56,45 +54,41 @@ const DEFAULT_SCENES: SelectableScene[] = [
     durationInFrames: 1620,
     meta: { chapters: DEFAULT_CHAPTERS },
   },
-  // === Beat 1: Landing scroll (full-bleed) ===
+  // === Beat 1: Landing scroll (full-bleed Playwright capture) ===
   {
-    type: "app",
-    screen: "landing",
+    type: "demo",
+    videoFile: "landing.webm",
+    videoRoot: "captures",
+    cursorFile: "landing.cursor.json",
     chrome: "none",
     voiceoverFile: "scene-landing.mp3",
     durationInFrames: 3600, // 60s at 60 fps — overridden by MP3 duration when present
+    startOffset: 0,
   },
 
-  // === Beat 2: Auth flow → Home ===
-  //
-  // Only the SignupScreen references `scene-signup-ayush.mp3`. Login + Home
-  // deliberately omit `voiceoverFile` because `calc-metadata.resolveSceneData`
-  // calls `loadDuration` per scene — if all three referenced the same MP3, its
-  // duration would be summed 3× into the composition length. Once the MP3
-  // lands, the narration window for login-pause + home-dwell plays inside the
-  // Signup scene's resolved duration, and those bracketing scenes use their
-  // local `durationInFrames` as-is. If finer-grained alignment is needed
-  // later, split the script into separate MP3s per scene.
+  // === Beat 2: Signup (browser chrome) ===
   {
-    type: "app",
-    screen: "login",
-    chrome: "browser",
-    url: "app.agentic-automl.dev/login",
-    durationInFrames: 400, // Login pause before signup-link click
-  },
-  {
-    type: "app",
-    screen: "signup",
+    type: "demo",
+    videoFile: "signup.webm",
+    videoRoot: "captures",
+    cursorFile: "signup.cursor.json",
     chrome: "browser",
     url: "app.agentic-automl.dev/signup",
-    voiceoverFile: "scene-signup-ayush.mp3",
-    durationInFrames: 900, // ~15s typing + submit — overridden by MP3 duration when present
+    voiceoverFile: "scene-signup.mp3",
+    durationInFrames: 900,
+    startOffset: 0,
   },
+
+  // === Beat 3: Home arrival (mac window) ===
   {
-    type: "app",
-    screen: "home",
+    type: "demo",
+    videoFile: "home.webm",
+    videoRoot: "captures",
+    cursorFile: "home.cursor.json",
     chrome: "mac",
-    durationInFrames: 240, // 4s arrival dwell
+    voiceoverFile: "scene-home.mp3",
+    durationInFrames: 240,
+    startOffset: 0,
   },
 ];
 

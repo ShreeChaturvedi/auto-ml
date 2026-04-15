@@ -1,10 +1,15 @@
 import { useMemo } from "react";
 import type {
-  AppScene,
   AppTimelineEvent,
   SceneWithMetadata,
-} from "../../../config/scenes";
-import { useVoiceoverAlignment } from "../../hooks/useVoiceoverAlignment";
+} from "../../config/scenes";
+import { useVoiceoverAlignment } from "./useVoiceoverAlignment";
+
+/** Superset input so the hook works for any scene that carries a VO-anchored timeline. */
+export type TimelineRunnerScene = {
+  timeline?: readonly AppTimelineEvent[];
+  voiceoverFile?: string;
+};
 
 export type ResolvedTimelineEvent = AppTimelineEvent & { resolvedStart: number };
 
@@ -37,13 +42,12 @@ const EVENT_KINDS: readonly AppTimelineEvent["kind"][] = [
  *               + `resolvedStart` (number of frames into the scene).
  *   - `triggerMap`: `event.id → completion-frame` so a later event's
  *                   `{after: "prevId"}` resolves to `prevId`'s end frame
- *                   (start + durationFrames). This matches the plan's
- *                   "after X finishes" intent.
+ *                   (start + durationFrames).
  *   - `byKind`: events grouped by kind for ergonomic consumption (cursor
  *               waypoints, scroll keyframes, zoom regions, etc.).
  */
 export function useTimelineRunner(
-  scene: AppScene,
+  scene: TimelineRunnerScene,
   meta: SceneWithMetadata,
   /** Raw VO script with {{MARK}} tokens. Scenes pass this from a fixture. */
   rawScript: string,

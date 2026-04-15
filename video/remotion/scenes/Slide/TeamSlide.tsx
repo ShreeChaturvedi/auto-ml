@@ -4,7 +4,6 @@ import { MONOSPACE_FONT, REGULAR_FONT, TITLE_FONT } from "../../../config/fonts"
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
-import { BrandChip } from "../../primitives/BrandChip";
 import { MotionLine } from "../../primitives/MotionLine";
 import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
@@ -17,13 +16,13 @@ import type { SlideBodyProps } from "./index";
 // -----------------------------------------------------------------------------
 // Finance-deck cards (14s / 840f). Per column, top to bottom:
 //
-//   photo, name, major, divider, role, company chip, bullets
+//   photo, name, major, divider, [company-logo role], bullets
 //
 // The divider separates the identity block (photo, name, major) from the
-// working identity (role + company). Each role carries the company wordmark
-// immediately below it so the job and its employer read as a unit. Bullets
-// use a Monaspace 01/02/03 counter for editorial structure; no ACCENT_COLOR
-// is used anywhere on the slide, typography is the only differentiator.
+// working identity: the role sits on one inline row with its employer's
+// mark on the left so job + employer read as a unit. Bullets use a Monaspace
+// 01/02/03 counter for editorial structure; no ACCENT_COLOR is used anywhere
+// on the slide, typography is the only differentiator.
 //
 // Six-phase budget. Each phase-end sets the next element's delay; per-column
 // offsets (COL_STAGGER) stagger the second column behind the first so the
@@ -33,10 +32,10 @@ import type { SlideBodyProps } from "./index";
 //   2.   20- 70   both columns rise (photo + name visible)
 //   3.   70-160   major types in
 //   4.  160-200   subtle divider draws
-//   5.  200-280   role fades, then company chip fades
-//   6.  280-840   bullets stagger, then hold
+//   5.  200-240   company-logo + role row fades in as one unit
+//   6.  240-840   bullets stagger, then hold
 // -----------------------------------------------------------------------------
-const PHASES = [20, 50, 90, 40, 80, 560] as const;
+const PHASES = [20, 50, 90, 40, 40, 600] as const;
 type SixPhases = [PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo, PhaseInfo];
 type TwoCols = [StaggeredItem, StaggeredItem];
 
@@ -55,22 +54,23 @@ const DIVIDER_FRAMES = 28;
 const MAJORS_AFTER = 20;
 const DIVIDER_AFTER = 120;
 const ROLE_AFTER = 160;
-const CHIP_AFTER = 185;
-const BULLETS_AFTER = 225;
+const BULLETS_AFTER = 200;
 
 // Vertical spacing within MemberColumn.
 const AVATAR_TO_NAME = 20;
 const NAME_TO_MAJOR = 10;
 const MAJOR_TO_DIVIDER = 20;
 const DIVIDER_TO_ROLE = 16;
-const ROLE_TO_CHIP = 10;
-const CHIP_TO_BULLETS = 24;
+const ROLE_TO_BULLETS = 28;
 const BULLET_GAP = 14;
+// Inline gap between the employer mark and the role label in the role row.
+const ROLE_ROW_GAP = 12;
 
 type Member = {
   name: string;
   role: string;
-  company: { src: string; logoHeight: number; label?: string };
+  /** Employer mark rendered immediately left of the role label. */
+  company: { src: string; logoHeight: number };
   major: string;
   avatar: string;
   bullets: readonly string[];
@@ -80,10 +80,10 @@ const TEAM: readonly Member[] = [
   {
     name: "Shree Chaturvedi",
     role: "Strategy Consultant",
-    // EBC is a self-labeled wordmark. The asset already contains the company
-    // name, so pairing it with a sibling label would duplicate it. Render at
-    // 40 px so the inline "EAST BRIDGE CONSULTANCY" text stays readable.
-    company: { src: "branding/ebc.webp", logoHeight: 40 },
+    // EBC wordmark: a landscape mark with internal "EAST BRIDGE CONSULTANCY"
+    // text. 32 px keeps the internal wordmark just readable on screen while
+    // the mark itself stays proportionate to the 16 px role label.
+    company: { src: "branding/ebc.webp", logoHeight: 32 },
     major: "Computer Science, Mathematics",
     avatar: "team/shree.jpeg",
     bullets: [
@@ -95,8 +95,8 @@ const TEAM: readonly Member[] = [
   {
     name: "Ayush Yadav",
     role: "Data Integration Intern",
-    // Miami letter-mark is tiny on its own, pair with a label.
-    company: { src: "branding/miami-m.svg", logoHeight: 26, label: "Miami University" },
+    // Miami block-M mark only; no sibling label in this layout.
+    company: { src: "branding/miami-m.svg", logoHeight: 24 },
     major: "Computer Science",
     avatar: "team/ayush.jpeg",
     bullets: [
@@ -320,28 +320,32 @@ const MemberColumn: React.FC<{
         />
       </div>
 
-      {/* Role: uppercase micro-label, same treatment as AcknowledgementsSlide. */}
+      {/* Role row: employer mark on the left, uppercase role label on the
+          right. Fades in as one unit so the job and its employer read
+          together. The <Img> renders without its own fade to avoid the
+          opacity-multiplication bug that happens when a fading wrapper wraps
+          an already-fading child. */}
       <div
         style={{
-          ...ROLE_STYLE,
-          color: c.WORD_COLOR_ON_BG_GREYED,
+          display: "flex",
+          alignItems: "center",
+          gap: ROLE_ROW_GAP,
           opacity: roleFade.opacity,
           transform: roleFade.transform,
         }}
       >
-        {member.role}
-      </div>
-
-      {/* Company chip: sits with the role to visually bind "intern at X" or
-          "consultant at X" as a single unit. */}
-      <div style={{ marginTop: ROLE_TO_CHIP }}>
-        <BrandChip
-          theme={theme}
-          delay={base + CHIP_AFTER}
-          src={member.company.src}
-          logoHeight={member.company.logoHeight}
-          label={member.company.label}
+        <Img
+          src={staticFile(member.company.src)}
+          style={{
+            height: member.company.logoHeight,
+            width: "auto",
+            display: "block",
+            flexShrink: 0,
+          }}
         />
+        <div style={{ ...ROLE_STYLE, color: c.WORD_COLOR_ON_BG_GREYED }}>
+          {member.role}
+        </div>
       </div>
 
       {/* Supporting bullets: monospace 01/02/03 counter + prose. */}
@@ -349,7 +353,7 @@ const MemberColumn: React.FC<{
         style={{
           listStyle: "none",
           padding: 0,
-          margin: `${CHIP_TO_BULLETS}px 0 0 0`,
+          margin: `${ROLE_TO_BULLETS}px 0 0 0`,
           display: "flex",
           flexDirection: "column",
           gap: BULLET_GAP,

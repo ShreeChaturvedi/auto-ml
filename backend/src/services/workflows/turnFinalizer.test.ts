@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { InMemoryWorkflowRepository } from './repository/inMemory.js';
-import { finalizeWorkflowTurn } from './turnFinalizer.js';
+import { finalizeWorkflowTurn, persistNewToolExecutionEvents } from './turnFinalizer.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
 describe('finalizeWorkflowTurn', () => {
@@ -86,5 +86,104 @@ describe('finalizeWorkflowTurn', () => {
 
     expect(artifactEvents).not.toHaveLength(0);
     expect(artifactEvents.every((event) => event.artifact.runId === run.runId)).toBe(true);
+  });
+});
+
+describe('persistNewToolExecutionEvents', () => {
+  it('dedupes repeated tool call ids before writing run events', async () => {
+    const repository = new InMemoryWorkflowRepository();
+    const run = await repository.createRun({
+      runId: 'workflow-run-dedupe',
+      threadId: 'workflow-thread-dedupe',
+      projectId: 'project-1',
+      phase: 'feature_engineering',
+      status: 'running',
+      currentNode: 'continue_feature_pipeline',
+      retryBudget: 0,
+      repairAttemptCount: 0
+    });
+
+    const duplicatedCall = {
+      id: 'wf-call-1',
+      tool: 'propose_feature' as const,
+      args: { featureName: 'api_calls_log1p' }
+    };
+    const duplicatedResult = {
+      id: 'wf-call-1',
+      tool: 'propose_feature' as const,
+      output: { featureId: 'feat-1', status: 'proposed' }
+    };
+
+    await persistNewToolExecutionEvents(
+      repository,
+      run,
+      { toolCalls: [], toolResults: [] },
+      {
+        toolCallHistory: [duplicatedCall, duplicatedCall],
+        toolResultHistory: [duplicatedResult, duplicatedResult]
+      } as WorkflowGraphState
+    );
+
+    const snapshot = await repository.getRun(run.runId);
+    const toolEvents = snapshot?.events.filter((event) => event.eventType === 'tool_executed') ?? [];
+
+    expect(toolEvents).toHaveLength(1);
+    expect(toolEvents[0].payload).toMatchObject({
+      call: {
+        id: 'wf-call-1',
+        tool: 'propose_feature'
+      },
+      result: {
+        id: 'wf-call-1',
+        tool: 'propose_feature'
+      }
+    });
+  });
+
+  it('does not rewrite tool executions that already exist in previous history', async () => {
+    const repository = new InMemoryWorkflowRepository();
+    const run = await repository.createRun({
+      runId: 'workflow-run-previous-history',
+      threadId: 'workflow-thread-previous-history',
+      projectId: 'project-1',
+      phase: 'feature_engineering',
+      status: 'running',
+      currentNode: 'continue_feature_pipeline',
+      retryBudget: 0,
+      repairAttemptCount: 0
+    });
+
+    const priorCall = {
+      id: 'wf-call-prior',
+      tool: 'propose_feature' as const,
+      args: { featureName: 'prior_feature' }
+    };
+    const newCall = {
+      id: 'wf-call-new',
+      tool: 'propose_feature' as const,
+      args: { featureName: 'new_feature' }
+    };
+
+    await persistNewToolExecutionEvents(
+      repository,
+      run,
+      {
+        toolCalls: [priorCall],
+        toolResults: [{ id: priorCall.id, tool: priorCall.tool, output: { featureId: 'feat-prior' } }]
+      },
+      {
+        toolCallHistory: [priorCall, newCall],
+        toolResultHistory: [
+          { id: priorCall.id, tool: priorCall.tool, output: { featureId: 'feat-prior' } },
+          { id: newCall.id, tool: newCall.tool, output: { featureId: 'feat-new' } }
+        ]
+      } as WorkflowGraphState
+    );
+
+    const snapshot = await repository.getRun(run.runId);
+    const toolEvents = snapshot?.events.filter((event) => event.eventType === 'tool_executed') ?? [];
+
+    expect(toolEvents).toHaveLength(1);
+    expect((toolEvents[0].payload.call as { id?: string }).id).toBe('wf-call-new');
   });
 });

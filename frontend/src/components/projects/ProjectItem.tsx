@@ -9,7 +9,7 @@
  * - Collapsed state support for sidebar
  */
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MoreVertical, Edit, Trash2 } from 'lucide-react';
 import {
@@ -19,9 +19,17 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { useProjectStore } from '@/stores/projectStore';
@@ -29,7 +37,7 @@ import type { Project } from '@/types/project';
 import { resolveProjectColor } from '@/types/project';
 import { ProjectDialog } from './ProjectDialog';
 import { cn } from '@/lib/utils';
-import * as LucideIcons from 'lucide-react';
+import { getLucideIcon } from '@/lib/icons';
 
 interface ProjectItemProps {
   project: Project;
@@ -39,18 +47,28 @@ interface ProjectItemProps {
 export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
   const navigate = useNavigate();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const deleteProject = useProjectStore((state) => state.deleteProject);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+
+  const handleTooltipOpenChange = useCallback((open: boolean) => {
+    if (!open) { setTooltipOpen(false); return; }
+    // Always show tooltip when collapsed (icon-only); otherwise only when truncated
+    if (collapsed) { setTooltipOpen(true); return; }
+    const el = titleRef.current;
+    setTooltipOpen(!!el && el.scrollWidth > el.clientWidth);
+  }, [collapsed]);
+
   const isActive = activeProjectId === project.id;
   const colorClasses = resolveProjectColor(project.color, project.customColor);
 
   // Get icon component dynamically
-  const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[
-    project.icon
-  ];
+  const IconComponent = getLucideIcon(project.icon);
 
   const handleDelete = async () => {
     if (isDeleting) return;
@@ -76,7 +94,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
         'group flex items-center gap-2 rounded-md px-1.5 py-1.5 cursor-pointer transition-colors',
         isActive
           ? 'bg-accent text-accent-foreground'
-          : 'hover:bg-accent/50 text-foreground'
+          : 'hover:bg-muted/50 text-foreground'
       )}
       onClick={handleProjectClick}
     >
@@ -94,11 +112,11 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
 
       {/* Project title - kept in DOM; fades out via opacity when collapsed to prevent layout jump */}
       <span
+        ref={titleRef}
         className={cn(
           'flex-1 truncate text-sm font-medium transition-opacity duration-300',
           collapsed ? 'opacity-0' : 'opacity-100'
         )}
-        title={project.title}
       >
         {project.title}
       </span>
@@ -106,7 +124,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
       {/* More options menu - kept in DOM; collapses to w-0 to prevent layout jump */}
       <div
         className={cn(
-          'shrink-0 overflow-hidden transition-all duration-300',
+          'shrink-0 overflow-hidden transition-[width] duration-300',
           collapsed ? 'w-0 pointer-events-none' : 'w-6'
         )}
       >
@@ -114,7 +132,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-md p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent"
+              className="flex h-6 w-6 items-center justify-center rounded-md p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
               <MoreVertical className="h-3 w-3" />
@@ -134,7 +152,7 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation();
-                void handleDelete();
+                setIsDeleteDialogOpen(true);
               }}
               className="text-destructive focus:text-destructive"
             >
@@ -149,27 +167,47 @@ export function ProjectItem({ project, collapsed = false }: ProjectItemProps) {
 
   return (
     <>
-      {collapsed ? (
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {itemContent}
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>{project.title}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : (
-        itemContent
-      )}
+      <Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
+        <TooltipTrigger asChild>
+          {itemContent}
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          <p>{project.title}</p>
+        </TooltipContent>
+      </Tooltip>
 
-      {/* Edit Project Dialog */}
       <ProjectDialog
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
         project={project}
       />
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => { if (!isDeleting) setIsDeleteDialogOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              Delete &ldquo;{project.title}&rdquo;? All associated data including datasets,
+              notebooks, and experiments will be permanently removed. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" disabled={isDeleting} onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={async () => {
+                await handleDelete();
+                setIsDeleteDialogOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

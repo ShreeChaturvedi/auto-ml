@@ -1,11 +1,26 @@
 /**
- * useProjectPlans — shared hook for plan metadata, open, and create actions.
+ * useProjectPlans — shared hook for plan metadata, open, create, rename, and delete actions.
  * Used by both PlanSubtabs (sidebar) and FileExplorer (panel).
  */
 
 import { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
+
+/** Read `activePlanChatId` from a project's metadata. Returns null if absent/empty. */
+export function getActivePlanChatId(metadata: Record<string, unknown> | undefined): string | null {
+  const val = metadata?.activePlanChatId;
+  return typeof val === 'string' && val.length > 0 ? val : null;
+}
+
+/** Zustand selector: reactive `activePlanChatId` for a given project. */
+export function selectActivePlanChatId(projectId: string | null | undefined) {
+  return (s: { projects: Array<{ id: string; metadata?: unknown }> }): string | null => {
+    if (!projectId) return null;
+    const project = s.projects.find((p) => p.id === projectId);
+    return getActivePlanChatId(project?.metadata as Record<string, unknown> | undefined);
+  };
+}
 
 export interface ProjectPlan {
   id: string;
@@ -18,6 +33,8 @@ export interface UseProjectPlansReturn {
   selectedPlanId: string | undefined;
   handleOpenPlan: (planId: string) => void;
   handleCreateNewPlan: (e?: React.MouseEvent) => void;
+  handleRenamePlan: (planId: string, newName: string) => void;
+  handleDeletePlan: (planId: string) => void;
 }
 
 export function useProjectPlans(projectId: string): UseProjectPlansReturn {
@@ -52,12 +69,13 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
         metadata: {
           ...metadata,
           activePlanId: planId,
+          activePlanChatId: null,
           projectPlanName: selectedPlan?.name,
           projectPlan: selectedPlan?.content,
           uploadStage: 'upload',
         },
       });
-      navigate(`/project/${projectId}/upload`);
+      navigate(`/project/${projectId}/upload?planId=${planId}`);
     },
     [projectId, updateProject, metadata, navigate, plans]
   );
@@ -70,5 +88,47 @@ export function useProjectPlans(projectId: string): UseProjectPlansReturn {
     [projectId, navigate]
   );
 
-  return { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan };
+  const handleRenamePlan = useCallback(
+    (planId: string, newName: string) => {
+      const updatedPlans = plans.map((p) =>
+        p.id === planId ? { ...p, name: newName } : p
+      );
+      const renamedPlan = updatedPlans.find((p) => p.id === planId);
+      const legacyCompat = planId === selectedPlanId
+        ? { projectPlanName: renamedPlan?.name }
+        : {};
+      void updateProject(projectId, {
+        metadata: { ...metadata, plans: updatedPlans, ...legacyCompat },
+      });
+    },
+    [plans, metadata, projectId, selectedPlanId, updateProject]
+  );
+
+  const handleDeletePlan = useCallback(
+    (planId: string) => {
+      const remaining = plans.filter((p) => p.id !== planId);
+      const nextSelected = remaining[0];
+      const legacyCompat = nextSelected
+        ? {
+            activePlanId: nextSelected.id,
+            projectPlanName: nextSelected.name,
+            projectPlan: nextSelected.content,
+          }
+        : {
+            activePlanId: null,
+            projectPlanName: '',
+            projectPlan: '',
+          };
+      void updateProject(projectId, {
+        metadata: {
+          ...metadata,
+          plans: remaining,
+          ...legacyCompat,
+        },
+      });
+    },
+    [plans, metadata, projectId, updateProject]
+  );
+
+  return { plans, selectedPlanId, handleOpenPlan, handleCreateNewPlan, handleRenamePlan, handleDeletePlan };
 }

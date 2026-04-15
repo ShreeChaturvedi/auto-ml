@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 import * as repo from '../../repositories/notebookRepository.js';
 import type { ExecutionResult, RichOutput } from '../../types/execution.js';
 import type { CellOutput, OutputRef } from '../../types/notebook.js';
@@ -10,6 +11,24 @@ import * as kernelManager from '../kernelManager.js';
 import { resolveDatasetSyncMode, type DatasetSyncMode } from './datasetSyncMode.js';
 import { getDatasetPaths, copyDatasetsToWorkspace } from './datasetWorkspace.js';
 import { decodeBase64DataUrl, extensionForMimeType } from './outputUtils.js';
+
+function shouldRetryMissingKernelInitHelper(cellContent: string, errorMessage: string): boolean {
+  const referencesKernelHelper =
+    cellContent.includes('load_preprocessing_dataset(')
+    || cellContent.includes('save_preprocessing_dataset(')
+    || cellContent.includes('resolve_dataset_path(');
+
+  if (!referencesKernelHelper) {
+    return false;
+  }
+
+  return /NameError: name 'load_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /NameError: name 'save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /NameError: name 'resolve_dataset_path' is not defined/i.test(errorMessage)
+    || /load_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /save_preprocessing_dataset' is not defined/i.test(errorMessage)
+    || /resolve_dataset_path' is not defined/i.test(errorMessage);
+}
 
 export async function getOrEnsureContainer(projectId: string): Promise<Container> {
   const datasetPaths = await getDatasetPaths(projectId);
@@ -34,6 +53,29 @@ function broadcast(notebookId: string, type: string, data: Record<string, unknow
   }
 }
 
+async function recoverKernelAfterTimeout(container: Container, cellId: string): Promise<void> {
+  try {
+    await kernelManager.interruptKernel(container);
+    return;
+  } catch (interruptError) {
+    appLogger.warn(
+      `[cellExecutionService] Failed to interrupt kernel after timeout for cell ${cellId}: ${
+        interruptError instanceof Error ? interruptError.message : String(interruptError)
+      }`
+    );
+  }
+
+  try {
+    await kernelManager.restartKernel(container);
+  } catch (restartError) {
+    appLogger.warn(
+      `[cellExecutionService] Failed to restart kernel after timeout for cell ${cellId}: ${
+        restartError instanceof Error ? restartError.message : String(restartError)
+      }`
+    );
+  }
+}
+
 export async function executeCell(
   cellId: string,
   projectId: string,
@@ -45,6 +87,18 @@ export async function executeCell(
   const cell = await repo.getCell(cellId);
   if (!cell) {
     throw new Error(`Cell not found: ${cellId}`);
+  }
+
+  // Defense-in-depth: verify the cell's notebook belongs to this project.
+  // Route/handler auth should already enforce this, but without this check an
+  // LLM tool handler bug could cause execution of a cell from another project
+  // or a user-owned standalone notebook against the wrong container.
+  const notebook = await repo.getNotebook(cell.notebookId);
+  if (!notebook) {
+    throw new Error(`Notebook not found for cell ${cellId}`);
+  }
+  if (notebook.projectId !== projectId) {
+    throw new Error(`Cell ${cellId} does not belong to project ${projectId}`);
   }
 
   // Only code cells can be executed
@@ -83,9 +137,36 @@ export async function executeCell(
 
     // Cell content is executed as-is — preprocessing cells already include
     // visible load/save helper calls in their content, so no wrapping needed.
-    const result = await kernelManager.execute(container, cell.content, env.executionTimeoutMs, (output) => {
-      broadcast(cell.notebookId, 'cell:output', { cellId, output });
-    });
+    const runKernelExecution = () => kernelManager.execute(
+      container,
+      cell.content,
+      env.executionTimeoutMs,
+      (output) => {
+        broadcast(cell.notebookId, 'cell:output', { cellId, output });
+      }
+    );
+
+    let result: ExecutionResult;
+    try {
+      result = await runKernelExecution();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!shouldRetryMissingKernelInitHelper(cell.content, errorMessage)) {
+        throw error;
+      }
+
+      await kernelManager.restartKernel(container);
+      result = await runKernelExecution();
+    }
+
+    if (result.status === 'error' && shouldRetryMissingKernelInitHelper(cell.content, result.error ?? result.stderr ?? '')) {
+      await kernelManager.restartKernel(container);
+      result = await runKernelExecution();
+    }
+
+    if (result.status === 'timeout') {
+      await recoverKernelAfterTimeout(container, cellId);
+    }
 
     // Calculate execution time
     const executionMs = Date.now() - startTime;

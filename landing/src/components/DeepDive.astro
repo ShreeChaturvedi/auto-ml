@@ -1,0 +1,108 @@
+---
+/**
+ * Astro wrapper for the three feature deep-dive sections (Section 4.5 of the
+ * landing-page spec). Renders the 2-column alternating chrome — eyebrow,
+ * two-line headline, body, and kbd hint — server-side so it lands in the
+ * built HTML, then slots the live React visual as its own island (the caller
+ * supplies a `client:only` directive on the slotted component).
+ *
+ * This wrapper exists instead of the React `DeepDive.tsx` component because
+ * the frontend composer components used inside the visuals (e.g.
+ * LlmChatComposer → useMetallicBorder → usePrefersReducedMotion) call
+ * useSyncExternalStore without a server snapshot, which crashes Astro's SSR
+ * pass. By rendering the chrome in Astro and keeping the visuals as
+ * client-only islands, the static HTML contains the copy while the
+ * problematic React code never runs on the server.
+ *
+ * A small inline script provides the WAAPI enter animation (once per section
+ * on IntersectionObserver), mirroring the behavior of DeepDive.tsx.
+ */
+import styles from './DeepDive.module.css';
+
+interface Props {
+  id: string;
+  eyebrow: string;
+  headlineBright: string;
+  headlineMuted: string;
+  body: string;
+  kbdLabel?: string;
+  kbdBadge?: string;
+  reversed?: boolean;
+}
+
+const {
+  id,
+  eyebrow,
+  headlineBright,
+  headlineMuted,
+  body,
+  kbdLabel,
+  kbdBadge,
+  reversed = false,
+} = Astro.props;
+---
+
+<section
+  id={id}
+  class={`deep-dive-section ${styles.section}`}
+  data-deep-dive
+  data-reversed={reversed ? 'true' : 'false'}
+>
+  <div class={styles.copy}>
+    <p class={styles.copyEyebrow}>{eyebrow}</p>
+    <h2 class={styles.copyHeadline}>
+      <span class={styles.copyHeadlineBright}>{headlineBright}</span>
+      <span class={styles.copyHeadlineMuted}>{headlineMuted}</span>
+    </h2>
+    <p class={styles.copyBody}>{body}</p>
+    {kbdLabel && kbdBadge && (
+      <span class={styles.kbdHint}>
+        <kbd class={styles.kbdBadge}>{kbdBadge}</kbd>
+        {kbdLabel}
+      </span>
+    )}
+  </div>
+  <div class={`cursor-outline ${styles.visual}`} aria-label={`${eyebrow} demo`}>
+    <slot />
+  </div>
+</section>
+
+<script>
+  // WAAPI enter animation: fade + 24px translateY over 500ms with
+  // --ease-out-quart. Fires once per section when it first intersects.
+  // Reduced motion is handled by the CSS fallback (opacity: 1) so this
+  // script early-exits for users who prefer reduced motion.
+  const sections = document.querySelectorAll<HTMLElement>('[data-deep-dive]');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (!reduced && typeof IntersectionObserver !== 'undefined') {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const node = entry.target as HTMLElement;
+          const easing =
+            getComputedStyle(node).getPropertyValue('--ease-out-quart').trim() ||
+            'cubic-bezier(0.165, 0.84, 0.44, 1)';
+          node.animate(
+            [
+              { opacity: 0, transform: 'translateY(24px)' },
+              { opacity: 1, transform: 'translateY(0)' },
+            ],
+            { duration: 500, easing, fill: 'forwards' },
+          );
+          observer.unobserve(node);
+        }
+      },
+      { threshold: 0.15 },
+    );
+
+    for (const section of sections) {
+      observer.observe(section);
+    }
+  } else {
+    for (const section of sections) {
+      section.style.opacity = '1';
+    }
+  }
+</script>

@@ -7,6 +7,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
+import type { SyntaxThemeId } from '@/lib/color/syntaxPalette';
 import { useTheme } from '@/components/theme-provider';
 import { initMonaco } from '@/lib/monaco/preloader';
 import {
@@ -43,6 +45,8 @@ export interface UsePythonEditorReturn {
   localContent: string;
   /** Resolved theme string: 'light' | 'dark'. */
   resolvedTheme: 'light' | 'dark';
+  /** Syntax theme ID for Monaco (e.g. 'adaptive-dark', 'static-light'). */
+  syntaxThemeId: SyntaxThemeId;
   /** Handler for the editor's `onChange` callback. */
   handleContentChange: (value: string | undefined) => void;
   /** Handler for `onMount` — wires blur, Shift+Enter, completions, theme. */
@@ -61,11 +65,8 @@ export function usePythonEditor({
   completionOptions = {},
   preloadMonaco = true
 }: UsePythonEditorOptions): UsePythonEditorReturn {
-  const { theme } = useTheme();
-  const resolvedTheme: 'light' | 'dark' =
-    theme === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : (theme as 'light' | 'dark');
+  const { resolvedTheme } = useTheme();
+  const { syntaxThemeId } = useProjectThemeColor();
 
   const [localContent, setLocalContent] = useState(content);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -161,13 +162,16 @@ export function usePythonEditor({
           clearTimeout(saveTimeoutRef.current);
           saveTimeoutRef.current = null;
         }
-        const currentValue = editor.getModel()?.getValue() ?? '';
+        // During notebook/tab switches Monaco can dispose the model before the
+        // blur callback fires. Fall back to the latest local edit buffer so we
+        // do not persist an empty string over a valid cell body.
+        const currentValue = editor.getModel()?.getValue() ?? localContentRef.current;
         if (ignoreSaveContent && currentValue === ignoreSaveContent) return;
         onContentChangeRef.current(currentValue);
       });
 
       // Apply theme.
-      monaco.editor.setTheme(resolvedTheme === 'dark' ? 'python-dark' : 'python-light');
+      monaco.editor.setTheme(syntaxThemeId);
 
       // Register completion provider.
       registerPythonCompletionProvider(monaco, completionOptions);
@@ -190,7 +194,7 @@ export function usePythonEditor({
     },
     // We intentionally keep a minimal dep list; callbacks are captured via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resolvedTheme, completionOptions.projectId, completionOptions.cellId]
+    [syntaxThemeId, completionOptions.projectId, completionOptions.cellId]
   );
 
   // --- beforeMount handler --------------------------------------------------
@@ -203,6 +207,7 @@ export function usePythonEditor({
   return {
     localContent,
     resolvedTheme,
+    syntaxThemeId,
     handleContentChange,
     handleEditorMount,
     handleBeforeMount

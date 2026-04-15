@@ -6,17 +6,37 @@ import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../../repositories/projectRepository.js';
 import * as kernelManager from '../../services/kernelManager.js';
 import { getOrEnsureContainer } from '../../services/notebook/cellExecutionService.js';
+import {
+  getNotebookRecoveryCandidate,
+  recoverNotebookFromWorkflowHistory
+} from '../../services/notebook/notebookRecoveryService.js';
 import * as notebookService from '../../services/notebook/notebookService.js';
 import type { AuthRequest } from '../../types/auth.js';
+import { NotebookKindSchema } from '../../types/notebook.js';
 
 const createNotebookSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  kind: NotebookKindSchema.optional()
 });
 
 const updateNotebookSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   metadata: z.record(z.string(), z.unknown()).optional()
+});
+
+const listNotebooksQuerySchema = z.object({
+  kind: NotebookKindSchema.optional()
+});
+
+const notebookRecoveryPhaseSchema = z.enum(['preprocessing', 'feature-engineering', 'training']);
+
+const notebookRecoveryBodySchema = z.object({
+  phase: notebookRecoveryPhaseSchema
+});
+
+const notebookRecoveryQuerySchema = z.object({
+  phase: notebookRecoveryPhaseSchema
 });
 
 export function createNotebookRoutes(): Router {
@@ -42,7 +62,15 @@ export function createNotebookRoutes(): Router {
       }
     }
 
-    const notebooks = await notebookService.listProjectNotebooks(projectId);
+    const parsedQuery = listNotebooksQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Invalid query parameters', details: parsedQuery.error.issues });
+      return;
+    }
+
+    const notebooks = await notebookService.listProjectNotebooks(projectId, {
+      kind: parsedQuery.data.kind
+    });
     res.json(notebooks);
   }));
 
@@ -70,7 +98,11 @@ export function createNotebookRoutes(): Router {
       return;
     }
 
-    const notebook = await notebookService.createProjectNotebook(projectId, parsed.data.name, parsed.data.metadata);
+    const notebook = await notebookService.createProjectNotebook(projectId, {
+      name: parsed.data.name,
+      metadata: parsed.data.metadata,
+      kind: parsed.data.kind
+    });
     res.status(201).json(notebook);
   }));
 
@@ -126,23 +158,66 @@ export function createNotebookRoutes(): Router {
     res.json(result);
   }));
 
-  /**
-   * GET /api/projects/:projectId/notebook
-   * Get or create the notebook for a project.
-   */
-  router.get('/projects/:projectId/notebook', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { projectId } = req.params;
+  router.get('/notebooks/:notebookId/recovery-candidate', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { notebookId } = req.params;
+
+    const parsedQuery = notebookRecoveryQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      res.status(400).json({ error: 'Invalid query parameters', details: parsedQuery.error.issues });
+      return;
+    }
+
+    const targetNotebook = await notebookService.getNotebook(notebookId);
+    if (!targetNotebook) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
 
     if (req.user) {
-      const project = await verifyProjectOwnership(projectId, req.user.user_id, projectRepository);
+      const project = await verifyProjectOwnership(targetNotebook.projectId, req.user.user_id, projectRepository);
       if (!project) {
-        res.status(404).json({ error: 'Project not found' });
+        res.status(404).json({ error: 'Not found' });
         return;
       }
     }
 
-    const notebook = await notebookService.ensureNotebook(projectId);
-    res.json(notebook);
+    const result = await getNotebookRecoveryCandidate(
+      targetNotebook.projectId,
+      notebookId,
+      parsedQuery.data.phase
+    );
+    res.json(result);
+  }));
+
+  router.post('/notebooks/:notebookId/recover', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { notebookId } = req.params;
+
+    const parsedBody = notebookRecoveryBodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Invalid request body', details: parsedBody.error.issues });
+      return;
+    }
+
+    const targetNotebook = await notebookService.getNotebook(notebookId);
+    if (!targetNotebook) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(targetNotebook.projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Not found' });
+        return;
+      }
+    }
+
+    const result = await recoverNotebookFromWorkflowHistory(
+      targetNotebook.projectId,
+      notebookId,
+      parsedBody.data.phase
+    );
+    res.json(result);
   }));
 
   // ============================================================

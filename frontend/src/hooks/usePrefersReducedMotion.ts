@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { getReduceMotionPref, subscribeReduceMotionPref } from '@/lib/generalPrefs';
+
+function getServerSnapshot(): boolean {
+  return false;
+}
 
 export function usePrefersReducedMotion(): boolean {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const appPref = useSyncExternalStore(subscribeReduceMotionPref, getReduceMotionPref, getServerSnapshot);
+  const [osPref, setOsPref] = useState(false);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const handleChange = () => setPrefersReducedMotion(mediaQuery.matches);
+    const handleChange = () => setOsPref(mediaQuery.matches);
 
     handleChange();
 
@@ -18,5 +24,5 @@ export function usePrefersReducedMotion(): boolean {
     return () => mediaQuery.removeListener(handleChange);
   }, []);
 
-  return prefersReducedMotion;
+  return appPref || osPref;
 }

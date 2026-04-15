@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
-} from '@/components/ui/useInsightTicker';
+  computeCharDelay,
+} from '@/components/ui/useAnimatedPlaceholder';
 import { tokenizeSql } from './sqlTokenize';
 import { TOKEN_INLINE_COLORS } from './sqlRevealUtils';
 import type { SqlTokenType } from './sqlTokenize';
@@ -15,38 +15,38 @@ interface SqlPlaceholderOverlayProps {
   incomingTransition: string;
   animateChars: boolean;
   editorLeftOffset: number;
+  contentWidth: number;
 }
 
 function TokenizedLine({ sql, animate }: { sql: string; animate: boolean }) {
   const tokens = useMemo(() => tokenizeSql(sql), [sql]);
 
-  let charIndex = 0;
+  // Only count visible (non-whitespace) characters for delay distribution.
+  // Whitespace tokens render instantly — they shouldn't consume delay budget,
+  // which would create dead zones followed by catch-up bursts.
+  let animIdx = 0;
   return (
     <span className="whitespace-pre-wrap break-words">
       {tokens.map((token, ti) => {
         const color = TOKEN_INLINE_COLORS[token.type as SqlTokenType];
-        const fontWeight = token.type === 'keyword' ? 600 : undefined;
         if (!animate || token.type === 'whitespace') {
-          const startIdx = charIndex;
-          charIndex += token.text.length;
           return (
-            <span key={`${ti}-${startIdx}`} style={{ color, fontWeight }}>
+            <span key={ti} style={{ color }}>
               {token.text}
             </span>
           );
         }
-        return Array.from(token.text).map((char) => {
-          const idx = charIndex++;
+        return Array.from(token.text).map((char, ci) => {
+          const delay = computeCharDelay(animIdx++);
           return (
             <span
-              key={`${ti}-${idx}`}
+              key={`${ti}-${ci}`}
               style={{
-                color,
-                fontWeight,
+                '--sql-token-color': color,
                 display: 'inline',
                 animation: `sql-placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                animationDelay: `${idx * CHAR_STAGGER_MS}ms`,
-              }}
+                animationDelay: `${delay}ms`,
+              } as React.CSSProperties}
             >
               {char}
             </span>
@@ -65,18 +65,22 @@ export function SqlPlaceholderOverlay({
   incomingTransition,
   animateChars,
   editorLeftOffset,
+  contentWidth,
 }: SqlPlaceholderOverlayProps) {
   if (!currentSql) return null;
 
   return (
     <div
-      className="absolute top-0 bottom-0 right-0 z-[5] pointer-events-none"
+      className="absolute top-0 bottom-0 z-[5] pointer-events-none"
       style={{
         left: editorLeftOffset,
+        width: contentWidth || undefined,
         paddingTop: 8,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontFamily: '"Monaspace Neon", "JetBrains Mono", monospace',
         fontSize: 13,
         lineHeight: '18px',
+        fontFeatureSettings: '"liga" off, "calt" off',
+        fontVariantNumeric: 'normal',
       }}
       aria-hidden="true"
     >

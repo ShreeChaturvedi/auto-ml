@@ -4,15 +4,16 @@ import {
   fetchEvaluation as apiFetchEvaluation,
   fetchShap as apiFetchShap,
   fetchErrorAnalysis as apiFetchErrorAnalysis,
+  retryEvaluation as apiRetryEvaluation,
 } from '../../lib/api/experiments';
 import type { EvaluationResult } from '../../types/experiments';
-import { useExperimentsStore } from '../experimentsStore';
+import { createInitialExperimentsState, useExperimentsStore } from '../experimentsStore';
 
 vi.mock('../../lib/api/experiments', () => ({
   fetchEvaluation: vi.fn(),
+  retryEvaluation: vi.fn(),
   fetchShap: vi.fn(),
   fetchErrorAnalysis: vi.fn(),
-  compareModels: vi.fn(),
   fetchInsights: vi.fn(),
   parseNlFilter: vi.fn(),
 }));
@@ -21,30 +22,12 @@ const toastWarning = vi.hoisted(() => vi.fn());
 vi.mock('sonner', () => ({ toast: { warning: toastWarning } }));
 
 const fetchEvaluationMock = vi.mocked(apiFetchEvaluation);
+const retryEvaluationMock = vi.mocked(apiRetryEvaluation);
 const fetchShapMock = vi.mocked(apiFetchShap);
 const fetchErrorAnalysisMock = vi.mocked(apiFetchErrorAnalysis);
 
 function resetStore() {
-  useExperimentsStore.setState({
-    selectedModelId: null,
-    comparisonModelIds: [],
-    evaluations: {},
-    shapData: {},
-    errorAnalysis: {},
-    projectInsight: null,
-    insightModelHash: null,
-    insightFetchedAt: 0,
-    compareNarrative: null,
-    reportContent: null,
-    reportModelHash: null,
-    reportFetchedAt: 0,
-    experimentView: 'overview',
-    activeDetailTab: {},
-    nlFilterText: '',
-    activePredicates: [],
-    sortField: 'createdAt',
-    sortDirection: 'desc'
-  });
+  useExperimentsStore.setState(createInitialExperimentsState());
 }
 
 const MOCK_EVALUATION: EvaluationResult = {
@@ -142,6 +125,18 @@ describe('experimentsStore', () => {
     expect(fetchEvaluationMock).toHaveBeenCalledTimes(1);
   });
 
+  it('fetchEvaluation(true) bypasses cached null and refetches', async () => {
+    fetchEvaluationMock.mockRejectedValueOnce(new Error('404'));
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
+
+    fetchEvaluationMock.mockResolvedValueOnce(MOCK_EVALUATION);
+    await useExperimentsStore.getState().fetchEvaluation('model-1', true);
+
+    expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
+    expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+  });
+
   it('fetchEvaluation() sets null on API failure instead of leaving undefined', async () => {
     fetchEvaluationMock.mockRejectedValue(new Error('404'));
 
@@ -208,6 +203,20 @@ describe('experimentsStore', () => {
     expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
   });
 
+  it('retryEvaluation() purges cached failures before re-fetching', async () => {
+    fetchEvaluationMock.mockRejectedValueOnce(new Error('404'));
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
+
+    retryEvaluationMock.mockResolvedValueOnce({ ok: true, evaluationStatus: 'ready' });
+    fetchEvaluationMock.mockResolvedValueOnce(MOCK_EVALUATION);
+    await useExperimentsStore.getState().retryEvaluation('model-1');
+
+    expect(retryEvaluationMock).toHaveBeenCalledWith('model-1');
+    expect(fetchEvaluationMock).toHaveBeenCalledTimes(2);
+    expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+  });
+
   it('setExperimentView() updates experimentView', () => {
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
     useExperimentsStore.getState().setExperimentView('leaderboard');
@@ -216,7 +225,7 @@ describe('experimentsStore', () => {
 
   it('setNlFilter() auto-switches to leaderboard when predicates are non-empty', () => {
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
-    useExperimentsStore.getState().setNlFilter('accuracy > 0.9', [
+    useExperimentsStore.getState().setNlFilter([
       { field: 'accuracy', operator: 'gt', value: '0.9' }
     ]);
     expect(useExperimentsStore.getState().experimentView).toBe('leaderboard');
@@ -225,7 +234,195 @@ describe('experimentsStore', () => {
 
   it('setNlFilter() does not switch view when predicates are empty', () => {
     useExperimentsStore.getState().setExperimentView('overview');
-    useExperimentsStore.getState().setNlFilter('', []);
+    useExperimentsStore.getState().setNlFilter([]);
     expect(useExperimentsStore.getState().experimentView).toBe('overview');
+  });
+
+  it('startComparison() sets comparisonRequested when >= 2 models selected', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(true);
+    expect(useExperimentsStore.getState().compareNarrative).toBeNull();
+  });
+
+  it('startComparison() does nothing when < 2 models selected', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().startComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+  });
+
+  it('stopComparison() preserves selections', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    useExperimentsStore.getState().stopComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+    expect(useExperimentsStore.getState().comparisonModelIds).toEqual(['model-1', 'model-2']);
+  });
+
+  it('clearComparison() also clears comparisonRequested', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    useExperimentsStore.getState().clearComparison();
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+    expect(useExperimentsStore.getState().comparisonModelIds).toEqual([]);
+  });
+
+  it('toggleComparison() auto-clears comparisonRequested when < 2 remain', () => {
+    useExperimentsStore.getState().toggleComparison('model-1');
+    useExperimentsStore.getState().toggleComparison('model-2');
+    useExperimentsStore.getState().startComparison();
+    useExperimentsStore.getState().toggleComparison('model-2');
+    expect(useExperimentsStore.getState().comparisonRequested).toBe(false);
+  });
+
+  it('manual predicates CRUD works correctly', () => {
+    const pred = { field: 'taskType', operator: 'eq' as const, value: 'classification' };
+    useExperimentsStore.getState().addManualPredicate(pred);
+    expect(useExperimentsStore.getState().manualPredicates).toEqual([pred]);
+
+    useExperimentsStore.getState().removeManualPredicate(0);
+    expect(useExperimentsStore.getState().manualPredicates).toEqual([]);
+  });
+
+  it('setManualPredicates() replaces all predicates', () => {
+    const preds = [
+      { field: 'taskType', operator: 'eq' as const, value: 'classification' },
+      { field: 'accuracy', operator: 'gte' as const, value: 0.9 },
+    ];
+    useExperimentsStore.getState().setManualPredicates(preds);
+    expect(useExperimentsStore.getState().manualPredicates).toEqual(preds);
+  });
+
+  it('clearManualPredicates() empties the array', () => {
+    useExperimentsStore.getState().addManualPredicate({ field: 'taskType', operator: 'eq' as const, value: 'classification' });
+    useExperimentsStore.getState().clearManualPredicates();
+    expect(useExperimentsStore.getState().manualPredicates).toEqual([]);
+  });
+
+  it('setNameFilter() updates nameFilter', () => {
+    useExperimentsStore.getState().setNameFilter('random forest');
+    expect(useExperimentsStore.getState().nameFilter).toBe('random forest');
+  });
+
+  it('invalidateReport() clears cached report state', () => {
+    useExperimentsStore.setState({
+      reportContent: { text: 'cached', isLoading: false },
+      reportModelHash: 'model-a',
+      reportFetchedAt: 123,
+    });
+
+    useExperimentsStore.getState().invalidateReport();
+
+    const state = useExperimentsStore.getState();
+    expect(state.reportContent).toBeNull();
+    expect(state.reportModelHash).toBeNull();
+    expect(state.reportFetchedAt).toBe(0);
+  });
+
+  describe('LRU eviction', () => {
+    it('createInitialExperimentsState() includes modelAccessOrder and cacheGeneration', () => {
+      const initial = createInitialExperimentsState();
+      expect(initial.modelAccessOrder).toEqual([]);
+      expect(initial.cacheGeneration).toBe(0);
+    });
+
+    it('selectModel(null) clears selectedModelId without updating modelAccessOrder', () => {
+      useExperimentsStore.getState().selectModel('model-1');
+      const orderAfterSelect = useExperimentsStore.getState().modelAccessOrder;
+      useExperimentsStore.getState().selectModel(null);
+      expect(useExperimentsStore.getState().selectedModelId).toBeNull();
+      expect(useExperimentsStore.getState().modelAccessOrder).toEqual(orderAfterSelect);
+    });
+
+    it('selectModel() tracks access order and deduplicates', () => {
+      useExperimentsStore.getState().selectModel('model-1');
+      useExperimentsStore.getState().selectModel('model-2');
+      useExperimentsStore.getState().selectModel('model-1');
+      expect(useExperimentsStore.getState().modelAccessOrder).toEqual(['model-2', 'model-1']);
+    });
+
+    it('selecting 6 models evicts oldest cache entries', async () => {
+      fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+
+      // Populate evaluations cache for models 1-5
+      for (let i = 1; i <= 5; i++) {
+        useExperimentsStore.getState().selectModel(`model-${i}`);
+        await useExperimentsStore.getState().fetchEvaluation(`model-${i}`);
+      }
+      // All 5 should be cached
+      for (let i = 1; i <= 5; i++) {
+        expect(useExperimentsStore.getState().evaluations[`model-${i}`]).toEqual(MOCK_EVALUATION);
+      }
+
+      const genBefore = useExperimentsStore.getState().cacheGeneration;
+
+      // Selecting model-6 should evict model-1 (oldest)
+      useExperimentsStore.getState().selectModel('model-6');
+
+      expect(useExperimentsStore.getState().cacheGeneration).toBe(genBefore + 1);
+      expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+      // model-2 through model-5 should remain
+      for (let i = 2; i <= 5; i++) {
+        expect(useExperimentsStore.getState().evaluations[`model-${i}`]).toEqual(MOCK_EVALUATION);
+      }
+    });
+
+    it('comparison models are pinned and not evicted', async () => {
+      fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+
+      // model-1 is added to comparison
+      useExperimentsStore.getState().toggleComparison('model-1');
+
+      // Populate cache for models 1-5
+      for (let i = 1; i <= 5; i++) {
+        useExperimentsStore.getState().selectModel(`model-${i}`);
+        await useExperimentsStore.getState().fetchEvaluation(`model-${i}`);
+      }
+
+      // Selecting model-6 would normally evict model-1, but it's pinned
+      useExperimentsStore.getState().selectModel('model-6');
+
+      // model-1 should still be cached (pinned by comparison)
+      expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
+      // model-2 (next oldest) should have been evicted instead
+      expect(useExperimentsStore.getState().evaluations['model-2']).toBeUndefined();
+    });
+
+    it('purgeModelCache() removes the model from modelAccessOrder', async () => {
+      fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
+
+      useExperimentsStore.getState().selectModel('model-1');
+      await useExperimentsStore.getState().fetchEvaluation('model-1');
+      expect(useExperimentsStore.getState().modelAccessOrder).toContain('model-1');
+
+      useExperimentsStore.getState().purgeModelCache('model-1');
+
+      expect(useExperimentsStore.getState().modelAccessOrder).not.toContain('model-1');
+      expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+    });
+
+    it('stale-fetch guard: result from evicted generation is dropped', async () => {
+      let resolveEval!: (v: EvaluationResult) => void;
+      fetchEvaluationMock.mockReturnValueOnce(
+        new Promise<EvaluationResult>((res) => { resolveEval = res; })
+      );
+
+      // Start a fetch for model-1 but don't await yet
+      const pending = useExperimentsStore.getState().fetchEvaluation('model-1');
+
+      // Simulate project switch: reset state but with a higher cacheGeneration so
+      // the stale-fetch guard detects that the captured gen is no longer current.
+      useExperimentsStore.setState({ ...createInitialExperimentsState(), cacheGeneration: 1 });
+
+      // Now resolve the in-flight request
+      resolveEval(MOCK_EVALUATION);
+      await pending;
+
+      // The stale result should NOT have been written
+      expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+    });
   });
 });

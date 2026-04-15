@@ -3,16 +3,16 @@
  * with a rise-up animation. Adapted from AnimatedPlaceholderInput.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useInsightTicker } from './useInsightTicker';
 import {
-  useInsightTicker,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
-} from './useInsightTicker';
+  computeCharDelay,
+} from './useAnimatedPlaceholder';
 import type { InsightAction } from '@/components/data/eda/edaInsights';
 import { InsightActionIcons } from '@/components/data/eda/InsightActionIcons';
 
@@ -58,7 +58,7 @@ function TickerRow({
                 style={{
                   display: 'inline-block',
                   animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                  animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                  animationDelay: `${computeCharDelay(i)}ms`,
                 }}
               >
                 {char === ' ' ? '\u00a0' : char}
@@ -78,6 +78,11 @@ export function InsightTicker({
   onAction,
 }: InsightTickerProps) {
   const [open, setOpen] = useState(false);
+  const safeItems = useMemo(
+    () => items.filter((item): item is InsightTickerItem => Boolean(item?.icon) && typeof item?.text === 'string'),
+    [items],
+  );
+  const itemTextLengths = useMemo(() => safeItems.map(item => item.text.length), [safeItems]);
   const {
     currentIndex,
     nextIndex,
@@ -85,12 +90,12 @@ export function InsightTicker({
     outgoingTransition,
     incomingTransition,
     prefersReducedMotion,
-  } = useInsightTicker(items.length, interval);
+  } = useInsightTicker(safeItems.length, interval, itemTextLengths);
 
-  if (items.length === 0) return null;
+  if (safeItems.length === 0) return null;
 
-  const currentItem = items[currentIndex];
-  const nextItem = items[nextIndex];
+  const currentItem = safeItems[currentIndex] ?? safeItems[0];
+  const nextItem = safeItems[nextIndex] ?? currentItem;
 
   const ticker = (
     <div
@@ -131,9 +136,9 @@ export function InsightTicker({
       </div>
 
       {/* Counter */}
-      {items.length > 1 && (
+      {safeItems.length > 1 && (
         <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 ml-2">
-          {currentIndex + 1} of {items.length}
+          {currentIndex + 1} of {safeItems.length}
         </span>
       )}
     </div>
@@ -147,7 +152,7 @@ export function InsightTicker({
       <PopoverContent className="w-80 p-2" align="start">
         <TooltipProvider delayDuration={200}>
           <div className="space-y-1 max-h-64 overflow-y-auto">
-            {items.map((item, i) => {
+            {safeItems.map((item, i) => {
               const Icon = item.icon;
               const iconColor = severityColors[item.severity ?? 'low'];
               return (

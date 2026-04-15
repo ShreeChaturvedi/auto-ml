@@ -5,35 +5,59 @@
  * - / : Home page (project selection)
  * - /project/:id : Redirects to current phase
  * - /project/:id/:phase : Project workspace with phase content
- * - /profile : User profile settings
+ * - /settings/:tab : Settings page (general, ai-models, editor, data, execution, profile)
+ * - /settings : Redirects to /settings/general
+ * - /profile : Redirects to /settings/profile
  * - /docs : Documentation page
  * - /login, /signup, /forgot-password, /reset-password : Auth flows
  */
 
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthLayout } from '@/components/auth/AuthLayout';
-import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
-import { GoogleOAuthCallback } from '@/components/auth/GoogleOAuthCallback';
-import { LoginForm } from '@/components/auth/LoginForm';
-import { ProfileSettings } from '@/components/auth/ProfileSettings';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { ResetPasswordForm } from '@/components/auth/ResetPasswordForm';
-import { SignupForm } from '@/components/auth/SignupForm';
-import { DocsPage } from '@/components/docs/DocsPage';
 import { useProjectStore } from '@/stores/projectStore';
 import { Button } from '@/components/ui/button';
-import { HomePage } from '@/pages/HomePage';
 import { ProjectRedirect, ProjectWorkspace } from '@/pages/ProjectWorkspace';
 import { useAuthBootstrap } from '@/hooks/useAuthBootstrap';
 import { useTokenRefreshTimer } from '@/hooks/useTokenRefreshTimer';
-import { initMonaco } from '@/lib/monaco/preloader';
 
-// Pre-load Monaco editor in the background to eliminate flash on code cells
-initMonaco().catch(console.error);
+const ForgotPasswordForm = lazy(() =>
+  import('@/components/auth/ForgotPasswordForm').then((m) => ({ default: m.ForgotPasswordForm }))
+);
+const GoogleOAuthCallback = lazy(() =>
+  import('@/components/auth/GoogleOAuthCallback').then((m) => ({ default: m.GoogleOAuthCallback }))
+);
+const LoginForm = lazy(() =>
+  import('@/components/auth/LoginForm').then((m) => ({ default: m.LoginForm }))
+);
+const ResetPasswordForm = lazy(() =>
+  import('@/components/auth/ResetPasswordForm').then((m) => ({ default: m.ResetPasswordForm }))
+);
+const SignupForm = lazy(() =>
+  import('@/components/auth/SignupForm').then((m) => ({ default: m.SignupForm }))
+);
+const VerifyEmailPage = lazy(() =>
+  import('@/components/auth/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage }))
+);
+const VerifyEmailPendingPage = lazy(() =>
+  import('@/components/auth/VerifyEmailPendingPage').then((m) => ({ default: m.VerifyEmailPendingPage }))
+);
+const DocsPage = lazy(() =>
+  import('@/components/docs/DocsPage').then((m) => ({ default: m.DocsPage }))
+);
+const SettingsPage = lazy(() =>
+  import('@/components/settings/SettingsPage').then((m) => ({ default: m.SettingsPage }))
+);
+const HomePage = lazy(() =>
+  import('@/pages/HomePage').then((m) => ({ default: m.HomePage }))
+);
+const DevToolsShowcase = lazy(() =>
+  import('@/pages/DevToolsShowcase').then((m) => ({ default: m.DevToolsShowcase }))
+);
 
 function MainApp() {
   const isInitialized = useProjectStore((state) => state.isInitialized);
@@ -72,11 +96,13 @@ function MainApp() {
     );
   } else {
     content = (
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/project/:projectId" element={<ProjectRedirect />} />
-        <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />
-      </Routes>
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/project/:projectId" element={<ProjectRedirect />} />
+          <Route path="/project/:projectId/:phase" element={<ProjectWorkspace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -89,6 +115,22 @@ function App() {
   const authReady = useAuthBootstrap();
   useTokenRefreshTimer();
 
+  // Dev-only route — bypasses auth bootstrap entirely, tree-shaken in production
+  if (import.meta.env.DEV && window.location.pathname === '/dev/tools') {
+    return (
+      <BrowserRouter>
+        <div className="min-h-screen w-full bg-background text-foreground">
+          <Suspense fallback={null}>
+            <Routes>
+              <Route path="/dev/tools" element={<DevToolsShowcase />} />
+            </Routes>
+          </Suspense>
+          <Toaster />
+        </div>
+      </BrowserRouter>
+    );
+  }
+
   if (!authReady) {
     return (
       <div className="min-h-screen w-full bg-background text-foreground flex items-center justify-center">
@@ -100,6 +142,7 @@ function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen w-full bg-background text-foreground">
+        <Suspense fallback={null}>
         <Routes>
           {/* Auth routes share AuthLayout so background persists across navigation */}
           <Route element={<AuthLayout />}>
@@ -107,24 +150,20 @@ function App() {
             <Route path="/signup" element={<SignupForm />} />
             <Route path="/forgot-password" element={<ForgotPasswordForm />} />
             <Route path="/reset-password" element={<ResetPasswordForm />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/verify-email/pending" element={<VerifyEmailPendingPage />} />
             <Route path="/auth/google/callback" element={<GoogleOAuthCallback />} />
           </Route>
-          {/* Profile is a dedicated full-page route outside AppShell */}
+          {/* Settings is a full-page route outside AppShell */}
           <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <ProfileSettings />
-              </ProtectedRoute>
-            }
+            path="/settings/:tab"
+            element={<ProtectedRoute><SettingsPage /></ProtectedRoute>}
           />
+          <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
+          <Route path="/profile" element={<Navigate to="/settings/profile" replace />} />
           <Route
             path="/docs"
-            element={
-              <ProtectedRoute>
-                <DocsPage />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><DocsPage /></ProtectedRoute>}
           />
           <Route
             path="/*"
@@ -135,6 +174,7 @@ function App() {
             }
           />
         </Routes>
+        </Suspense>
         <Toaster />
       </div>
     </BrowserRouter>

@@ -11,7 +11,8 @@ import { VoiceInputButton } from '@/components/llm/VoiceInputButton';
 import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import type { MentionCandidate } from '@/hooks/useMentionAutocomplete';
 import type { VoiceState } from '@/hooks/useVoiceInput';
-import type { SuggestionPill } from '@/types/agentic';
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
+import { TipTicker } from '@/components/ui/contextual-tip-bar';
 import type { LlmUsage } from '@/types/llmUi';
 import type {
   AssistantModelOption,
@@ -33,8 +34,8 @@ export interface AgenticStepDisplayProps {
   /* Composer status */
   composerStatusSlot?: React.ReactNode;
 
-  /* Suggestions */
-  suggestions: SuggestionPill[];
+  /* Tips */
+  tips: ContextualTip[];
   domainLockReason?: string;
   submitPrompt: (prompt: string) => void;
 
@@ -84,7 +85,7 @@ export function AgenticStepDisplay({
   setDismissedModelPromptFor,
   isGenerating,
   composerStatusSlot,
-  suggestions,
+  tips,
   domainLockReason,
   submitPrompt,
   chatInput,
@@ -107,7 +108,7 @@ export function AgenticStepDisplay({
   onCancelEdit,
 }: AgenticStepDisplayProps) {
   return (
-    <div className="border-t bg-background">
+    <div className="bg-background">
       {editingMessageId ? (
         <div className="flex items-center justify-between border-b px-4 py-1.5 bg-muted/30">
           <span className="text-xs text-muted-foreground">Editing message</span>
@@ -158,25 +159,6 @@ export function AgenticStepDisplay({
         </div>
       ) : null}
       {composerStatusSlot}
-      {suggestions.length > 0 && !domainLockReason ? (
-        <div className="min-w-0 overflow-x-auto px-4 pt-2 scrollbar-hide">
-          <div className="flex min-w-max flex-nowrap gap-2">
-            {suggestions.map((suggestion) => (
-              <Button
-                key={suggestion.id}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 shrink-0 text-xs"
-                onClick={() => submitPrompt(suggestion.prompt)}
-                disabled={isGenerating}
-              >
-                {suggestion.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       <div
         className="px-4 pb-4 pt-2"
@@ -226,6 +208,9 @@ export function AgenticStepDisplay({
           } satisfies UsageConfig}
           slots={{
             metaSlot: chatMetaSlot,
+            tipsSlot: !domainLockReason && tips.length > 0
+              ? <TipTicker tips={tips} className="h-5 min-w-0 flex-1" rowClassName="truncate" />
+              : undefined,
             maxWidthClassName: "max-w-5xl",
             voiceSlot: voiceConfig ? (
               <div className="group/voice">

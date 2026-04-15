@@ -31,6 +31,9 @@ import { getTurnIndex, groupMessagesByTurn } from '@/lib/llm/turnUtils';
 import type { DomainAdapter, LeftPaneRenderProps } from '@/types/agentic';
 import type { SavepointDiff } from '@/types/savepoint';
 import { useModelSelection } from '@/hooks/useModelSelection';
+import { LLM_CHAT_COMPOSER_MIN_WIDTH_PX } from '@/components/llm/LlmChatComposer';
+
+const AGENTIC_LEFT_PANEL_MIN_WIDTH_PX = LLM_CHAT_COMPOSER_MIN_WIDTH_PX + 40;
 
 interface AgenticShellProps {
   projectId: string;
@@ -54,6 +57,8 @@ interface AgenticShellProps {
   initialPrompt?: string | null;
   /** Animated workflow placeholders for the chat composer */
   composerPlaceholders?: string[];
+  /** Optional notebook ID to activate when this shell mounts */
+  notebookId?: string | null;
 }
 
 export function AgenticShell({
@@ -71,7 +76,8 @@ export function AgenticShell({
   LeftPaneComponent,
   renderLeftPane,
   initialPrompt,
-  composerPlaceholders
+  composerPlaceholders,
+  notebookId: requestedNotebookId
 }: AgenticShellProps) {
   const [chatInput, setChatInput] = useState('');
   const mentionInputRef = useRef<MentionInputHandle>(null);
@@ -122,14 +128,29 @@ export function AgenticShell({
     onValueChange: setChatInput,
     inputRef: mentionInputRef
   });
-
-  const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
-  const disconnectNotebook = useNotebookStore((s) => s.disconnect);
+  const dismissMention = mention.dismiss;
 
   useEffect(() => {
-    if (projectId) initializeNotebook(projectId);
-    return () => disconnectNotebook();
-  }, [projectId, initializeNotebook, disconnectNotebook]);
+    setChatInput('');
+    dismissMention();
+  }, [dismissMention, sessionVersion, storageKey]);
+
+  const initializeNotebook = useNotebookStore((s) => s.initializeNotebook);
+
+  // Track the latest truthy notebookId in a ref so that when it transitions
+  // from a value to null/undefined (disconnect cleanup), we don't re-trigger
+  // initialization with a stale/missing id.
+  const stableNotebookIdRef = useRef(requestedNotebookId);
+  if (requestedNotebookId) {
+    stableNotebookIdRef.current = requestedNotebookId;
+  }
+
+  useEffect(() => {
+    if (projectId) initializeNotebook(projectId, stableNotebookIdRef.current ?? undefined);
+    // Only re-run when projectId changes or when requestedNotebookId becomes
+    // a NEW truthy value. Transitions to null/undefined are ignored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, requestedNotebookId || '', initializeNotebook]);
 
   const activeNotebookId = useNotebookStore((s) => s.activeNotebookId);
 
@@ -182,7 +203,14 @@ export function AgenticShell({
     setChatInput('');
   }, [setEditingMessageId]);
 
-  const { clearAfter: savepointsClearAfter, getDiff: savepointsGetDiff } = savepoints;
+  const { clearAfter: savepointsClearAfter, getDiff: savepointsGetDiff, resetLocal: savepointsResetLocal } = savepoints;
+
+  // Clear the savepoint map and diff cache whenever the active notebook
+  // changes so savepoint ids from notebook A cannot be reused against
+  // notebook B after a switch.
+  useEffect(() => {
+    savepointsResetLocal();
+  }, [activeNotebookId, savepointsResetLocal]);
 
   const handleRevertToMessage = useCallback((messageId: string) => {
     const turnIdx = getTurnIndex(messages, messageId);
@@ -195,6 +223,9 @@ export function AgenticShell({
 
   const handleRetryWorkflow = useCallback(() => {
     if (isGenerating || !projectId) return;
+    // Find the last user prompt before stripping errors so we can re-send it
+    const lastUserMessage = [...messages].reverse().find(m => m.type === 'user');
+    const lastUserPrompt = lastUserMessage?.content ?? '';
     // Strip trailing error messages
     setMessages((prev) => {
       const trimmed = [...prev];
@@ -203,9 +234,9 @@ export function AgenticShell({
       }
       return trimmed;
     });
-    // Re-run with empty prompt (won't add a user message) to retry the workflow turn
-    void runLoop('', { model: assistantModel, reasoningEffort });
-  }, [isGenerating, projectId, setMessages, runLoop, assistantModel, reasoningEffort]);
+    // Re-send the last user prompt to retry the workflow turn
+    void runLoop(lastUserPrompt, { model: assistantModel, reasoningEffort });
+  }, [isGenerating, projectId, messages, setMessages, runLoop, assistantModel, reasoningEffort]);
 
   // Fetch turn diffs only after streaming completes (not during token-by-token updates)
   const [turnDiffs, setTurnDiffs] = useState<ReadonlyMap<string, SavepointDiff>>(new Map());
@@ -235,6 +266,8 @@ export function AgenticShell({
     return () => { cancelled = true; };
   }, [activeNotebookId, isGenerating, messages, savepointsGetDiff]);
 
+  const getComposer = useCallback(() => mentionInputRef.current, []);
+
   const {
     state: voiceState,
     analyserRef: voiceAnalyserRef,
@@ -243,15 +276,17 @@ export function AgenticShell({
     handlePushToTalkKeyUp,
   } = useComposerVoiceInput({
     value: chatInput,
-    inputRef: mentionInputRef,
+    getComposer,
     onValueChange: mention.handleValueChange,
     disabled: isGenerating,
   });
 
-  const suggestions = useMemo(
-    () => domainAdapter.suggestionProvider(messages, isGenerating),
-    [domainAdapter, messages, isGenerating]
-  );
+  const tips = useMemo(() => {
+    if (domainAdapter.tipsProvider) {
+      return domainAdapter.tipsProvider(messages, isGenerating);
+    }
+    return [];
+  }, [domainAdapter, messages, isGenerating]);
   const modelSwitchError = error && error.toLowerCase().includes('choose a different model')
     ? error
     : null;
@@ -293,6 +328,9 @@ export function AgenticShell({
         preparedPrompt += `\n\n[Referenced files: ${fileList}]`;
       }
 
+      // Snapshot the user-visible text before beforeSubmit augments it
+      const displayContent = preparedPrompt;
+
       if (beforeSubmit) {
         const nextPrompt = await beforeSubmit(preparedPrompt);
         if (!nextPrompt?.trim()) {
@@ -320,7 +358,7 @@ export function AgenticShell({
       void runLoop(preparedPrompt, {
         model: assistantModel,
         reasoningEffort
-      }, undefined, undefined, userMsgId);
+      }, undefined, undefined, userMsgId, displayContent);
     };
 
     void startRun();
@@ -343,6 +381,7 @@ export function AgenticShell({
     messages,
     isGenerating,
     error,
+    submitPrompt,
     activeTextMessageId,
     activeThinkingMessageId,
     hydratedMessageIds,
@@ -358,12 +397,13 @@ export function AgenticShell({
     : LeftPaneComponent
       ? <LeftPaneComponent {...leftPaneRenderProps} />
       : null;
-
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
         {/* ── Left panel: domain ribbon + content + chat ── */}
-        <ResizablePanel defaultSize={48} minSize={30}>
+        {/* number = pixels in react-resizable-panels v4; string "X%" = percentage */}
+        <ResizablePanel defaultSize="48%" minSize={AGENTIC_LEFT_PANEL_MIN_WIDTH_PX}>
           <div className="flex h-full min-h-0 flex-col">
             {/* Left ribbon */}
             <div className="flex h-14 items-center justify-between gap-3 border-b px-3 shrink-0">
@@ -393,7 +433,7 @@ export function AgenticShell({
               setDismissedModelPromptFor={setDismissedModelPromptFor}
               isGenerating={isGenerating}
               composerStatusSlot={composerStatusSlot}
-              suggestions={suggestions}
+              tips={tips}
               domainLockReason={domainLockReason}
               submitPrompt={submitPrompt}
               chatInput={chatInput}
@@ -427,17 +467,18 @@ export function AgenticShell({
         <ResizableHandle withHandle />
 
         {/* ── Right panel: notebook ribbon + cells ── */}
-        <ResizablePanel defaultSize={52} minSize={30}>
+        <ResizablePanel defaultSize="52%" minSize={300}>
           <div className="flex h-full flex-col">
             <NotebookToolbar
               projectId={projectId}
               headings={notebookHeadings}
               onScrollToHeading={(slug) => editorRef.current?.scrollToHeading(slug)}
             />
-            <NotebookEditor ref={editorRef} projectId={projectId} className="min-h-0 flex-1" />
+            <NotebookEditor ref={editorRef} projectId={projectId} notebookId={requestedNotebookId ?? activeNotebookId ?? undefined} className="min-h-0 flex-1" />
           </div>
         </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      </div>
     </div>
   );
 }

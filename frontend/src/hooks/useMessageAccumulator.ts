@@ -61,14 +61,19 @@ export function useMessageAccumulator({
     onHydrate?.(hydrated.messages, hydrated.hydratedMessageIds, hydrated.savepoints);
   }, [messageStorageScope, sessionVersion, onHydrate]);
 
-  // --- Persistence effect ---
+  // --- Persistence effect (debounced to avoid blocking main thread during streaming) ---
   useEffect(() => {
     if (!messageStorageScope) return;
     if (skipPersistOnceRef.current) {
       skipPersistOnceRef.current = false;
       return;
     }
-    persistStoredMessages(messageStorageScope, messages, savepointsRef.current);
+    // Debounce: only persist after messages stabilize (avoids blocking
+    // the main thread during token-by-token streaming).
+    const timer = setTimeout(() => {
+      persistStoredMessages(messageStorageScope, messages, savepointsRef.current);
+    }, 2000);
+    return () => clearTimeout(timer);
   }, [messageStorageScope, messages]);
 
   const resetAccumulator = useCallback(() => {

@@ -42,7 +42,7 @@ function KpiCell({
       onClick={onClick}
       className={cn(
         'flex flex-col text-left p-3.5 gap-0.5 overflow-hidden',
-        'border-b border-r border-border/50',
+        'border-b border-r border-border',
         '[&:nth-child(even)]:border-r-0',
         '[&:nth-last-child(-n+2)]:border-b-0',
         'transition-colors duration-150 hover:bg-muted/20',
@@ -83,7 +83,7 @@ export function InsightGrid({ models, evaluations, onCardClick }: InsightGridPro
   if (models.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-2 rounded-xl border border-border/50 overflow-hidden">
+    <div className="grid grid-cols-2 rounded-xl border border-border shadow-sm dark:shadow-none overflow-hidden">
       {cards.map((card, i) => (
         <KpiCell
           key={card.id}

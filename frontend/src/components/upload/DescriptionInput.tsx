@@ -5,11 +5,12 @@ interface DescriptionInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  placeholder?: string;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
 
-export function DescriptionInput({ value, onChange, disabled }: DescriptionInputProps) {
+export function DescriptionInput({ value, onChange, disabled, placeholder = 'Add a description' }: DescriptionInputProps) {
   const [draft, setDraft] = useState(value);
   const timerRef = useRef<number | null>(null);
 
@@ -59,9 +60,9 @@ export function DescriptionInput({ value, onChange, disabled }: DescriptionInput
           clearTimer();
         }
       }}
-      placeholder="Add a description"
+      placeholder={placeholder}
       disabled={disabled}
-      className="h-9 border-0 bg-transparent px-0 text-sm text-foreground placeholder:text-muted-foreground shadow-none focus-visible:ring-0"
+      className="h-9 border-0 bg-transparent dark:bg-transparent rounded-none px-2 text-sm text-foreground placeholder:text-muted-foreground shadow-none hover:border-transparent focus-visible:ring-0"
     />
   );
 }

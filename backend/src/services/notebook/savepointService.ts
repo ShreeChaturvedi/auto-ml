@@ -242,8 +242,9 @@ export async function restoreSavepoint(savepointId: string): Promise<{
     updatedAt: new Date()
   }));
 
-  // Broadcast the reset event
-  broadcast(notebookId, 'notebook:cells_reset', { cells: restoredCells });
+  // Broadcast the reset event. Include `notebookId` in the payload so
+  // clients can reject events for a different notebook tab after a switch.
+  broadcast(notebookId, 'notebook:cells_reset', { notebookId, cells: restoredCells });
 
   const uniqueIds = snapshot.map((item) => item.cellId);
 

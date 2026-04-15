@@ -1,67 +1,36 @@
 /**
  * NlWorkflowSteps - Workflow step display for NL query generation
  *
- * Renders the connector lines, work plan panel, SQL reveal block,
+ * Renders the connector lines, stream panel, SQL editor,
  * and error display for the natural-language query workflow.
- * Extracted from NlQueryWorkflow to isolate the step visualization.
  */
 
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { NlFlowConnector } from './NlFlowConnector';
-import { NlWorkPlanPanel } from './NlWorkPlanPanel';
-import { SqlRevealBlock } from './SqlRevealBlock';
-import type { ApproveThemeClasses, NlPhase } from './NlQueryWorkflow';
+import { NlStreamPanel } from './NlStreamPanel';
+import { NlSqlEditor } from './NlSqlEditor';
+import type { ApproveThemeClasses, NlPhase } from './NlQueryReducer';
 import type {
   NlGenerationResult,
   NlModelWorkBlockState,
-  NlProviderInfo,
-  NlWorkPhaseState
 } from '@/types/nlQuery';
 
 const AUTO_COLLAPSE_HEIGHT_PX = 920;
 
-function isNlProviderInfo(value: unknown): value is NlProviderInfo {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.id === 'string'
-    && typeof candidate.label === 'string'
-    && typeof candidate.model === 'string';
-}
-
 export interface NlWorkflowStepsProps {
-  /** Current workflow phase */
   phase: NlPhase;
-  /** Generation result (null until available) */
   result: NlGenerationResult | null;
-  /** Currently edited SQL (mirrors result.sql initially) */
   editedSql: string;
-  /** Callback when the user edits the SQL */
   onSqlEdit: (sql: string) => void;
-  /** Error message to display (when phase is 'error') */
   errorMessage: string | null;
-  /** Callback to dismiss the error */
   onDismissError: () => void;
-  /** Callback when the user approves the SQL */
   onApprove: () => void;
-  /** Callback when the user rejects the SQL */
   onReject: () => void;
-  /** Work phases for the plan panel */
-  workPhases: NlWorkPhaseState[];
-  /** Model work blocks for the plan panel */
   modelWorkBlocks: NlModelWorkBlockState[];
-  /** Typewriter visible token count for reveal animation */
-  visibleTokenCount: number;
-  /** Whether the typewriter reveal is complete */
-  isRevealComplete: boolean;
-  /** Theme classes for the approve button */
+  onRevealComplete: () => void;
   approveThemeClasses?: ApproveThemeClasses;
-  /** Color class for the flow connector */
   connectorColorClassName?: string;
-  /** Height of the parent container (for auto-collapse calculation) */
   containerHeight: number;
 }
 
@@ -74,10 +43,8 @@ export function NlWorkflowSteps({
   onDismissError,
   onApprove,
   onReject,
-  workPhases,
   modelWorkBlocks,
-  visibleTokenCount,
-  isRevealComplete,
+  onRevealComplete,
   approveThemeClasses,
   connectorColorClassName,
   containerHeight,
@@ -90,34 +57,22 @@ export function NlWorkflowSteps({
     }
   }, [phase]);
 
-  const showConnector = phase !== 'idle' && phase !== 'error';
+  const showConnector = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
   const topConnectorState: 'active' | 'settled' = phase === 'submitting' ? 'active' : 'settled';
   const bottomConnectorState: 'active' | 'settled' = phase === 'revealing' ? 'active' : 'settled';
-  const panelPhase: 'submitting' | 'revealing' | 'reviewing' = phase === 'reviewing' ? 'reviewing' : phase === 'revealing' ? 'revealing' : 'submitting';
-  const showPlanPanel = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
+  const showStreamPanel = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
   const showSqlBlock = phase === 'submitting' || phase === 'revealing' || phase === 'reviewing';
 
-  const autoCollapsed = showPlanPanel
+  const sqlEditorPhase: 'generating' | 'revealing' | 'reviewing' =
+    phase === 'revealing' ? 'revealing'
+      : phase === 'reviewing' ? 'reviewing'
+        : 'generating';
+
+  const autoCollapsed = showStreamPanel
     && phase === 'reviewing'
     && containerHeight > 0
     && containerHeight < AUTO_COLLAPSE_HEIGHT_PX;
   const isPanelExpanded = manualPanelExpanded ?? !autoCollapsed;
-
-  const activeProvider = useMemo(() => {
-    if (result?.provider) {
-      return result.provider;
-    }
-
-    for (let index = modelWorkBlocks.length - 1; index >= 0; index -= 1) {
-      const details = modelWorkBlocks[index]?.details;
-      const provider = details ? (details as Record<string, unknown>).provider : null;
-      if (isNlProviderInfo(provider)) {
-        return provider;
-      }
-    }
-
-    return null;
-  }, [modelWorkBlocks, result?.provider]);
 
   const togglePanelExpanded = useCallback(() => {
     setManualPanelExpanded((previous) => {
@@ -128,7 +83,7 @@ export function NlWorkflowSteps({
 
   return (
     <>
-      {(showPlanPanel || showSqlBlock) && (
+      {(showStreamPanel || showSqlBlock) && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col justify-center">
             <div
@@ -148,17 +103,14 @@ export function NlWorkflowSteps({
               />
             </div>
 
-            {showPlanPanel && (
-              <NlWorkPlanPanel
-                explanation={result?.explanation}
-                provider={activeProvider}
-                phase={panelPhase}
-                workPhases={workPhases}
+            {showStreamPanel && (
+              <NlStreamPanel
                 modelWorkBlocks={modelWorkBlocks}
                 isStreaming={phase === 'submitting'}
                 isExpanded={isPanelExpanded}
                 autoCollapsed={autoCollapsed}
                 onToggleExpanded={togglePanelExpanded}
+                containerHeight={containerHeight}
                 className="mx-auto w-full max-w-[44rem] shrink-0"
               />
             )}
@@ -188,18 +140,17 @@ export function NlWorkflowSteps({
                 'animate-in fade-in slide-in-from-bottom-1 duration-300 ease-out',
               )}
             >
-              <SqlRevealBlock
+              <NlSqlEditor
                 sql={result?.sql ?? ''}
-                queryExecutionError={result?.queryExecutionError}
-                isRevealing={phase === 'revealing'}
-                visibleTokenCount={visibleTokenCount}
-                isRevealComplete={isRevealComplete}
+                phase={sqlEditorPhase}
                 editedSql={editedSql}
                 onSqlChange={onSqlEdit}
                 originalSql={result?.sql ?? ''}
                 onApprove={onApprove}
                 onReject={onReject}
+                onRevealComplete={onRevealComplete}
                 approveThemeClasses={approveThemeClasses}
+                queryExecutionError={result?.queryExecutionError}
                 className="h-full"
               />
             </div>

@@ -55,7 +55,7 @@ export interface PreprocessingState {
   isLoadingTables: boolean;
   error: string | null;
   loadTables: (projectId: string) => Promise<void>;
-  selectDataset: (datasetId: string) => void;
+  selectDataset: (datasetId: string, options?: { preserveRunState?: boolean }) => void;
   setRunId: (runId: string | null) => void;
   setNextRunCellMode: (mode: DatasetContinuityMode) => void;
   consumeRunCellMode: () => DatasetContinuityMode;
@@ -188,12 +188,19 @@ export const usePreprocessingStore = create<PreprocessingState>()(
       };
 
       // Create an augmented dataset slice with run-state clearing
-      const selectDatasetWithCoordination = (datasetId: string) => {
+      const selectDatasetWithCoordination = (datasetId: string, options?: { preserveRunState?: boolean }) => {
         set((state: PreprocessingState) => {
           const exists = state.tables.some((table: AvailableTable) => table.datasetId === datasetId);
           if (!exists) {
             return {
               error: 'Selected dataset is unavailable in this project. Please choose another dataset.'
+            };
+          }
+
+          if (options?.preserveRunState) {
+            return {
+              selectedDatasetId: datasetId,
+              error: null
             };
           }
 
@@ -237,7 +244,11 @@ export const usePreprocessingStore = create<PreprocessingState>()(
         set((state: PreprocessingState) => ({
           runId: snapshot.runId,
           latestCheckpointId: getLatestCheckpointId(snapshot),
-          selectedDatasetId: snapshot.activeDatasetId ?? state.selectedDatasetId,
+          // Prefer the existing tab-persisted selection (e.g. a derived/processed
+          // dataset) over the backend run's activeDatasetId (which often points to
+          // the original source dataset).  Only fall back to the snapshot value when
+          // no dataset is currently selected.
+          selectedDatasetId: state.selectedDatasetId ?? snapshot.activeDatasetId ?? null,
           timeline: buildTimelineFromSnapshot(snapshot),
           stepBindings: buildStepBindingsFromSnapshot(snapshot),
           replayReport: null,

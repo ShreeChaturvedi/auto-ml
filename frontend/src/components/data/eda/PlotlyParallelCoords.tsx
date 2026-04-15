@@ -1,5 +1,4 @@
 import { useMemo } from 'react';
-import { Rows3 } from 'lucide-react';
 import { PlotEmptyState } from './PlotEmptyState';
 import {
   LazyPlot,
@@ -68,7 +67,7 @@ export function PlotlyParallelCoords({
 
   // Guard: empty or insufficient columns
   if (!rows || rows.length === 0 || cols.length < 2) {
-    return <PlotEmptyState icon={Rows3} message="Need at least 2 numeric columns and row data for parallel coordinates" className={className} />;
+    return <PlotEmptyState message="Need at least 2 numeric columns and row data for parallel coordinates" className={className} />;
   }
 
   return (

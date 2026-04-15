@@ -1,6 +1,4 @@
 import { useMemo } from 'react';
-import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -79,9 +77,9 @@ function DatasetCard({
       type="button"
       onClick={onSelect}
       className={cn(
-        'w-full rounded-lg border p-3 text-left transition-colors',
+        'w-full rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         selected
-          ? 'border-primary/60 bg-primary/[0.06] shadow-sm'
+          ? 'border-primary/60 bg-primary/[0.06] shadow-sm dark:shadow-none'
           : 'border-border/70 bg-card hover:bg-muted/30'
       )}
     >
@@ -170,16 +168,6 @@ export function DatasetChooserDialog({
   onCandidateDatasetChange,
   onStart
 }: DatasetChooserDialogProps) {
-  const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const projects = useProjectStore((s) => s.projects);
-  const activeProject = projects.find((p) => p.id === activeProjectId);
-  const themeColor = activeProject ? projectColorClasses[activeProject.color] : null;
-  const themeHoverBorder = themeColor
-    ? themeColor.hover
-        .replaceAll('dark:hover:bg-', 'dark:hover:border-')
-        .replaceAll('hover:bg-', 'hover:border-')
-    : null;
-
   const searchPlaceholders = useMemo(
     () => buildDatasetSearchPlaceholders(allTables),
     [allTables]
@@ -235,7 +223,7 @@ export function DatasetChooserDialog({
           <Button
             variant="outline"
             size="icon"
-            className="rounded-full transition-all duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md active:scale-95"
+            className="rounded-full transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:scale-110 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onClick={() => onOpenChange(false)}
           >
             <X className="h-4 w-4" />
@@ -246,9 +234,8 @@ export function DatasetChooserDialog({
             variant="outline"
             size="icon"
             className={cn(
-              'group rounded-full border-white bg-white text-black transition-all duration-200 hover:scale-110 hover:shadow-lg active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none',
-              themeColor?.hover,
-              themeHoverBorder
+              'group rounded-full border-white bg-white text-black transition-[transform,box-shadow] duration-200 hover:scale-110 hover:shadow-lg disabled:hover:scale-100 disabled:hover:shadow-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              'hover:bg-accent-bg-hover hover:border-accent-border'
             )}
             disabled={!candidateDatasetId}
             onClick={onStart}
@@ -258,7 +245,7 @@ export function DatasetChooserDialog({
               <Check
                 className={cn(
                   'absolute h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100',
-                  themeColor?.text
+                  'text-accent-text'
                 )}
               />
             </span>
@@ -278,6 +265,7 @@ interface RenameTabDialogProps {
   onSave: () => void;
   title?: string;
   description?: string;
+  placeholder?: string;
 }
 
 export function RenameTabDialog({
@@ -287,7 +275,8 @@ export function RenameTabDialog({
   onValueChange,
   onSave,
   title = 'Rename processing tab',
-  description = 'Update the name of the current processing tab.'
+  description = 'Update the name of the current processing tab.',
+  placeholder = 'Tab name'
 }: RenameTabDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -304,7 +293,7 @@ export function RenameTabDialog({
           onKeyDown={(event) => {
             if (event.key === 'Enter') onSave();
           }}
-          placeholder="Tab name"
+          placeholder={placeholder}
           autoFocus
         />
         <DialogFooter>

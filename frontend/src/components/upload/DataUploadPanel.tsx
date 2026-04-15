@@ -6,21 +6,29 @@
  * - Compact drop zone when files exist
  * - Simple file rows without card borders
  * - Horizontal separators between files
+ * - Bulk selection & actions (delete, download)
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileStack } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
-import { getFileType, DATA_FILE_TYPES } from '@/lib/fileUtils';
-import { FileRow } from './FileRow';
-import { uploadDatasetFile } from '@/lib/api/datasets';
-import { uploadDocument } from '@/lib/api/documents';
-import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { DATA_FILE_TYPES, downloadFile } from '@/lib/fileUtils';
+import { deleteDataset } from '@/lib/api/datasets';
+import { deleteDocument } from '@/lib/api/documents';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
+import { FileRow } from './FileRow';
+import { FileBulkActionBar } from './FileBulkActionBar';
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import {
+  createUploadedProjectFile,
+  ingestProjectFile,
+} from './projectFileIngestion';
 
 /** Static style for the shimmer band at rest (hoisted to avoid allocation per render). */
 const SHIMMER_RESTING_STYLE: React.CSSProperties = {
@@ -51,20 +59,19 @@ const acceptedFileTypes = {
 
 interface DataUploadPanelProps {
   projectId: string;
+  onFirstUpload?: () => void;
 }
 
-export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
+export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelProps) {
   const [uploadStatus, setUploadStatus] = useState<Record<string, 'uploading' | 'uploaded' | 'error'>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
 
-  const addFile = useDataStore((state) => state.addFile);
-  const addPreview = useDataStore((state) => state.addPreview);
-  const setFileMetadata = useDataStore((state) => state.setFileMetadata);
-  const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
-  const allFiles = useDataStore((state) => state.files);
-  const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  // Filter files for this project using useMemo to avoid infinite loops
+  const allFiles = useDataStore((state) => state.files);
+
   const projectFiles = useMemo(
     () => allFiles.filter((file) => file.projectId === projectId),
     [allFiles, projectId]
@@ -72,123 +79,93 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
 
   const hasFiles = projectFiles.length > 0;
 
+  const selectableIds = useMemo(
+    () => new Set(
+      projectFiles
+        .filter(f => uploadStatus[f.id] !== 'uploading' && uploadStatus[f.id] !== 'error')
+        .map(f => f.id)
+    ),
+    [projectFiles, uploadStatus]
+  );
+  const hasSelection = selectedIds.size > 0;
+  const allSelected = selectableIds.size > 0 && [...selectableIds].every(id => selectedIds.has(id));
+  const someSelected = hasSelection && !allSelected;
+
+  const handleToggleSelect = useCallback((fileId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectableIds));
+    }
+  }, [allSelected, selectableIds]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
   // Hydrate files from backend on mount
   useEffect(() => {
     if (projectId) {
-      void hydrateFromBackend(projectId);
+      void useDataStore.getState().hydrateFromBackend(projectId);
     }
-  }, [projectId, hydrateFromBackend]);
+  }, [projectId]);
 
-  // Upload dataset files to backend
-  const uploadDatasetToBackend = useCallback(
-    async (file: UploadedFile) => {
-      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
+  const ingestFile = useCallback(async (file: UploadedFile) => {
+    setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
 
-      try {
-        const response = await uploadDatasetFile(file.file!, projectId);
-        const dataset = response.dataset;
-
-        // Update file metadata with backend info
-        setFileMetadata(file.id, {
-          datasetId: dataset.datasetId,
-          tableName: dataset.tableName,
-          rowCount: dataset.n_rows,
-          columnCount: dataset.n_cols,
-          columns: dataset.columns,
-          datasetProfile: {
-            nRows: dataset.n_rows,
-            nCols: dataset.n_cols,
-            dtypes: dataset.dtypes,
-            nullCounts: dataset.null_counts
-          }
-        });
-
-        addPreview({
-          fileId: file.id,
-          headers: dataset.columns,
-          rows: dataset.sample,
-          totalRows: dataset.n_rows,
-          previewRows: dataset.sample.length,
-          eda: dataset.eda
-        });
-
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
-        console.log(`[DataUploadPanel] ✅ Uploaded ${file.name} to backend`);
-      } catch (error) {
-        console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
-        setUploadErrors((prev) => ({
-          ...prev,
-          [file.id]: error instanceof Error ? error.message : 'Upload failed'
-        }));
-      }
-    },
-    [projectId, setFileMetadata, addPreview]
-  );
-
-  const uploadDocumentToBackend = useCallback(
-    async (file: UploadedFile) => {
-      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploading' }));
-
-      try {
-        const response = await uploadDocument(projectId, file.file!);
-        const document = response.document;
-
-        setFileMetadata(file.id, {
-          documentId: document.documentId,
-          chunkCount: document.chunkCount,
-          embeddingDimension: document.embeddingDimension,
-          mimeType: document.mimeType,
-          parseWarning: document.parseWarning
-        });
-
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
-        console.log(`[DataUploadPanel] ✅ Ingested ${file.name} for RAG`);
-      } catch (error) {
-        console.error(`[DataUploadPanel] Failed to ingest ${file.name}:`, error);
-        setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
-        setUploadErrors((prev) => ({
-          ...prev,
-          [file.id]: error instanceof Error ? error.message : 'Upload failed'
-        }));
-      }
-    },
-    [projectId, setFileMetadata]
-  );
+    try {
+      await ingestProjectFile({
+        projectId,
+        file: file.file!,
+        fileId: file.id,
+        addFileWhen: 'after-upload',
+        syncProjectState: false,
+        addFile: () => undefined,
+        addPreview: useDataStore.getState().addPreview,
+        setFileMetadata: useDataStore.getState().setFileMetadata,
+        hydrateFromBackend: useDataStore.getState().hydrateFromBackend,
+        refreshProjectSuggestions: useNlSuggestionStore.getState().fetchProjectSuggestions,
+      });
+      setUploadStatus((prev) => ({ ...prev, [file.id]: 'uploaded' }));
+    } catch (error) {
+      console.error(`[DataUploadPanel] Failed to upload ${file.name}:`, error);
+      setUploadStatus((prev) => ({ ...prev, [file.id]: 'error' }));
+      setUploadErrors((prev) => ({
+        ...prev,
+        [file.id]: error instanceof Error ? error.message : 'Upload failed',
+      }));
+    }
+  }, [projectId]);
 
   // Handle file drop
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      const newFiles: UploadedFile[] = acceptedFiles.map((file) => ({
-        id: crypto.randomUUID(),
-        name: file.name,
-        type: getFileType(file),
-        size: file.size,
-        uploadedAt: new Date(),
-        projectId: projectId,
-        file
-      }));
+      const isFirstUpload = projectFiles.length === 0;
+      const addFile = useDataStore.getState().addFile;
+      const newFiles: UploadedFile[] = acceptedFiles.map((file) => createUploadedProjectFile(projectId, file));
 
-      const datasetUploads: Promise<unknown>[] = [];
-
-      // Add to store
+      const uploads: Promise<unknown>[] = [];
       newFiles.forEach((file) => {
         addFile(file);
-        // Auto-upload dataset files
-        if (DATA_FILE_TYPES.has(file.type)) {
-          datasetUploads.push(uploadDatasetToBackend(file));
-        } else {
-          void uploadDocumentToBackend(file);
-        }
+        uploads.push(ingestFile(file));
       });
 
-      if (datasetUploads.length > 0) {
-        void Promise.allSettled(datasetUploads).then(() => (
-          fetchProjectSuggestions(projectId, { force: true })
-        ));
-      }
+      void Promise.allSettled(uploads).then(async () => {
+        await Promise.all([
+          useDataStore.getState().hydrateFromBackend(projectId, { force: true }),
+          useNlSuggestionStore.getState().fetchProjectSuggestions(projectId, { force: true }),
+        ]);
+        if (isFirstUpload) onFirstUpload?.();
+      });
     },
-    [projectId, addFile, fetchProjectSuggestions, uploadDatasetToBackend, uploadDocumentToBackend]
+    [projectId, projectFiles.length, ingestFile, onFirstUpload]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -197,28 +174,91 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
     multiple: true
   });
 
+  // Helper to clean upload state for a list of file IDs
+  const clearUploadStateForIds = useCallback((ids: string[]) => {
+    setUploadStatus(prev => {
+      const next = { ...prev };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+    setUploadErrors(prev => {
+      const next = { ...prev };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+  }, []);
+
   const handleRemoveFile = async (fileId: string) => {
     try {
       await useDataStore.getState().deleteFile(fileId);
-      setUploadStatus((prev) => {
-        const next = { ...prev };
-        delete next[fileId];
-        return next;
-      });
-      setUploadErrors((prev) => {
-        const next = { ...prev };
-        delete next[fileId];
-        return next;
-      });
-
+      clearUploadStateForIds([fileId]);
+      toast.success('File deleted');
     } catch (error) {
       console.error('[DataUploadPanel] Failed to delete file:', error);
+      toast.error('Failed to delete file');
       setUploadErrors((prev) => ({
         ...prev,
         [fileId]: 'Failed to delete file from server'
       }));
     }
   };
+
+  // Bulk delete — single hydration pattern
+  const handleBulkDelete = useCallback(async () => {
+    setIsDeleting(true);
+    const files = projectFiles.filter(f => selectedIds.has(f.id));
+    const { markDeleted, removeFile, hydrateFromBackend } = useDataStore.getState();
+
+    // Mark all as deleted (race guard against concurrent hydrations)
+    for (const f of files) {
+      if (f.metadata?.datasetId) markDeleted(f.metadata.datasetId);
+      if (f.metadata?.documentId) markDeleted(f.metadata.documentId);
+    }
+
+    // API calls in parallel
+    const results = await Promise.allSettled(
+      files.map(async (f) => {
+        if (f.metadata?.datasetId) await deleteDataset(f.metadata.datasetId);
+        if (f.metadata?.documentId) await deleteDocument(f.metadata.documentId);
+      })
+    );
+
+    // Remove from local state
+    for (const f of files) removeFile(f.id);
+
+    // Single hydration + toast
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+    if (failed === 0) {
+      toast.success(`Deleted ${succeeded} file${succeeded !== 1 ? 's' : ''}`);
+    } else {
+      toast.error(`Deleted ${succeeded} of ${results.length}. ${failed} failed.`);
+    }
+
+    await hydrateFromBackend(projectId, { force: true });
+    clearUploadStateForIds(files.map(f => f.id));
+    clearSelection();
+    setIsDeleting(false);
+  }, [projectFiles, selectedIds, projectId, clearUploadStateForIds, clearSelection]);
+
+  // Bulk download — sequential to avoid browser blocking
+  const handleBulkDownload = useCallback(async () => {
+    setIsDownloading(true);
+    const files = projectFiles.filter(f => selectedIds.has(f.id));
+    let downloadCount = 0;
+    for (const file of files) {
+      try {
+        await downloadFile(file);
+        downloadCount++;
+        // Small delay between downloads so browser doesn't block them
+        if (files.length > 1) await new Promise(r => setTimeout(r, 100));
+      } catch (e) {
+        console.error(`Download failed: ${file.name}`, e);
+      }
+    }
+    toast.success(`Downloaded ${downloadCount} file${downloadCount !== 1 ? 's' : ''}`);
+    setIsDownloading(false);
+  }, [projectFiles, selectedIds]);
 
   // Count file types (single pass)
   const [dataFiles, contextFiles] = useMemo(() => {
@@ -247,7 +287,7 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
   }, [reducedMotion, isDragActive]);
 
   return (
-    <div className="h-full flex flex-col" data-testid="data-upload-panel">
+    <div className="flex-1 min-h-0 flex flex-col" data-testid="data-upload-panel">
       {/* Drop Zone + File List Container */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Drop Zone - Fills entire area when empty, compact when has files */}
@@ -255,12 +295,12 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
           {...getRootProps()}
           onMouseEnter={triggerShimmer}
           className={cn(
-            'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden',
-            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border border-dashed border-border hover:border-muted-foreground/30' : 'flex-1',
-            isDragActive && 'bg-primary/5'
+            'relative flex flex-col items-center justify-center transition-colors duration-300 cursor-pointer overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            hasFiles ? 'py-6 mx-4 mt-4 mb-4 rounded-xl border border-dashed border-muted-foreground/30 hover:border-muted-foreground/50' : 'flex-1',
+            isDragActive && 'border-accent-fill bg-accent-bg'
           )}
         >
-          <input {...getInputProps()} />
+          <input {...getInputProps()} id="data-upload-input" name="uploadedFiles" />
 
           {/* Metallic shimmer band — hidden at rest, sweeps once on hover via WAAPI */}
           <div
@@ -293,20 +333,49 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
         {/* File List - Simple rows with separators */}
         {hasFiles && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-4 pb-4">
-            {/* Header with counts */}
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium">Uploaded Files</span>
-              <div className="flex items-center gap-2">
-                {dataFiles.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {dataFiles.length} data
-                  </Badge>
-                )}
-                {contextFiles.length > 0 && (
-                  <Badge variant="outline" className="text-xs">
-                    {contextFiles.length} context
-                  </Badge>
-                )}
+            {/* Header — swaps between normal and bulk toolbar */}
+            <div className="relative flex items-center mb-3 min-h-[28px]">
+              {/* Normal toolbar */}
+              <div className={cn(
+                'flex items-center justify-between w-full transition-opacity duration-150',
+                hasSelection ? 'opacity-0 pointer-events-none absolute inset-0 items-center' : 'opacity-100',
+              )}>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                    onCheckedChange={toggleAll}
+                    className="h-[18px] w-[18px] rounded-full"
+                    aria-label="Select all files"
+                  />
+                  <span className="text-sm font-medium">Uploaded Files</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {dataFiles.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {dataFiles.length} data
+                    </Badge>
+                  )}
+                  {contextFiles.length > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {contextFiles.length} context
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Bulk action toolbar */}
+              <div className={cn(
+                'flex items-center w-full transition-opacity duration-150',
+                hasSelection ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0 items-center',
+              )}>
+                <FileBulkActionBar
+                  selectedCount={selectedIds.size}
+                  onClearSelection={clearSelection}
+                  onBulkDelete={handleBulkDelete}
+                  onBulkDownload={handleBulkDownload}
+                  isDeleting={isDeleting}
+                  isDownloading={isDownloading}
+                />
               </div>
             </div>
 
@@ -319,6 +388,10 @@ export function DataUploadPanel({ projectId }: DataUploadPanelProps) {
                   onRemove={handleRemoveFile}
                   status={uploadStatus[file.id]}
                   errorMessage={uploadErrors[file.id]}
+                  selectable={selectableIds.has(file.id)}
+                  selected={selectedIds.has(file.id)}
+                  selectionActive={hasSelection}
+                  onToggleSelect={handleToggleSelect}
                 />
               ))}
             </div>

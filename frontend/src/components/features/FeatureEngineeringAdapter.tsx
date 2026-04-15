@@ -1,6 +1,7 @@
-import type { DomainAdapter, SuggestionPill, ToolHandlers } from '@/types/agentic';
+import type { DomainAdapter, ToolHandlers } from '@/types/agentic';
 import { streamWorkflowTurn } from '@/lib/api/llm';
 import { useFeatureStore } from '@/stores/featureStore';
+import type { FeatureCategory, FeatureMethod } from '@/types/feature';
 import type { UploadedFile } from '@/types/file';
 import type { ColumnDataType } from '@/types/file';
 import type { ChatMessage, ToolCall, ToolResult } from '@/types/llmUi';
@@ -8,152 +9,70 @@ import { useNotebookStore } from '@/stores/notebookStore';
 import { useWorkflowSessionStore } from '@/stores/workflowSessionStore';
 import type { WorkflowArtifact } from '@/types/workflow';
 import type { NotebookPhaseMetadata } from '@/types/notebook';
+import type { ContextualTip } from '@/components/ui/contextual-tip-bar';
+import { COMMON_CHAT_TIPS } from '@/components/ui/common-chat-tips';
+import { Target, TrendingUp, Calendar, FileText, Bug, GitPullRequest } from 'lucide-react';
+import { resolveFeatureDescription } from './featureEngineeringUtils';
 
 export interface FeatureEngineeringAdapterConfig {
   projectId: string;
+  currentVersionId?: string;
   datasetId: string | undefined;
   targetColumn: string | undefined;
   datasetFiles: UploadedFile[];
   documentFiles: UploadedFile[];
   sessionKey: string;
+  notebookId?: string;
   notebookName?: string;
   notebookMetadata?: NotebookPhaseMetadata;
+  onNotebookCreated?: (notebookId: string) => void;
 }
 
-function dedupeSuggestions(suggestions: SuggestionPill[]): SuggestionPill[] {
-  const seen = new Set<string>();
-  return suggestions.filter((suggestion) => {
-    const key = suggestion.prompt.toLowerCase().trim();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function buildFeatureSuggestions(
+function buildFeatureTips(
   config: FeatureEngineeringAdapterConfig,
   messages: ChatMessage[],
-  isGenerating: boolean
-): SuggestionPill[] {
-  if (isGenerating) {
-    return [];
+): ContextualTip[] {
+  const tips: ContextualTip[] = [];
+
+  const datasetFile = config.datasetFiles.find(
+    (file) => file.metadata?.datasetId === config.datasetId
+  );
+  const profile = datasetFile?.metadata?.datasetProfile;
+
+  if (config.targetColumn && profile) {
+    const targetDtype: ColumnDataType | undefined = profile.dtypes[config.targetColumn];
+    const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
+
+    if (isClassification) {
+      tips.push({ id: 'tip-target-class', icon: Target, content: 'Classification target — class balance matters' });
+    } else {
+      tips.push({ id: 'tip-target-reg', icon: TrendingUp, content: 'Regression target — check for skewness' });
+    }
+  } else if (!config.targetColumn) {
+    tips.push({ id: 'tip-no-target', icon: Target, content: 'Set a target column in Training for task-aware tips' });
   }
 
-  const hasUserMessages = messages.some((message) => message.type === 'user');
-  const latestError = [...messages].reverse().find((message) => message.type === 'error');
-  const latestUserMessage = [...messages].reverse().find((message) => message.type === 'user');
-
-  const datasetName = config.datasetFiles.find((file) => file.metadata?.datasetId === config.datasetId)?.name;
-  const sourceName = (datasetName ?? 'the selected dataset').replace(/\.[^/.]+$/, '');
-
-  const suggestions: SuggestionPill[] = [];
-
-  if (!hasUserMessages) {
-    suggestions.push(
-      {
-        id: 'fe-initial-candidates',
-        label: 'Suggest candidate features',
-        prompt: `Propose high-impact feature candidates for ${sourceName} and explain why each helps.`
-      },
-      {
-        id: 'fe-initial-leakage',
-        label: 'Leakage-safe plan',
-        prompt: `Create a leakage-safe feature engineering plan for ${sourceName} with validation checks.`
-      }
-    );
-
-    // Dataset-aware suggestions from profile
-    const datasetFile = config.datasetFiles.find(
-      (file) => file.metadata?.datasetId === config.datasetId
-    );
-    const profile = datasetFile?.metadata?.datasetProfile;
-
-    if (config.targetColumn && profile) {
-      const targetDtype: ColumnDataType | undefined = profile.dtypes[config.targetColumn];
-      const isClassification = targetDtype === 'string' || targetDtype === 'boolean';
-
-      suggestions.push({
-        id: 'fe-initial-target-aware',
-        label: isClassification ? 'Classification features' : 'Regression features',
-        prompt: isClassification
-          ? `Recommend feature transformations for ${sourceName} optimized for classification on target "${config.targetColumn}".`
-          : `Recommend feature transformations for ${sourceName} optimized for regression on target "${config.targetColumn}".`
-      });
-    } else if (config.targetColumn) {
-      suggestions.push({
-        id: 'fe-initial-target-aware',
-        label: 'Target-aware features',
-        prompt: `Recommend feature transformations for ${sourceName} given target column "${config.targetColumn}".`
-      });
-    }
-
-    if (profile) {
-      const dateCols = Object.entries(profile.dtypes)
-        .filter(([, dtype]) => dtype === 'date')
-        .map(([name]) => name);
-      if (dateCols.length > 0) {
-        const topDates = dateCols.slice(0, 2).join(', ');
-        suggestions.push({
-          id: 'fe-initial-temporal',
-          label: `Temporal features from ${topDates}`,
-          prompt: `Extract temporal features (day of week, month, year, time deltas) from date columns ${topDates} in ${sourceName}.`
-        });
-      }
-    }
-
-    if (config.documentFiles.length > 0) {
-      suggestions.push({
-        id: 'fe-initial-rag',
-        label: 'Use context docs',
-        prompt: 'Use uploaded context documents to prioritize domain-relevant features.'
-      });
-    }
-
-    return dedupeSuggestions(suggestions).slice(0, 6);
-  }
-
-  if (latestError?.type === 'error') {
-    suggestions.push({
-      id: 'fe-error-recover',
-      label: 'Recover from error',
-      prompt: 'Diagnose the latest feature engineering error and propose the minimal safe fix.'
-    });
-  }
-
-  if (latestUserMessage?.type === 'user') {
-    const text = latestUserMessage.content.toLowerCase();
-    if (text.includes('overfit') || text.includes('leak')) {
-      suggestions.push({
-        id: 'fe-overfit-guard',
-        label: 'Reduce leakage risk',
-        prompt: 'Rework the feature plan to reduce target leakage and overfitting risk.'
-      });
-    }
-    if (text.includes('interpret') || text.includes('explain')) {
-      suggestions.push({
-        id: 'fe-interpretability',
-        label: 'Interpretable features',
-        prompt: 'Suggest simpler, interpretable feature alternatives and expected trade-offs.'
-      });
+  if (profile) {
+    const dateCols = Object.entries(profile.dtypes).filter(([, dtype]) => dtype === 'date');
+    if (dateCols.length > 0) {
+      tips.push({ id: 'tip-dates', icon: Calendar, content: 'Date columns available for temporal features' });
     }
   }
 
-  suggestions.push(
-    {
-      id: 'fe-validate',
-      label: 'Add validation checks',
-      prompt: 'Add post-transform validation checks for row-count drift, null drift, and schema changes.'
-    },
-    {
-      id: 'fe-ready',
-      label: 'Prepare for training',
-      prompt: 'Finalize a training-ready feature set and summarize readiness risks.'
-    }
+  if (config.documentFiles.length > 0) {
+    tips.push({ id: 'tip-docs', icon: FileText, content: `${config.documentFiles.length} context documents available` });
+  }
+
+  if (messages.findLast((m) => m.type === 'error')) {
+    tips.push({ id: 'tip-error', icon: Bug, content: "Try 'diagnose the error' for recovery" });
+  }
+
+  tips.push(
+    ...COMMON_CHAT_TIPS,
+    { id: 'tip-lifecycle', icon: GitPullRequest, content: 'Features go through propose → validate → register' },
   );
 
-  return dedupeSuggestions(suggestions).slice(0, 7);
+  return tips;
 }
 
 /** Semantic feature lifecycle tools whose calls/results update the feature store. */
@@ -166,7 +85,29 @@ const FEATURE_LIFECYCLE_SEMANTIC_TOOLS = [
   'checkpoint_feature_pipeline'
 ] as const;
 
-function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
+function resolveFeatureStepStatus(call: ToolCall, result: ToolResult): string {
+  if (result.error) {
+    return 'error';
+  }
+
+  const output = result.output as Record<string, unknown> | undefined;
+  switch (call.tool) {
+    case 'propose_feature':
+      return 'proposed';
+    case 'materialize_feature_code':
+      return 'code_ready';
+    case 'execute_feature':
+      return output?.status === 'failed' || output?.succeeded === false ? 'failed' : 'executed';
+    case 'validate_feature':
+      return 'validated';
+    case 'register_feature':
+      return output?.status === 'rejected' ? 'rejected' : 'registered';
+    default:
+      return typeof output?.status === 'string' ? output.status : 'ok';
+  }
+}
+
+function buildFeatureToolRegistry(projectId: string, currentVersionId?: string): DomainAdapter['toolRegistry'] {
   const toolHandlers: ToolHandlers = {
     onCall: (call: ToolCall) => {
       const store = useFeatureStore.getState();
@@ -184,15 +125,63 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
       }
 
       if (featureId) {
+        const featureName = (output?.featureName ?? call.args?.featureName ?? featureId) as string;
+        const method = (output?.method ?? call.args?.method ?? call.tool) as string;
+        const existingFeature = store.features.find((feature) => feature.id === featureId);
+        const existingStep = store.featureSteps[featureId];
+
+        // Preserve prior step.code when the current tool call doesn't include
+        // it. `register_feature` in particular has no `code` arg in its schema,
+        // so a naive `code: call.args?.code` would overwrite the code that
+        // `materialize_feature_code` persisted earlier — which then kills it
+        // in localStorage on page reload. (Flagged by harsh critic review.)
+        const toolCode = call.args?.code as string | undefined;
+        const preservedCode = toolCode ?? existingStep?.code;
+
         store.setFeatureStep(featureId, {
           stepId: featureId,
-          name: (output?.featureName ?? call.args?.featureName ?? featureId) as string,
-          method: (output?.method ?? call.args?.method ?? call.tool) as string,
-          status: result.error ? 'error' : (output?.status ?? 'ok') as string,
+          name: featureName,
+          method,
+          status: resolveFeatureStepStatus(call, result),
           error: result.error,
-          code: call.args?.code as string | undefined,
+          code: preservedCode,
           metrics: output?.validation as Record<string, unknown> | undefined
         });
+
+        // Bridge registered features into the FeatureSpec array for readiness report
+        if (call.tool === 'register_feature' && !result.error) {
+          const rejected = (output?.status as string) === 'rejected';
+          if (!rejected) {
+            const sourceColumns = (output?.sourceColumns ?? call.args?.sourceColumns) as string[] | undefined;
+            // Prefer existingFeature's columns (set from the suggestion card
+            // toggle path with correct sourceColumn + secondaryColumn from the
+            // propose_feature output). Fall back to sourceColumns[0]/[1] only
+            // for features that bypassed the suggestion card entirely.
+            const secondaryColumn = existingFeature?.secondaryColumn ?? sourceColumns?.[1];
+            store.upsertFeature({
+              id: featureId,
+              projectId: (output?.projectId as string) ?? existingFeature?.projectId ?? projectId,
+              ...(currentVersionId ? { versionId: currentVersionId } : {}),
+              sourceColumn: existingFeature?.sourceColumn ?? sourceColumns?.[0] ?? existingStep?.name ?? '',
+              ...(secondaryColumn ? { secondaryColumn } : {}),
+              featureName: existingFeature?.featureName ?? existingStep?.name ?? featureName,
+              description: resolveFeatureDescription(
+                existingFeature?.description,
+                call.args?.rationale ?? output?.rationale,
+                ''
+              ),
+              method: (existingFeature?.method ?? existingStep?.method ?? method ?? 'custom') as FeatureMethod,
+              category: (existingFeature?.category ?? 'numeric_transform') as FeatureCategory,
+              params: existingFeature?.params ?? {},
+              enabled: true,
+              createdAt: existingFeature?.createdAt ?? new Date().toISOString(),
+              // Copy LLM-authored code from the step so the apply pipeline
+              // can use it verbatim instead of regenerating from the method
+              // template. The code was persisted earlier by materialize_feature_code.
+              code: preservedCode ?? existingFeature?.code
+            });
+          }
+        }
       }
     }
   };
@@ -205,11 +194,9 @@ function buildFeatureToolRegistry(): DomainAdapter['toolRegistry'] {
 }
 
 function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
-  // Prefer the first-class runId; fall back to runId inside payload for older events.
-  const runId = artifact.runId
-    ?? (artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
-      ? (artifact.payload as Record<string, unknown>).runId as string | undefined
-      : undefined);
+  const runId = artifact.payload && typeof artifact.payload === 'object' && !Array.isArray(artifact.payload)
+    ? (artifact.payload as Record<string, unknown>).featureRunId as string | undefined
+    : undefined;
   if (runId) {
     useFeatureStore.getState().setFeatureRunId(runId);
   }
@@ -218,24 +205,72 @@ function syncFeatureRunIdFromArtifact(artifact: WorkflowArtifact) {
 export function createFeatureEngineeringAdapter(
   config: FeatureEngineeringAdapterConfig
 ): DomainAdapter {
-  const toolRegistry = buildFeatureToolRegistry();
+  const toolRegistry = buildFeatureToolRegistry(config.projectId, config.currentVersionId);
 
   return {
-    buildRequest: async (prompt, _toolCalls, _toolResults, onEvent, signal, options) => {
+    buildRequest: async (rawPrompt, _toolCalls, _toolResults, onEvent, signal, options) => {
       if (!config.datasetId) {
         throw new Error('Select a dataset before generating a feature plan.');
       }
 
+      // Enrich the prompt with enabled features so the LLM knows what to implement
+      const featureStore = useFeatureStore.getState();
+      const enabledFeatures = featureStore.features.filter(
+        (f) =>
+          f.projectId === config.projectId
+          && f.enabled
+          && (!config.currentVersionId || f.versionId === config.currentVersionId)
+      );
+      let prompt = rawPrompt;
+      if (enabledFeatures.length > 0 && /\b(implement|apply|build|execute|run|make)\b/i.test(rawPrompt)) {
+        const featureIds = enabledFeatures.map((f) => f.id).join(', ');
+        const featureList = enabledFeatures
+          .map((f) => `${f.featureName} (${f.method} on ${f.sourceColumn})`)
+          .join('; ');
+        prompt = `${rawPrompt}\n\nSelected feature IDs to implement: ${featureIds}\nEnabled features to implement: ${featureList}`;
+      }
+
       const session = useWorkflowSessionStore.getState().getSession(config.sessionKey);
       const notebookStore = useNotebookStore.getState();
-      let notebookId = notebookStore.activeNotebookId ?? undefined;
+
+      // Feature engineering uses a notebook scoped to the active draft
+      // pipeline. Never adopt a preprocessing notebook or an arbitrary FE
+      // notebook from another draft.
+      let notebookId = config.notebookId?.trim() || undefined;
+      if (notebookId && notebookStore.activeNotebookId !== notebookId) {
+        await notebookStore.setActiveNotebook(notebookId);
+        if (useNotebookStore.getState().activeNotebookId !== notebookId) {
+          notebookId = undefined;
+        }
+      }
+
+      if (!notebookId) {
+        const activeNotebook = notebookStore.notebooks.find(
+          (entry) => entry.notebookId === notebookStore.activeNotebookId
+        );
+        const activeMetadata = activeNotebook?.metadata as Record<string, unknown> | undefined;
+        const expectedTabId = config.notebookMetadata && typeof config.notebookMetadata === 'object'
+          ? (config.notebookMetadata as Record<string, unknown>).tabId
+          : undefined;
+        if (
+          activeNotebook
+          && activeMetadata?.phase === 'feature-engineering'
+          && (!expectedTabId || activeMetadata?.tabId === expectedTabId)
+        ) {
+          notebookId = activeNotebook.notebookId;
+        }
+      }
 
       if (!notebookId) {
         const createdNotebook = await notebookStore.createNotebook(
           config.notebookName ?? 'Feature Engineering Notebook',
-          config.notebookMetadata
+          config.notebookMetadata ?? { phase: 'feature-engineering' }
         );
         notebookId = createdNotebook?.notebookId;
+        if (notebookId) {
+          config.onNotebookCreated?.(notebookId);
+          await notebookStore.setActiveNotebook(notebookId);
+        }
       }
 
       if (!notebookId) {
@@ -263,9 +298,6 @@ export function createFeatureEngineeringAdapter(
     },
     onWorkflowStateUpdate: (state) => {
       useWorkflowSessionStore.getState().updateSession(config.sessionKey, state);
-      if (state.runId) {
-        useFeatureStore.getState().setFeatureRunId(state.runId);
-      }
     },
     onWorkflowArtifactUpdate: (artifact) => {
       syncFeatureRunIdFromArtifact(artifact);
@@ -274,8 +306,9 @@ export function createFeatureEngineeringAdapter(
       useFeatureStore.getState().clearDraft();
       useWorkflowSessionStore.getState().clearSession(config.sessionKey);
     },
+    preserveToolHistoryBetweenPrompts: true,
     toolRegistry,
     toolUiRegistry: {},
-    suggestionProvider: (messages, isGenerating) => buildFeatureSuggestions(config, messages, isGenerating)
+    tipsProvider: (messages) => buildFeatureTips(config, messages)
   };
 }

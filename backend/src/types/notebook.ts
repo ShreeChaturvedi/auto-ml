@@ -75,10 +75,14 @@ export type CellSummary = z.infer<typeof CellSummarySchema>;
 // Notebook Types
 // ============================================================
 
+export const NotebookKindSchema = z.enum(['phase', 'standalone']);
+export type NotebookKind = z.infer<typeof NotebookKindSchema>;
+
 export const NotebookSchema = z.object({
   notebookId: z.string().uuid(),
   projectId: z.string().uuid(),
   name: z.string(),
+  kind: NotebookKindSchema.default('phase'),
   metadata: z.record(z.unknown()).default({}),
   createdAt: z.date(),
   updatedAt: z.date()
@@ -151,7 +155,11 @@ export const WSServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cell:executing'), cellId: z.string().uuid() }),
   z.object({ type: z.literal('cell:executed'), cell: CellSchema }),
   z.object({ type: z.literal('cell:output'), cellId: z.string().uuid(), output: CellOutputSchema }),
-  z.object({ type: z.literal('notebook:cells_reset'), cells: z.array(CellSchema) }),
+  z.object({
+    type: z.literal('notebook:cells_reset'),
+    notebookId: z.string().uuid(),
+    cells: z.array(CellSchema)
+  }),
   z.object({ type: z.literal('error'), message: z.string() }),
   z.object({ type: z.literal('pong') })
 ]);
@@ -201,6 +209,7 @@ export interface NotebookRow {
   notebook_id: string;
   project_id: string;
   name: string;
+  kind: NotebookKind;
   metadata: Record<string, unknown>;
   execution_counter?: number;
   created_at: Date;
@@ -248,6 +257,7 @@ export function notebookRowToNotebook(row: NotebookRow): Notebook {
     notebookId: row.notebook_id,
     projectId: row.project_id,
     name: row.name,
+    kind: row.kind ?? 'phase',
     metadata: row.metadata,
     createdAt: row.created_at,
     updatedAt: row.updated_at

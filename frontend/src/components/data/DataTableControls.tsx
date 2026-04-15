@@ -67,10 +67,10 @@ export function DataTableControls({
                 variant="ghost"
                 size="icon"
                 onClick={() => onSearchExpandedChange(true)}
-                className="h-7 w-7 shrink-0"
+                className="h-7 w-7 shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                 aria-label="Search"
               >
-                <Search className={cn('h-3.5 w-3.5', globalFilter && 'text-primary')} />
+                <Search className={cn('h-3.5 w-3.5', globalFilter ? 'text-accent-text' : 'text-muted-foreground')} />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Search</TooltipContent>
@@ -82,7 +82,7 @@ export function DataTableControls({
                 variant="ghost"
                 size="icon"
                 onClick={onExport}
-                className="h-7 w-7 shrink-0"
+                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                 aria-label="Export"
               >
                 <Download className="h-3.5 w-3.5" />
@@ -98,7 +98,7 @@ export function DataTableControls({
                   variant="ghost"
                   size="icon"
                   onClick={onSave}
-                  className="h-7 w-7 shrink-0"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                   aria-label="Save"
                 >
                   <Save className="h-3.5 w-3.5" />
@@ -157,6 +157,8 @@ export function DataTableControls({
           </div>
           <input
             ref={searchInputRef}
+            id="data-table-search-input"
+            name="rowSearch"
             placeholder="Search rows..."
             value={globalFilter}
             onChange={(e) => onGlobalFilterChange(e.target.value)}
@@ -175,7 +177,7 @@ export function DataTableControls({
               onGlobalFilterChange('');
               onSearchExpandedChange(false);
             }}
-            className="h-7 w-7 shrink-0"
+            className="h-7 w-7 shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             aria-label="Close search"
           >
             <X className="h-3.5 w-3.5" />
@@ -194,7 +196,7 @@ export function DataTableControls({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="shrink-0 border-b bg-muted/30 px-4 py-2.5">
+      <div className="shrink-0 border-b bg-muted/30 px-4 py-2.5 dark:shadow-none">
         {compactControls}
       </div>
     </TooltipProvider>

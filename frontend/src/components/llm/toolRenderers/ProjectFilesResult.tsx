@@ -1,4 +1,5 @@
-import { Database, FileText } from 'lucide-react';
+import { resolveFileIconByFilename } from '@/lib/fileUtils';
+import { DimensionPill } from './sharedComponents';
 
 export interface ProjectFile {
   datasetId?: string;
@@ -31,29 +32,20 @@ export function ProjectFilesResult({ data }: { data: ProjectFilesOutput }) {
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Datasets
           </p>
-          {datasets.map((ds, i) => (
-            <div
-              key={ds.datasetId ?? i}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 bg-card/40 border border-border/30"
-            >
-              <Database className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-xs font-medium text-foreground truncate flex-1">
-                {ds.filename}
-              </span>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {ds.nRows != null && (
-                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground">
-                    {ds.nRows.toLocaleString()} rows
-                  </span>
-                )}
-                {ds.nCols != null && (
-                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground">
-                    · {ds.nCols} cols
-                  </span>
+          {datasets.map((ds, i) => {
+            const { Icon, colorClass } = resolveFileIconByFilename(ds.filename);
+            return (
+              <div key={ds.datasetId ?? i} className="flex items-center gap-2 py-1">
+                <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${colorClass}`} />
+                <span className="text-xs font-medium text-foreground truncate flex-1">
+                  {ds.filename}
+                </span>
+                {(ds.nRows != null || ds.nCols != null) && (
+                  <DimensionPill rows={ds.nRows} cols={ds.nCols} />
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -62,22 +54,22 @@ export function ProjectFilesResult({ data }: { data: ProjectFilesOutput }) {
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Documents
           </p>
-          {documents.map((doc, i) => (
-            <div
-              key={doc.documentId ?? i}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 bg-card/40 border border-border/30"
-            >
-              <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-xs font-medium text-foreground truncate flex-1">
-                {doc.filename}
-              </span>
-              {doc.mimeType && (
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  {doc.mimeType}
+          {documents.map((doc, i) => {
+            const { Icon, colorClass } = resolveFileIconByFilename(doc.filename);
+            return (
+              <div key={doc.documentId ?? i} className="flex items-center gap-2 py-1">
+                <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${colorClass}`} />
+                <span className="text-xs font-medium text-foreground truncate flex-1">
+                  {doc.filename}
                 </span>
-              )}
-            </div>
-          ))}
+                {doc.mimeType && (
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    {doc.mimeType}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

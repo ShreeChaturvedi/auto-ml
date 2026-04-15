@@ -14,8 +14,13 @@ import type { ToolContext as PhaseToolContext, ToolResult } from '../../workflow
 export interface FeatureToolContext {
   projectId: string;
   toolCallId: string | undefined;
+  rationale?: string;
   args: Record<string, unknown>;
   datasetId?: string;
+  /** Raw turn prompt — used by handlers to detect implementation mode
+   *  (e.g., propose_feature rejects when the prompt contains selected
+   *  feature IDs because the LLM should be materializing, not proposing). */
+  prompt?: string;
   /** Feature pipeline run state — populated when dispatched via phase config. */
   run?: FeaturePipelineRunState;
   /** Feature pipeline run repository — populated when dispatched via phase config. */
@@ -45,7 +50,9 @@ export function toFeatureToolContext(ctx: PhaseToolContext): FeatureToolContext 
   return {
     projectId: ctx.projectId,
     toolCallId: ctx.toolCallId,
+    rationale: ctx.rationale,
     args: ctx.args,
-    datasetId: ctx.turn.datasetId
+    datasetId: ctx.turn.datasetId,
+    prompt: ctx.turn.prompt
   };
 }

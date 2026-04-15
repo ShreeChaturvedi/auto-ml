@@ -2,7 +2,6 @@ import { Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { OptimizationHistoryChart } from '@/components/experiments/charts/OptimizationHistoryChart';
 import type { TuningTrialEvent } from '@/types/experiments';
 import { TuneStatCards } from '../components/TuneStatCards';
@@ -41,8 +40,6 @@ export function DiscoveryPhase({
   direction,
   onCancel,
 }: DiscoveryPhaseProps) {
-  const { colorClasses } = useProjectThemeColor();
-
   return (
     <div className="space-y-4">
       {/* Summary bar */}
@@ -69,7 +66,7 @@ export function DiscoveryPhase({
         <Progress
           value={progressPercent}
           className="h-2.5"
-          indicatorClassName={colorClasses?.fill}
+          indicatorClassName="bg-accent-fill"
         />
       </div>
 

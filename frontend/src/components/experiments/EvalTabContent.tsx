@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3 } from 'lucide-react';
+import { AlertEmptyIllustration, ChartEmptyIllustration } from '@/components/ui/illustrations';
 import type { EvaluationResult } from '@/types/experiments';
 import { SkeletonBlock } from './shared/Skeleton';
 
@@ -45,7 +45,7 @@ export function EvalTabContent({
     return (
       <div className="flex h-64 items-center justify-center">
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-6">
-          <AlertTriangle className="h-8 w-8 text-destructive/60" />
+          <AlertEmptyIllustration className="text-destructive/60" />
           <p className="text-sm font-medium text-destructive mt-3">Evaluation failed</p>
           {evaluationError && (
             <p className="text-xs text-muted-foreground mt-1">{evaluationError}</p>
@@ -64,7 +64,7 @@ export function EvalTabContent({
     return (
       <div className="flex h-64 items-center justify-center">
         <div className="text-center space-y-2 py-16">
-          <BarChart3 className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+          <ChartEmptyIllustration className="mx-auto text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{failedLabel}</p>
         </div>
       </div>

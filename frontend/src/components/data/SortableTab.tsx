@@ -1,14 +1,17 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { X, FileText, Database } from 'lucide-react';
+import { X, FileText, Database, Notebook as NotebookIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { resolveFileIcon } from '@/lib/fileUtils';
+import { NOTEBOOK_ICON_CLASS } from '@/lib/notebookTheme';
 import { cn } from '@/lib/utils';
+import type { TabType } from '@/types/dataViewer';
 
 export interface SortableTabProps {
   id: string;
   name: string;
   isActive: boolean;
+  type?: TabType;
   fileType?: string;
   queryMode?: 'english' | 'sql';
   queryIconColorClassName?: string;
@@ -23,6 +26,7 @@ export function SortableTab({
   id,
   name,
   isActive,
+  type,
   fileType,
   queryMode,
   queryIconColorClassName,
@@ -43,11 +47,16 @@ export function SortableTab({
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 2 : undefined
   };
 
   // Get icon based on type
   const getIcon = () => {
+    if (type === 'notebook') {
+      return <NotebookIcon className={cn('h-4 w-4', NOTEBOOK_ICON_CLASS)} />;
+    }
+
     if (queryMode) {
       const colorClass = queryIconColorClassName ?? 'text-muted-foreground';
       return queryMode === 'sql' ? (
@@ -72,7 +81,7 @@ export function SortableTab({
       className={cn(
         // `relative` anchors the absolutely-positioned close button.
         // `overflow-hidden + isolate` keep the button clipped/layered within this tab only.
-        'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden',
+        'group relative isolate flex h-14 cursor-pointer items-center border-b-2 px-4 transition-colors flex-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
         isActive
           ? cn(themeBorderAccentClass ?? 'border-primary', 'bg-muted text-foreground')
           : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -93,6 +102,7 @@ export function SortableTab({
           className="text-sm font-medium max-w-[150px] truncate
             group-hover:[mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]
             group-hover:[-webkit-mask-image:linear-gradient(to_right,black_0,black_calc(100%_-_44px),transparent_calc(100%_-_32px),transparent_100%)]"
+          title={name}
         >
           {name}
         </span>
@@ -107,7 +117,8 @@ export function SortableTab({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5"
+          className="h-5 w-5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             onClose();

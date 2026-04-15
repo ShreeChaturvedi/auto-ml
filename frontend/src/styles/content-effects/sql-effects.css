@@ -1,0 +1,139 @@
+/* SQL reveal highlighting + token entry animation */
+
+/**
+ * Token entrance animation. The colour is intentionally not set here
+ * so that the per-token syntax classes (.sql-tk-kw, .sql-tk-fn ...) remain
+ * visible from frame one. Instead we use a text-shadow glow that flashes
+ * brightly and fades, mirroring the placeholder-char-in shine effect.
+ */
+@keyframes sql-word-in {
+  0% {
+    opacity: 0;
+    text-shadow: 0 0 8px currentColor;
+    filter: brightness(1.35);
+  }
+
+  40% {
+    opacity: 1;
+    text-shadow: 0 0 4px currentColor;
+    filter: brightness(1.15);
+  }
+
+  100% {
+    opacity: 1;
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.sql-word-enter {
+  animation: sql-word-in 320ms ease-out both;
+}
+
+
+@keyframes nl-lane-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nl-lane-enter {
+  animation: nl-lane-in 220ms ease-out both;
+}
+
+.sql-tk-kw {
+  color: hsl(var(--syn-keyword));
+  font-weight: 600;
+}
+
+.sql-tk-fn {
+  color: hsl(var(--syn-function));
+}
+
+.sql-tk-str {
+  color: hsl(var(--syn-string));
+}
+
+.sql-tk-num {
+  color: hsl(var(--syn-number));
+}
+
+.sql-tk-op,
+.sql-tk-punc {
+  color: hsl(var(--syn-operator));
+}
+
+.sql-tk-id {
+  color: hsl(var(--syn-identifier));
+}
+
+/* NL query typewriter cursor */
+@keyframes nl-cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+/**
+ * Appended as a ::after pseudo-element on the last character span of the
+ * typewriter pre block. A hollow-circle glyph (U+25CB) is used instead of a
+ * traditional pipe so it doesn't shift surrounding text and stays lightweight.
+ */
+.nl-typewriter-cursor::after {
+  content: '\25CB';
+  font-size: 0.9em;
+  margin-left: 1px;
+  color: hsl(var(--foreground));
+  animation: nl-cursor-blink 700ms step-end infinite;
+}
+
+/* NL editor shimmer — metallic sweep on SQL container during generation */
+@keyframes nl-editor-shimmer-sweep {
+  0% {
+    background-position: 200% center;
+  }
+
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.nl-editor-shimmer {
+  background: linear-gradient(
+    120deg,
+    transparent 30%,
+    hsl(var(--foreground) / 0.06) 44%,
+    hsl(var(--foreground) / 0.09) 50%,
+    hsl(var(--foreground) / 0.06) 56%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: nl-editor-shimmer-sweep 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sql-word-enter,
+  .nl-lane-enter {
+    animation: none;
+  }
+
+  .nl-typewriter-cursor::after {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  .nl-editor-shimmer::after {
+    animation: none;
+  }
+}

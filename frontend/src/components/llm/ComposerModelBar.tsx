@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 import {
   DEFAULT_ASSISTANT_MODEL,
   getModelOption,
@@ -70,72 +69,91 @@ interface ComposerModelBarProps {
   modelConfig: ModelConfig;
   reasoningConfig: ReasoningConfig;
   usageConfig?: UsageConfig;
+  showModelSelector?: boolean;
+  showUsageIndicator?: boolean;
 }
 
 export function ComposerModelBar({
   modelConfig,
   reasoningConfig,
-  usageConfig
+  usageConfig,
+  showModelSelector = true,
+  showUsageIndicator = true
 }: ComposerModelBarProps) {
   const { model, onModelChange, modelOptions } = modelConfig;
   const { reasoningEffort, onReasoningEffortChange, reasoningOptions } = reasoningConfig;
 
   const activeProject = useProjectStore((s) => s.getActiveProject());
-  const projectIconColorClass = activeProject
-    ? projectColorClasses[activeProject.color]?.text
-    : undefined;
+  const projectIconColorClass = activeProject ? 'text-accent-text' : undefined;
 
   const currentModelOption = useMemo(
     () => getModelOption(model, modelOptions),
     [model, modelOptions]
   );
+  const showReasoningSelector = reasoningOptions.length > 0;
+  const showContextUsage = Boolean(
+    showUsageIndicator &&
+    usageConfig &&
+    usageConfig.sessionUsages.length > 0
+  );
+
+  if (!showModelSelector && !showReasoningSelector && !showContextUsage) {
+    return null;
+  }
 
   return (
-    <div className="hidden lg:flex shrink-0 flex-nowrap items-center gap-2">
-      <Select value={currentModelOption.value} onValueChange={onModelChange}>
-        <SelectTrigger className="flex h-7 w-fit min-w-[8.25rem] max-w-none shrink-0 flex-nowrap gap-2 px-2.5 text-xs [&>div]:flex [&>div]:flex-nowrap [&>div]:min-w-0 [&>div]:overflow-hidden">
-          <div className="flex min-w-0 shrink flex-nowrap items-center gap-2 whitespace-nowrap">
-            <span className="shrink-0">{renderModelIcon(currentModelOption, projectIconColorClass)}</span>
-            <span className="min-w-0 truncate">{currentModelOption.label}</span>
-          </div>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectLabel className={SELECT_GROUP_LABEL_CLASS}>
-              Model
-            </SelectLabel>
-            {modelOptions.map((option) => {
-              const isSelected = option.value === model;
-              return (
-              <SelectItem key={option.value} value={option.value} indicatorClassName={isSelected ? projectIconColorClass : undefined}>
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="shrink-0">{renderModelIcon(option, isSelected ? projectIconColorClass : undefined)}</span>
-                <span className="truncate">{option.label}</span>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        aria-label={`${option.label} usage tip`}
-                        className="inline-flex shrink-0 text-muted-foreground"
-                      >
-                        <Info className="h-3 w-3" />
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="max-w-xs text-xs">
-                      {option.description}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </SelectItem>
-          );})}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+    <div className="flex shrink-0 flex-nowrap items-center gap-2">
+      {showModelSelector ? (
+        <Select value={currentModelOption.value} onValueChange={onModelChange}>
+          <SelectTrigger className="flex h-7 w-fit min-w-[8.25rem] max-w-none shrink-0 flex-nowrap px-2.5 text-xs [&>div]:flex [&>div]:flex-nowrap [&>div]:min-w-0 [&>div]:overflow-hidden">
+            <div className="flex min-w-0 shrink flex-nowrap items-center gap-2 whitespace-nowrap">
+              <span className="shrink-0">{renderModelIcon(currentModelOption, projectIconColorClass)}</span>
+              <span className="min-w-0 truncate">{currentModelOption.label}</span>
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel className={SELECT_GROUP_LABEL_CLASS}>
+                Model
+              </SelectLabel>
+              {modelOptions.map((option) => {
+                const isSelected = option.value === model;
+                return (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    indicatorClassName={isSelected ? projectIconColorClass : undefined}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="shrink-0">{renderModelIcon(option, isSelected ? projectIconColorClass : undefined)}</span>
+                      <span className="truncate">{option.label}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              aria-label={`${option.label} usage tip`}
+                              className="inline-flex shrink-0 text-muted-foreground"
+                            >
+                              <Info className="h-3 w-3" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs text-xs">
+                            {option.description}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      ) : null}
 
-      {reasoningOptions.length > 0 ? (
+      {showReasoningSelector ? (
         <Select value={reasoningEffort} onValueChange={(value) => onReasoningEffortChange(value as ReasoningEffort)}>
-          <SelectTrigger className="h-7 w-fit min-w-[7.5rem] gap-2 px-2.5 text-xs">
+          <SelectTrigger className="h-7 w-fit min-w-[7.5rem] shrink-0 px-2.5 text-xs">
             <SelectValue placeholder="Reasoning">
               {(() => {
                 const opt = reasoningOptions.find((o) => o.value === reasoningEffort);
@@ -168,12 +186,12 @@ export function ComposerModelBar({
         </Select>
       ) : null}
 
-      {usageConfig && usageConfig.sessionUsages.length > 0 ? (
+      {showContextUsage ? (
         <ContextUsageIndicator
-          sessionUsages={usageConfig.sessionUsages}
-          model={usageConfig.model}
+          sessionUsages={usageConfig!.sessionUsages}
+          model={usageConfig!.model}
           projectColorClass={projectIconColorClass}
-          projectBgColorClass={activeProject ? projectColorClasses[activeProject.color]?.bg : undefined}
+          projectBgColorClass={activeProject ? 'bg-accent-bg' : undefined}
           projectColor={activeProject?.color === 'custom' ? activeProject.customColor : undefined}
         />
       ) : null}

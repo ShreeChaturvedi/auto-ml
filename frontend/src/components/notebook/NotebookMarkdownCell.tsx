@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
+import { useMonacoAutoHeight } from '@/hooks/useMonacoAutoHeight';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -18,6 +19,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useTheme } from '@/components/theme-provider';
+import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import type { LockOwner, NotebookCell } from '@/types/notebook';
 import type { Components } from 'react-markdown';
@@ -27,6 +29,8 @@ import 'katex/dist/katex.min.css';
 import { Markdown } from '@/components/ui/Markdown';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildHeadingComponents } from '@/lib/markdown/tocUtils';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
+import { CellMoveButtons } from './CellMoveButtons';
 import { MarkdownEmptyState } from './MarkdownEmptyState';
 import { useDebouncedSave } from './hooks/useDebouncedSave';
 import { useMarkdownEditMode } from './hooks/useMarkdownEditMode';
@@ -51,11 +55,9 @@ function isEffectivelyEmpty(content: string): boolean {
   return /^#{1,6}\s*$|^[-*>]\s*$|^\d+\.\s*$/.test(trimmed);
 }
 
-const MARKDOWN_EDITOR_OPTIONS = {
-  minimap: { enabled: false },
+const MARKDOWN_EDITOR_OVERRIDES = {
   scrollBeyondLastLine: false,
-  fontSize: 13,
-  fontFamily: 'JetBrains Mono, Menlo, Monaco, monospace',
+  // Markdown-specific: hide line numbers and gutter decorations
   lineNumbers: 'off' as const,
   glyphMargin: false,
   folding: false,
@@ -66,7 +68,6 @@ const MARKDOWN_EDITOR_OPTIONS = {
   scrollbar: { vertical: 'hidden' as const, horizontal: 'hidden' as const, alwaysConsumeMouseWheel: false },
   automaticLayout: true,
   padding: { top: 8, bottom: 8 },
-  wordWrap: 'on' as const,
 };
 
 const NOTEBOOK_MARKDOWN_BODY_COMPONENTS: Partial<Components> = {
@@ -93,10 +94,13 @@ interface NotebookMarkdownCellProps {
   lockOwner: LockOwner | null;
   isCollapsed: boolean;
   hiddenCodeCount: number;
-  themeColor?: string;
   onToggleCollapsed: () => void;
   onContentChange: (content: string) => void;
   onDelete: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 export function NotebookMarkdownCell({
@@ -105,15 +109,17 @@ export function NotebookMarkdownCell({
   lockOwner,
   isCollapsed,
   hiddenCodeCount,
-  themeColor,
   onToggleCollapsed,
   onContentChange,
-  onDelete
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown
 }: NotebookMarkdownCellProps) {
-  const { theme } = useTheme();
-  const resolvedTheme = theme === 'system'
-    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    : theme;
+  const { resolvedTheme } = useTheme();
+  const { syntaxThemeId } = useProjectThemeColor();
+  const globalEditorOpts = useEditorMonacoOptions();
 
   const [copied, copy] = useCopyToClipboard();
   const cellRef = useRef<HTMLDivElement>(null);
@@ -149,6 +155,7 @@ export function NotebookMarkdownCell({
   });
 
   const sectionLabel = getSectionLabel(localContent);
+  const { editorHeight, attachAutoHeight } = useMonacoAutoHeight();
 
   const markdownComponents = useMemo(
     () => ({ ...buildHeadingComponents(`notebook-${cell.cellId}-`), ...NOTEBOOK_MARKDOWN_BODY_COMPONENTS }),
@@ -191,7 +198,7 @@ export function NotebookMarkdownCell({
             onDoubleClick={enterEditMode}
             onPointerUp={handlePointerUpEdit}
           >
-            <Pilcrow className="h-5 w-5" style={themeColor ? { color: themeColor } : undefined} />
+            <Pilcrow className="h-5 w-5 text-accent-text" />
           </div>
         ) : (
           <Button
@@ -263,11 +270,13 @@ export function NotebookMarkdownCell({
               }
             >
                 <LazyMonacoEditor
-                height={Math.max(60, localContent.split('\n').length * 20 + 20)}
+                height={editorHeight}
                 language="markdown"
                 value={localContent}
                 onChange={handleContentChange}
                 onMount={(editor, monaco) => {
+                  attachAutoHeight(editor);
+
                   // Escape -> exit edit mode
                   editor.addCommand(monaco.KeyCode.Escape, () => {
                     exitEditModeRef.current();
@@ -299,8 +308,8 @@ export function NotebookMarkdownCell({
                     editor.focus();
                   }
                 }}
-                options={{ ...MARKDOWN_EDITOR_OPTIONS, readOnly: isLocked }}
-                theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+                options={{ ...globalEditorOpts, ...MARKDOWN_EDITOR_OVERRIDES, readOnly: isLocked }}
+                theme={syntaxThemeId}
                 beforeMount={async () => {
                   await initMonaco();
                 }}
@@ -309,8 +318,16 @@ export function NotebookMarkdownCell({
           )}
         </div>
 
-        <div className="flex items-center gap-1 pt-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 pt-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
           <TooltipProvider>
+            <CellMoveButtons
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+              disabled={isLocked}
+            />
+
             {!isCollapsed && !contentIsEmpty && (
               <Tooltip>
                 <TooltipTrigger asChild>

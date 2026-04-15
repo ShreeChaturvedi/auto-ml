@@ -1,36 +1,84 @@
 /**
- * StepProposalCard - Displays a proposed pipeline step with accept/modify/reject controls.
+ * StepProposalCard — displays a proposed pipeline step with selection controls.
  *
- * Shows a left accent bar colored by phase, a title, an expandable rationale,
- * and action buttons that collapse to a status badge once a decision is made.
+ * Phase identity reads through the header icon tint only (preprocessing →
+ * sky, feature_engineering → emerald, training → orange); the card border
+ * stays neutral. `ProposalActionButton` pairs provide accept / reject
+ * controls — selecting "Accept" adopts the same tone as
+ * `StatusPill status="accepted"`, and selecting "Reject" adds a
+ * strikethrough so the "this step will be skipped" read is immediate.
  */
 
-import { useState } from 'react';
-import { Check, X, ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useRef, useState } from 'react';
+import { FlaskConical, Pencil } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
+import { ProposalActionButton } from '@/components/llm/shared/ProposalActionButton';
+import type { StatusKind } from '@/components/llm/shared/StatusPill';
 
-const PHASE_ACCENT: Record<string, string> = {
-  preprocessing: 'border-l-blue-500',
-  feature_engineering: 'border-l-emerald-500',
-  training: 'border-l-orange-500',
+/**
+ * Phase → icon tint. Keys match the underscore convention emitted by
+ * `useLifecycleCards.ts detectPhase()`. If that helper ever switches
+ * to the canonical hyphenated `Phase` union in `types/phase.ts`, update
+ * this map in lockstep.
+ */
+const PHASE_ICON_CLASS: Record<string, string> = {
+  preprocessing: 'text-sky-600 dark:text-sky-400',
+  feature_engineering: 'text-emerald-600 dark:text-emerald-400',
+  training: 'text-orange-600 dark:text-orange-400',
 };
 
-const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
-  accepted: { label: 'Accepted', variant: 'default' },
-  rejected: { label: 'Rejected', variant: 'destructive' },
-  modified: { label: 'Modified', variant: 'secondary' },
-};
+function phaseIconClass(phase: string): string {
+  return PHASE_ICON_CLASS[phase] ?? 'text-muted-foreground';
+}
+
+/** User's selection intent, independent of the tool-call's own lifecycle status. */
+type UserChoice = 'accepted' | 'rejected' | 'untouched';
+
+type EffectiveStatus =
+  | 'pending'
+  | 'selected'
+  | 'deselected'
+  | 'proposed'
+  | 'accepted'
+  | 'rejected'
+  | 'modified';
+
+function effectiveStatus(
+  propStatus: StepProposalCardProps['status'],
+  choice: UserChoice,
+): EffectiveStatus {
+  if (propStatus !== 'pending') return propStatus;
+  if (choice === 'accepted') return 'selected';
+  if (choice === 'rejected') return 'deselected';
+  return 'pending';
+}
+
+function getPillProps(status: EffectiveStatus): {
+  status: StatusKind;
+  label?: string;
+  icon?: LucideIcon | null;
+} {
+  switch (status) {
+    case 'selected':  return { status: 'selected' };
+    case 'accepted':  return { status: 'accepted' };
+    case 'deselected':
+    case 'rejected':  return { status: 'skipped' };
+    case 'pending':   return { status: 'awaiting', label: 'awaiting approval' };
+    case 'modified':  return { status: 'info', label: 'modified', icon: Pencil };
+    case 'proposed':
+    default:          return { status: 'pending', label: 'proposed' };
+  }
+}
 
 export interface StepProposalCardProps {
   stepId: string;
   title: string;
   rationale?: string;
   phase: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'modified';
-  onAccept?: () => void;
-  onReject?: () => void;
+  status: 'pending' | 'proposed' | 'accepted' | 'rejected' | 'modified';
+  onToggleSelect?: (selected: boolean) => void;
+  selectedOverride?: boolean | null;
 }
 
 export function StepProposalCard({
@@ -39,67 +87,86 @@ export function StepProposalCard({
   rationale,
   phase,
   status,
-  onAccept,
-  onReject,
+  onToggleSelect,
+  selectedOverride,
 }: StepProposalCardProps) {
-  const [rationaleExpanded, setRationaleExpanded] = useState(false);
-  const accent = PHASE_ACCENT[phase] ?? 'border-l-muted-foreground';
-  const badgeInfo = STATUS_BADGE[status];
+  // Auto-select pending proposals so the shared "Apply" button is immediately
+  // visible. User can still deselect (Skip) ones they don't want.
+  const [choice, setChoice] = useState<UserChoice>(
+    () => (status === 'pending' ? 'accepted' : 'untouched'),
+  );
+
+  // Notify parent exactly once per mount that we auto-selected — guarded by
+  // a ref so re-renders (and eslint-exhaustive-deps) never cause duplicate fires.
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (typeof selectedOverride === 'boolean') {
+      setChoice(selectedOverride ? 'accepted' : 'rejected');
+      return;
+    }
+    if (selectedOverride === null) {
+      setChoice('untouched');
+      return;
+    }
+    if (notifiedRef.current) return;
+    if (status === 'pending') {
+      notifiedRef.current = true;
+      onToggleSelect?.(true);
+    }
+  }, [selectedOverride, status, onToggleSelect]);
+
+  // `onToggleSelect(accepted: boolean)` tells the parent whether the step is
+  // currently flagged "apply". Reject always reports false (whether the user
+  // just selected reject, or cleared a prior reject — neither means "apply").
+  const toggleAccept = () => {
+    const next: UserChoice = choice === 'accepted' ? 'untouched' : 'accepted';
+    setChoice(next);
+    onToggleSelect?.(next === 'accepted');
+  };
+  const toggleReject = () => {
+    const next: UserChoice = choice === 'rejected' ? 'untouched' : 'rejected';
+    setChoice(next);
+    onToggleSelect?.(false);
+  };
+
+  const pillProps = getPillProps(effectiveStatus(status, choice));
+  const isToggleable = status === 'pending';
+
+  const actionRow = isToggleable ? (
+    <div className="mt-3 flex items-center gap-2">
+      <ProposalActionButton
+        variant="accept"
+        selected={choice === 'accepted'}
+        onClick={toggleAccept}
+      />
+      <ProposalActionButton
+        variant="reject"
+        selected={choice === 'rejected'}
+        onClick={toggleReject}
+      />
+    </div>
+  ) : null;
 
   return (
-    <div
+    <ToolCardShell
       data-step-id={stepId}
-      className={cn(
-        'rounded-md border border-l-4 bg-card p-3 shadow-sm transition-colors',
-        accent,
-      )}
+      icon={FlaskConical}
+      iconClassName={phaseIconClass(phase)}
+      title={title}
+      status={pillProps.status}
+      statusLabel={pillProps.label}
+      expandable={!!rationale}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-foreground">{title}</span>
-        {badgeInfo && (
-          <Badge variant={badgeInfo.variant} className="shrink-0 text-[10px]">
-            {badgeInfo.label}
-          </Badge>
-        )}
-      </div>
-
-      {/* Expandable rationale */}
-      {rationale && (
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={() => setRationaleExpanded(!rationaleExpanded)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {rationaleExpanded ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-            Rationale
-          </button>
-          {rationaleExpanded && (
-            <p className="mt-1 pl-4 text-xs leading-relaxed text-muted-foreground">
-              {rationale}
-            </p>
-          )}
+      {rationale ? (
+        <div className="px-3 py-2">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {rationale}
+          </p>
+          {actionRow}
         </div>
-      )}
-
-      {/* Action buttons (only when pending) */}
-      {status === 'pending' && (
-        <div className="mt-3 flex items-center gap-2">
-          <Button size="sm" className="h-7 text-xs" onClick={onAccept}>
-            <Check className="mr-1 h-3 w-3" />
-            Accept
-          </Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={onReject}>
-            <X className="mr-1 h-3 w-3" />
-            Reject
-          </Button>
-        </div>
-      )}
-    </div>
+      ) : actionRow ? (
+        <div className="px-3 py-2">{actionRow}</div>
+      ) : null}
+    </ToolCardShell>
   );
 }

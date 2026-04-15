@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Request, Response } from 'express';
@@ -12,30 +12,11 @@ import {
   parseDatasetRows,
   resolveDatasetTableName
 } from '../../services/datasetLoader.js';
-import type { DatasetProfile } from '../../types/dataset.js';
 import { getErrorMessage } from '../../utils/errors.js';
 
 import { regenerateProjectNlSuggestionsSilently } from './nlSuggestions.js';
+import { buildDatasetResponse } from './response.js';
 import { updateColumnTypeSchema } from './validation.js';
-
-/** Build the standard dataset JSON envelope used in column-update responses. */
-function formatDatasetResponse(dataset: DatasetProfile, tableName: string) {
-  return {
-    datasetId: dataset.datasetId,
-    filename: dataset.filename,
-    fileType: dataset.fileType,
-    size: dataset.size,
-    n_rows: dataset.nRows,
-    n_cols: dataset.nCols,
-    columns: dataset.columns.map((c) => c.name),
-    dtypes: Object.fromEntries(dataset.columns.map((c) => [c.name, c.dtype])),
-    null_counts: Object.fromEntries(dataset.columns.map((c) => [c.name, c.nullCount])),
-    sample: dataset.sample,
-    createdAt: dataset.createdAt,
-    updatedAt: dataset.updatedAt,
-    tableName
-  };
-}
 
 /**
  * Handler for PUT /datasets/:datasetId/columns/:columnName
@@ -70,7 +51,11 @@ export async function updateColumnType(
 
   // No-op when the type is already correct
   if (existingColumn.dtype === dtype) {
-    res.json({ dataset: formatDatasetResponse(dataset, resolveDatasetTableName(dataset)) });
+    res.json({
+      dataset: buildDatasetResponse(dataset, {
+        physicalTableName: resolveDatasetTableName(dataset)
+      })
+    });
     return;
   }
 
@@ -83,7 +68,7 @@ export async function updateColumnType(
 
   let buffer: Buffer;
   try {
-    buffer = readFileSync(filePath);
+    buffer = await readFile(filePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       res.status(404).json({ error: 'Dataset file not found on disk' });
@@ -126,6 +111,7 @@ export async function updateColumnType(
         buffer,
         columns: updatedColumns,
         rows,
+        tableName,
         strictMode: true,
         strictColumnNames: [columnName]
       });
@@ -158,5 +144,9 @@ export async function updateColumnType(
 
   await regenerateProjectNlSuggestionsSilently(updatedDataset.projectId, 'column update');
 
-  res.json({ dataset: formatDatasetResponse(updatedDataset, tableName) });
+  res.json({
+    dataset: buildDatasetResponse(updatedDataset, {
+      physicalTableName: tableName
+    })
+  });
 }

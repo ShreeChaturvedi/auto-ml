@@ -37,7 +37,7 @@ export function ApprovalCard({
     <div
       data-step-id={stepId}
       className={cn(
-        'rounded-md border bg-card p-3 shadow-sm',
+        'rounded-md border bg-card p-3 shadow-sm dark:shadow-none',
         config.borderClass,
       )}
     >

@@ -22,7 +22,8 @@ vi.mock('@monaco-editor/react', () => ({
 }));
 
 vi.mock('@/lib/monaco/preloader', () => ({
-  initMonaco: vi.fn().mockResolvedValue(undefined)
+  initMonaco: vi.fn().mockResolvedValue(undefined),
+  getMonacoIfReady: vi.fn(() => null)
 }));
 
 vi.mock('@/lib/api/notebooks', async (importOriginal) => {
@@ -109,7 +110,7 @@ describe('NotebookCellComponent', () => {
     );
 
     expect(screen.getByText('[3]')).toBeInTheDocument();
-    expect(screen.getByText('· 0.1s')).toBeInTheDocument();
+    expect(screen.getByText('· 120ms')).toBeInTheDocument();
     expect(screen.queryByText('Success')).not.toBeInTheDocument();
 
     const dirtyCell = createCell({

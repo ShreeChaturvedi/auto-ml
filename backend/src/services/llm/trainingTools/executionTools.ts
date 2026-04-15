@@ -4,6 +4,28 @@ import { nowIso } from '../preprocessingTools/helpers.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
+import { normalizeWorkflowPrepSegments } from './workflowPrepSegments.js';
+
+function normalizeMetricsRecord(metrics: unknown): Record<string, number> {
+  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) {
+    return {};
+  }
+
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(metrics as Record<string, unknown>)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      normalized[key] = value;
+      continue;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+      if (Number.isFinite(parsed)) {
+        normalized[key] = parsed;
+      }
+    }
+  }
+  return normalized;
+}
 
 /**
  * Run notebook cells via MCP and collect execution results.
@@ -30,8 +52,17 @@ async function runCells(
     } else if (result.output && typeof result.output === 'object') {
       const out = result.output as Record<string, unknown>;
       if (out.stdout) outputs.push(String(out.stdout));
+      const status = typeof out.status === 'string' ? out.status.toLowerCase() : null;
+      if (status && status !== 'success') {
+        allSucceeded = false;
+      }
+      if (typeof out.error === 'string' && out.error.trim().length > 0) {
+        errors.push(out.error);
+      }
+      if (typeof out.errorMessage === 'string' && out.errorMessage.trim().length > 0) {
+        errors.push(out.errorMessage);
+      }
       if (out.stderr) errors.push(String(out.stderr));
-      if (out.status === 'error') allSucceeded = false;
     }
   }
 
@@ -53,7 +84,7 @@ export const executeTraining: TrainingToolHandler = async (
   let executionErrors: string[] = [];
   const startMs = Date.now();
 
-  if (cellIds.length > 0) {
+  if (cellIds.length > 0 && !succeeded) {
     try {
       const execResult = await runCells(projectId, notebookId, cellIds);
       succeeded = execResult.succeeded;
@@ -68,11 +99,16 @@ export const executeTraining: TrainingToolHandler = async (
   const durationMs = typeof args.trainingDurationMs === 'number'
     ? args.trainingDurationMs
     : Date.now() - startMs;
+  const metrics = normalizeMetricsRecord(args.metrics);
+  const workflowPrepSegments = normalizeWorkflowPrepSegments(args.prepSegments);
 
   experiment.status = succeeded ? 'training' : 'failed';
   experiment.trainingCellIds = cellIds;
-  experiment.trainingMetrics = args.metrics;
+  experiment.trainingMetrics = metrics;
   experiment.trainingDurationMs = durationMs;
+  if (workflowPrepSegments.length > 0) {
+    experiment.workflowPrepSegments = workflowPrepSegments;
+  }
   experiment.errorMessage = succeeded ? undefined : (args.errorMessage ?? executionErrors.join('\n'));
   experiment.updatedAt = nowIso();
 
@@ -91,7 +127,7 @@ export const executeTraining: TrainingToolHandler = async (
     output: {
       experimentId: experiment.experimentId,
       status: 'training',
-      metrics: args.metrics ?? {},
+      metrics,
       trainingDurationMs: durationMs,
       cellIds,
       message: `Training completed for experiment "${experiment.experimentName as string}". Proceed to evaluate_results.`
@@ -107,9 +143,19 @@ export const evaluateResults: TrainingToolHandler = async (
   const resolved = resolveExperiment(run, args);
   if ('error' in resolved) return resolved;
   const { experiment } = resolved;
+  const metrics = normalizeMetricsRecord(args.metrics);
+  const fallbackMetrics = Object.keys(metrics).length > 0
+    ? metrics
+    : normalizeMetricsRecord(experiment.trainingMetrics);
+  const effectiveMetrics = fallbackMetrics;
+  if (Object.keys(effectiveMetrics).length === 0) {
+    return {
+      error: 'evaluate_results requires non-empty numeric metrics (accuracy/F1/precision/recall or RMSE/MAE/R2).'
+    };
+  }
 
   experiment.status = 'evaluated';
-  experiment.evaluationMetrics = args.metrics;
+  experiment.evaluationMetrics = effectiveMetrics;
   experiment.learningCurve = args.learningCurve;
   experiment.featureImportance = args.featureImportance;
   experiment.evaluationNotes = args.notes;
@@ -119,7 +165,7 @@ export const evaluateResults: TrainingToolHandler = async (
     output: {
       experimentId: experiment.experimentId,
       status: 'evaluated',
-      metrics: args.metrics,
+      metrics: effectiveMetrics,
       learningCurve: args.learningCurve ?? null,
       featureImportance: args.featureImportance ?? [],
       notes: args.notes ?? null,

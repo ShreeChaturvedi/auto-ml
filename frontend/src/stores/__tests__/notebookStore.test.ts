@@ -9,6 +9,15 @@ import {
   selectHasAiLockedCells
 } from '../notebookStore';
 
+const notebookWsClientMock = vi.hoisted(() => ({
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  subscribe: vi.fn(),
+  unsubscribe: vi.fn(),
+  isConnected: false,
+  on: vi.fn(() => vi.fn())
+}));
+
 // ============================================================
 // Mocks
 // ============================================================
@@ -26,7 +35,6 @@ vi.mock('../../lib/api/notebooks', () => ({
   deleteNotebook: vi.fn(),
   reorderCells: vi.fn(),
   getCellLock: vi.fn(),
-  getNotebook: vi.fn(),
   interruptKernel: vi.fn(),
   restartKernel: vi.fn(),
   getCellOutputUrl: vi.fn(),
@@ -35,18 +43,14 @@ vi.mock('../../lib/api/notebooks', () => ({
 }));
 
 vi.mock('../../lib/websocket/notebookClient', () => ({
-  getNotebookWSClient: vi.fn(() => ({
-    connect: vi.fn(),
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
-    isConnected: false,
-    on: vi.fn(() => vi.fn())
-  }))
+  getNotebookWSClient: vi.fn(() => notebookWsClientMock)
 }));
 
 // Import the mocked modules so we can control return values
 import * as notebooksApi from '../../lib/api/notebooks';
 
+const listNotebooksMock = vi.mocked(notebooksApi.listNotebooks);
+const listCellsMock = vi.mocked(notebooksApi.listCells);
 const runCellMock = vi.mocked(notebooksApi.runCell);
 const getCellMock = vi.mocked(notebooksApi.getCell);
 
@@ -80,7 +84,11 @@ function makeCellFixture(overrides: Partial<NotebookCell> = {}): NotebookCell {
 }
 
 function seedCells(cells: NotebookCell[]) {
-  useNotebookStore.setState({ cells });
+  // Seed an active notebook too so updateCellLocally's stale guard accepts
+  // writes — it now requires a matching activeNotebookId. Tests that don't
+  // care about a specific notebook rely on the default fixture's 'nb-1'.
+  const activeNotebookId = cells[0]?.notebookId ?? 'nb-1';
+  useNotebookStore.setState({ cells, activeNotebookId });
 }
 
 // ============================================================
@@ -93,11 +101,41 @@ describe('notebookStore', () => {
   beforeEach(() => {
     useNotebookStore.getState().reset();
     vi.clearAllMocks();
+    notebookWsClientMock.isConnected = false;
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
+  });
+
+  // ==========================================================
+  // Session lifecycle
+  // ==========================================================
+  describe('disconnect', () => {
+    it('closes the websocket client when leaving a notebook-backed phase', async () => {
+      listNotebooksMock.mockResolvedValue([
+        {
+          notebookId: 'nb-1',
+          projectId: 'proj-1',
+          name: 'Notebook 1',
+          kind: 'phase',
+          metadata: {},
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z'
+        }
+      ]);
+      listCellsMock.mockResolvedValue([]);
+      notebookWsClientMock.isConnected = true;
+
+      await useNotebookStore.getState().initializeNotebook('proj-1');
+      useNotebookStore.getState().disconnect();
+
+      expect(notebookWsClientMock.unsubscribe).toHaveBeenCalledWith('nb-1');
+      expect(notebookWsClientMock.disconnect).toHaveBeenCalledTimes(1);
+      expect(useNotebookStore.getState().wsClient).toBeNull();
+      expect(useNotebookStore.getState().isConnected).toBe(false);
+    });
   });
 
   // ==========================================================
@@ -274,6 +312,138 @@ describe('notebookStore', () => {
       expect(posMap['a']).toBe(0);
       expect(posMap['c']).toBe(1);
       expect(posMap['b']).toBe(2);
+    });
+
+    it('drops writes when the cell belongs to a different notebook than active', () => {
+      // Stale-guard regression: an in-flight API response or WS event for
+      // notebook B that lands after the user switched to notebook A must not
+      // leak into A's cell list.
+      const cellFromA = makeCellFixture({ cellId: 'a-1', notebookId: 'nb-A', position: 0 });
+      useNotebookStore.setState({ cells: [cellFromA], activeNotebookId: 'nb-A' });
+
+      const cellFromB = makeCellFixture({
+        cellId: 'b-1',
+        notebookId: 'nb-B',
+        position: 0,
+        content: 'from nb-B'
+      });
+      useNotebookStore.getState().updateCellLocally(cellFromB);
+
+      const cells = useNotebookStore.getState().cells;
+      expect(cells).toHaveLength(1);
+      expect(cells[0].cellId).toBe('a-1');
+      expect(cells.some((c) => c.cellId === 'b-1')).toBe(false);
+    });
+
+    it('drops writes when activeNotebookId is null', () => {
+      // During disconnect/reconnect activeNotebookId may briefly be null.
+      // Any late-arriving cell update must be dropped.
+      useNotebookStore.setState({ cells: [], activeNotebookId: null });
+
+      const incoming = makeCellFixture({ cellId: 'late', notebookId: 'nb-1', position: 0 });
+      useNotebookStore.getState().updateCellLocally(incoming);
+
+      expect(useNotebookStore.getState().cells).toHaveLength(0);
+      expect(useNotebookStore.getState().activeNotebookId).toBeNull();
+    });
+  });
+
+  // ==========================================================
+  // runAllCells
+  // ==========================================================
+  describe('runAllCells', () => {
+    it('stops iterating once the abort signal fires', async () => {
+      const cellA = makeCellFixture({ cellId: 'ra-a', position: 0, notebookId: 'nb-run' });
+      const cellB = makeCellFixture({ cellId: 'ra-b', position: 1, notebookId: 'nb-run' });
+      const cellC = makeCellFixture({ cellId: 'ra-c', position: 2, notebookId: 'nb-run' });
+      useNotebookStore.setState({
+        cells: [cellA, cellB, cellC],
+        activeNotebookId: 'nb-run',
+        notebook: { notebookId: 'nb-run' } as never
+      });
+
+      const controller = new AbortController();
+      const runCalls: string[] = [];
+
+      runCellMock.mockImplementation(async () => {
+        // Abort after the first cell has begun, before the loop moves on.
+        controller.abort();
+        return {
+          status: 'success',
+          stdout: '',
+          stderr: '',
+          outputs: [],
+          executionMs: 1,
+          executionOrder: runCalls.length + 1
+        };
+      });
+      getCellMock.mockImplementation(async (cellId: string) => {
+        runCalls.push(cellId);
+        return makeCellFixture({
+          cellId,
+          notebookId: 'nb-run',
+          position: [cellA, cellB, cellC].find((c) => c.cellId === cellId)?.position ?? 0,
+          executionStatus: 'success'
+        });
+      });
+
+      await useNotebookStore.getState().runAllCells('proj-1', controller.signal);
+
+      // Only the first code cell should have been executed before the abort broke the loop.
+      expect(runCellMock).toHaveBeenCalledTimes(1);
+      expect(runCellMock).toHaveBeenCalledWith('ra-a', 'proj-1');
+      // runAllRunningCellId is cleared in the finally block.
+      expect(useNotebookStore.getState().runAllRunningCellId).toBeNull();
+    });
+
+    it('stops iterating on the first errored cell', async () => {
+      const cellA = makeCellFixture({ cellId: 'er-a', position: 0, notebookId: 'nb-err' });
+      const cellB = makeCellFixture({ cellId: 'er-b', position: 1, notebookId: 'nb-err' });
+      const cellC = makeCellFixture({ cellId: 'er-c', position: 2, notebookId: 'nb-err' });
+      useNotebookStore.setState({
+        cells: [cellA, cellB, cellC],
+        activeNotebookId: 'nb-err',
+        notebook: { notebookId: 'nb-err' } as never
+      });
+
+      // The first runCell call rejects — runCell's own catch block sets the
+      // cell's executionStatus to 'error' synchronously, which runAllCells
+      // uses to halt further execution.
+      runCellMock.mockRejectedValueOnce(new Error('boom'));
+
+      const controller = new AbortController();
+      await useNotebookStore.getState().runAllCells('proj-1', controller.signal);
+
+      // Loop must stop after the first cell — second and third never run.
+      expect(runCellMock).toHaveBeenCalledTimes(1);
+      expect(runCellMock).toHaveBeenCalledWith('er-a', 'proj-1');
+      expect(useNotebookStore.getState().runAllRunningCellId).toBeNull();
+
+      const finalA = useNotebookStore.getState().cells.find((c) => c.cellId === 'er-a');
+      expect(finalA?.executionStatus).toBe('error');
+    });
+  });
+
+  describe('disconnect', () => {
+    it('closes the active websocket client and clears it from store state', () => {
+      useNotebookStore.setState({
+        notebook: { notebookId: 'nb-1' } as never,
+        wsClient: {
+          unsubscribe: notebookWsClientMock.unsubscribe,
+          disconnect: notebookWsClientMock.disconnect
+        } as never,
+        currentProjectId: 'project-1',
+        activeNotebookId: 'nb-1',
+        isConnected: true,
+      });
+
+      useNotebookStore.getState().disconnect();
+
+      expect(notebookWsClientMock.unsubscribe).toHaveBeenCalledWith('nb-1');
+      expect(notebookWsClientMock.disconnect).toHaveBeenCalledTimes(1);
+      expect(useNotebookStore.getState().wsClient).toBeNull();
+      expect(useNotebookStore.getState().activeNotebookId).toBeNull();
+      expect(useNotebookStore.getState().isConnected).toBe(false);
     });
   });
 

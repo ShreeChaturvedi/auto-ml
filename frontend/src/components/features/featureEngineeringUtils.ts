@@ -16,12 +16,27 @@ export const HIDDEN_LEGACY_ERROR_MESSAGES = new Set([
   'This operation was aborted'
 ]);
 
+let pendingFeatureLeftPaneScrollTop: number | null = null;
+
 export function stripAssistantArtifacts(text: string): string {
   return sanitizeAssistantText(text);
 }
 
-export function hasUiItems(ui: UiSchema | null): boolean {
-  return Boolean(ui?.sections.some((section) => section.items.length > 0));
+export function captureFeatureLeftPaneScrollTop(scrollTop: number) {
+  pendingFeatureLeftPaneScrollTop = scrollTop;
+}
+
+export function peekFeatureLeftPaneScrollTop(): number | null {
+  return pendingFeatureLeftPaneScrollTop;
+}
+
+export function clearFeatureLeftPaneScrollTop() {
+  pendingFeatureLeftPaneScrollTop = null;
+}
+
+export function hasUiItems(ui: UiSchema | null | undefined): boolean {
+  if (!ui || !Array.isArray(ui.sections)) return false;
+  return ui.sections.some((section) => Array.isArray(section.items) && section.items.length > 0);
 }
 
 export function buildReadinessReport(features: FeatureSpec[], sourceColumns: string[]): ReadinessReport {
@@ -87,4 +102,29 @@ export function buildSuggestionDefaults(item: FeatureSuggestionItem): Record<str
     ...(item.feature.params ?? {}),
     ...controlDefaults
   };
+}
+
+export function isPlaceholderFeatureDescription(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length === 0 || normalized === 'feature proposed — awaiting user review';
+}
+
+export function resolveFeatureDescription(
+  description: unknown,
+  rationale: unknown,
+  fallback = ''
+): string {
+  if (typeof description === 'string' && !isPlaceholderFeatureDescription(description)) {
+    return description;
+  }
+
+  if (typeof rationale === 'string' && rationale.trim().length > 0) {
+    return rationale;
+  }
+
+  return fallback;
 }

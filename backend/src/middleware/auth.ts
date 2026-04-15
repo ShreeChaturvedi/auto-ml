@@ -47,66 +47,60 @@ function passesEmailGate(user: SafeUser): boolean {
 }
 
 /**
- * Require authentication middleware
- * Extracts JWT from Authorization header, verifies it, and attaches user to request
- * Returns 401 if token is missing, invalid, or user not found
- *
- * Usage: app.use('/api/protected', requireAuth)
+ * Invalidate the in-memory user cache for a specific user.
+ * Call after updating email_verified so the next requireAuth picks up fresh state.
  */
-export async function requireAuth(
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  if (!hasDatabaseConfiguration()) {
-    res.status(503).json({ error: 'Authentication is not configured' });
-    return;
-  }
+export function invalidateUserCache(userId: string): void {
+  userCache.delete(userId);
+}
 
-  const authHeader = req.headers.authorization;
+/** Shared auth middleware factory. When `requireVerified` is true, unverified users get a 403. */
+function createAuthMiddleware(opts: { requireVerified: boolean }) {
+  return async function authMiddleware(
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    if (!hasDatabaseConfiguration()) {
+      res.status(503).json({ error: 'Authentication is not configured' });
+      return;
+    }
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
 
-  const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-  const payload = authService.verifyAccessToken(token);
+    const payload = authService.verifyAccessToken(authHeader.substring(7));
+    if (!payload) {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
 
-  if (!payload) {
-    res.status(401).json({ error: 'Invalid or expired token' });
-    return;
-  }
+    let user = getCachedUser(payload.userId);
+    if (!user) {
+      const dbUser = await getUserRepository().findById(payload.userId);
+      if (!dbUser) {
+        res.status(401).json({ error: 'User not found' });
+        return;
+      }
+      user = dbUser;
+      cacheUser(payload.userId, user);
+    }
 
-  const cachedUser = getCachedUser(payload.userId);
-  if (cachedUser) {
-    if (!passesEmailGate(cachedUser)) {
+    if (opts.requireVerified && !passesEmailGate(user)) {
       res.status(403).json({ error: 'Email not verified' });
       return;
     }
-    req.user = cachedUser;
+
+    req.user = user;
     next();
-    return;
-  }
-
-  const userRepository = getUserRepository();
-  const user = await userRepository.findById(payload.userId);
-  if (!user) {
-    res.status(401).json({ error: 'User not found' });
-    return;
-  }
-
-  if (!passesEmailGate(user)) {
-    res.status(403).json({ error: 'Email not verified' });
-    return;
-  }
-
-  cacheUser(payload.userId, user);
-
-  // Attach user to request for use in route handlers
-  req.user = user;
-  next();
+  };
 }
+
+export const requireAuth = createAuthMiddleware({ requireVerified: true });
+export const requireAuthAllowUnverified = createAuthMiddleware({ requireVerified: false });
 
 /**
  * Optional authentication middleware

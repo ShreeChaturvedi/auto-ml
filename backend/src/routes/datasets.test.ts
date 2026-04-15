@@ -10,6 +10,9 @@ import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
 import type { DatasetRepository } from '../repositories/datasetRepository.js';
 import { regenerateNaturalLanguageSuggestions } from '../services/nlSuggestions/index.js';
+import * as notebookService from '../services/notebook/notebookService.js';
+import { getWorkflowRepository } from '../services/workflows/repository/index.js';
+import type { WorkflowRunState } from '../services/workflows/types.js';
 import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { DatasetProfile, DatasetProfileInput } from '../types/dataset.js';
 
@@ -53,9 +56,27 @@ vi.mock('../services/datasetLoader.js', async (importOriginal) => {
         return row;
       });
     }),
-    sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string) => {
+    parseXlsxFromFile: vi.fn().mockResolvedValue([]),
+    parseXlsxSample: vi.fn().mockResolvedValue({
+      headers: ['id', 'name'],
+      sample: [{ id: 1, name: 'Test' }],
+      totalRows: 1,
+      sampleRows: [{ id: 1, name: 'Test' }],
+      totalRowCount: 1
+    }),
+    streamXlsxRows: vi.fn().mockResolvedValue({ totalRows: 0 }),
+    streamXlsxSinglePass: vi.fn().mockResolvedValue({
+      headers: ['id', 'name'],
+      sample: [{ id: 1, name: 'Test' }],
+      totalRows: 1,
+      totalRowCount: 1,
+      sampleRows: [{ id: 1, name: 'Test' }]
+    }),
+    streamLoadXlsxIntoPostgres: vi.fn().mockResolvedValue({ tableName: 'mock_table', rowsLoaded: 0 }),
+    singlePassXlsxLoad: vi.fn().mockResolvedValue({ sampleRows: [], totalRowCount: 0, tableName: 'mock_table', rowsLoaded: 0, columns: [] }),
+    sanitizeTableName: vi.fn().mockImplementation((filename: string, datasetId: string, addUniqueSuffix?: boolean) => {
       const baseName = filename.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-      return `${baseName}_${datasetId.slice(0, 8)}`;
+      return addUniqueSuffix ? `${baseName}_${datasetId.slice(0, 8)}` : baseName;
     })
   };
 });
@@ -72,6 +93,10 @@ vi.mock('../services/workflows/repository/index.js', () => ({
   }))
 }));
 
+vi.mock('../services/notebook/notebookService.js', () => ({
+  getNotebook: vi.fn(async () => null)
+}));
+
 vi.mock('../services/nlSuggestions/index.js', () => ({
   regenerateNaturalLanguageSuggestions: vi.fn().mockResolvedValue({
     suggestions: [],
@@ -82,6 +107,8 @@ vi.mock('../services/nlSuggestions/index.js', () => ({
 
 const mockHasDatabaseConfiguration = vi.mocked(hasDatabaseConfiguration);
 const mockRegenerateNaturalLanguageSuggestions = vi.mocked(regenerateNaturalLanguageSuggestions);
+const mockGetWorkflowRepository = vi.mocked(getWorkflowRepository);
+const mockGetNotebook = vi.mocked(notebookService.getNotebook);
 
 // In-memory dataset repository for testing
 class InMemoryDatasetRepository implements DatasetRepository {
@@ -190,6 +217,20 @@ describeRouteSuite('dataset routes', () => {
     repository = new InMemoryDatasetRepository();
     mockHasDatabaseConfiguration.mockReturnValue(false);
     mockRegenerateNaturalLanguageSuggestions.mockClear();
+    mockGetNotebook.mockReset();
+    mockGetNotebook.mockResolvedValue({ notebookId: 'nb-default' } as never);
+    mockGetWorkflowRepository.mockReturnValue({
+      findRunsByDataset: vi.fn(async () => []),
+      getRun: vi.fn(),
+      saveRun: vi.fn(async (run) => run),
+      appendEvent: vi.fn(),
+      upsertArtifact: vi.fn(),
+      upsertApproval: vi.fn(),
+      upsertHandoff: vi.fn(),
+      upsertNotebookBinding: vi.fn(),
+      findActiveRun: vi.fn(),
+      listRunsByProject: vi.fn()
+    } as never);
   });
 
   describe('GET /api/datasets', () => {
@@ -216,7 +257,7 @@ describeRouteSuite('dataset routes', () => {
       repository.addDataset(
         createMockDataset({
           filename: 'data.csv',
-          metadata: { tableName: 'data_123' }
+          metadata: { sqlName: 'data' }
         })
       );
 
@@ -224,7 +265,8 @@ describeRouteSuite('dataset routes', () => {
       const response = await request(app).get('/api/datasets');
 
       expect(response.status).toBe(200);
-      expect(response.body.datasets[0].tableName).toBe('data_123');
+      expect(response.body.datasets[0].tableName).toBe('data');
+      expect(response.body.datasets[0].physicalTableName).toMatch(/^data_[a-z0-9]{8}$/);
     });
 
     it('filters by projectId when provided', async () => {
@@ -323,6 +365,23 @@ describeRouteSuite('dataset routes', () => {
     });
   });
 
+  describe('GET /api/datasets/:datasetId/download', () => {
+    it('streams the dataset file when it exists on disk', async () => {
+      const dataset = createMockDataset({ filename: 'download.csv' });
+      repository.addDataset(dataset);
+      storeDatasetFile(dataset, 'id,name\n1,Ada\n');
+
+      const app = createTestApp(repository);
+      const response = await request(app).get(`/api/datasets/${dataset.datasetId}/download`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.headers['content-disposition']).toContain('download.csv');
+      expect(response.text).toContain('id,name');
+      expect(response.text).toContain('Ada');
+    });
+  });
+
   describe('POST /api/upload/dataset', () => {
     it('rejects legacy XLS uploads with a clear migration message', async () => {
       const app = createTestApp(repository);
@@ -375,6 +434,119 @@ describeRouteSuite('dataset routes', () => {
       const remaining = await repository.list();
       expect(remaining).toHaveLength(1);
       expect(remaining[0].datasetId).toBe(dataset1.datasetId);
+    });
+
+    it('returns active workflow details when the dataset is still in use', async () => {
+      const projectId = randomUUID();
+      const dataset = createMockDataset({ projectId, filename: 'feature_v1.csv' });
+      repository.addDataset(dataset);
+
+      const blockingRun: WorkflowRunState = {
+        runId: 'run-blocked',
+        threadId: 'thread-blocked',
+        projectId,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'await_approval',
+        revision: 3,
+        activeDatasetId: dataset.datasetId,
+        activeNotebookId: 'nb-123',
+        pendingInputKind: 'approval',
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        createdAt: '2026-04-10T00:00:00.000Z',
+        updatedAt: '2026-04-10T01:00:00.000Z'
+      };
+      mockGetNotebook.mockResolvedValue({ notebookId: 'nb-123' } as never);
+
+      mockGetWorkflowRepository.mockReturnValue({
+        findRunsByDataset: vi.fn(async () => [blockingRun]),
+        getRun: vi.fn(),
+        saveRun: vi.fn(async (run) => run),
+        appendEvent: vi.fn(),
+        upsertArtifact: vi.fn(),
+        upsertApproval: vi.fn(),
+        upsertHandoff: vi.fn(),
+        upsertNotebookBinding: vi.fn(),
+        findActiveRun: vi.fn(),
+        listRunsByProject: vi.fn()
+      } as never);
+
+      const app = createTestApp(repository);
+      const response = await request(app).delete(`/api/datasets/${dataset.datasetId}`);
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toBe('DATASET_IN_USE');
+      expect(response.body.datasetFilename).toBe('feature_v1.csv');
+      expect(response.body.activeRunIds).toEqual(['run-blocked']);
+      expect(response.body.activeWorkflows).toEqual([
+        {
+          runId: 'run-blocked',
+          phase: 'training',
+          status: 'paused',
+          pendingInputKind: 'approval',
+          activeNotebookId: 'nb-123',
+          updatedAt: '2026-04-10T01:00:00.000Z'
+        }
+      ]);
+    });
+
+    it('auto-clears stale notebook blockers before deleting a dataset', async () => {
+      const projectId = randomUUID();
+      const dataset = createMockDataset({ projectId, filename: 'feature_v1.csv' });
+      repository.addDataset(dataset);
+
+      const staleRun: WorkflowRunState = {
+        runId: 'run-stale',
+        threadId: 'thread-stale',
+        projectId,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'await_approval',
+        revision: 2,
+        activeDatasetId: dataset.datasetId,
+        activeNotebookId: 'nb-missing',
+        pendingInputKind: 'approval',
+        retryBudget: 3,
+        repairAttemptCount: 0,
+        createdAt: '2026-04-10T00:00:00.000Z',
+        updatedAt: '2026-04-10T01:00:00.000Z'
+      };
+
+      const saveRunMock = vi.fn(async (run) => run);
+      const appendEventMock = vi.fn();
+      mockGetNotebook.mockResolvedValue(null);
+      mockGetWorkflowRepository.mockReturnValue({
+        findRunsByDataset: vi.fn(async () => [staleRun]),
+        getRun: vi.fn(),
+        saveRun: saveRunMock,
+        appendEvent: appendEventMock,
+        upsertArtifact: vi.fn(),
+        upsertApproval: vi.fn(),
+        upsertHandoff: vi.fn(),
+        upsertNotebookBinding: vi.fn(),
+        findActiveRun: vi.fn(),
+        listRunsByProject: vi.fn()
+      } as never);
+
+      const app = createTestApp(repository);
+      const response = await request(app).delete(`/api/datasets/${dataset.datasetId}`);
+
+      expect(response.status).toBe(200);
+      expect(saveRunMock).toHaveBeenCalledWith(expect.objectContaining({
+        runId: 'run-stale',
+        status: 'interrupted',
+        activeNotebookId: undefined,
+        lastFailureCode: 'STALE_NOTEBOOK_REFERENCE'
+      }));
+      expect(appendEventMock).toHaveBeenCalledWith(
+        'run-stale',
+        'workflow_interrupted',
+        expect.objectContaining({
+          code: 'STALE_NOTEBOOK_REFERENCE'
+        })
+      );
+      expect(await repository.get(dataset.datasetId)).toBeUndefined();
     });
   });
 

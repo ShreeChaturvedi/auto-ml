@@ -38,11 +38,12 @@ export default defineConfig({
         PORT: '4000',
         STORAGE_PATH: storagePath,
         DATASET_METADATA_PATH: datasetMetadataPath,
-        DATASET_STORAGE_DIR: datasetFilesPath,
-        ALLOWED_ORIGINS: 'http://127.0.0.1:4173,http://localhost:4173',
-        NODE_ENV: 'test'
-      }
-    },
+      DATASET_STORAGE_DIR: datasetFilesPath,
+      ALLOWED_ORIGINS: 'http://127.0.0.1:4173,http://localhost:4173',
+      NODE_ENV: 'test',
+      VITEST: 'true'
+    }
+  },
     {
       command: 'npm --prefix ../frontend run preview -- --host --port 4173',
       port: 4173,

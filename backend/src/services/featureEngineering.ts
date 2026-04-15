@@ -12,12 +12,14 @@ import { extname, join } from 'path';
 
 import { env } from '../config.js';
 import { hasDatabaseConfiguration } from '../db.js';
+import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import type { ColumnDataType, DatasetFileType } from '../types/dataset.js';
 import type { PythonVersion } from '../types/execution.js';
 
 import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
-import { loadDatasetIntoPostgres, sanitizeTableName } from './datasetLoader.js';
+import { buildDatasetTableName, loadDatasetIntoPostgres } from './datasetLoader.js';
+import { assignDatasetSqlName } from './datasetSqlNames.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import { buildFeatureEngineeringScript } from './featureEngineering/scriptBuilder.js';
 import * as kernelManager from './kernelManager.js';
@@ -75,6 +77,14 @@ export interface FeatureSpec {
   category?: string;
   params?: Record<string, unknown>;
   enabled?: boolean;
+  /**
+   * Optional LLM-authored Python code for this feature. When present, the
+   * apply pipeline uses this code verbatim (wrapped in a function scope)
+   * instead of regenerating from the method-based codegen map. This ensures
+   * complex features like groupby transforms (labelled method: 'ratio')
+   * produce the same data in export as they did in the notebook.
+   */
+  code?: string;
 }
 
 interface FeatureEngineeringInput {
@@ -90,6 +100,44 @@ interface FeatureMetadataResult {
   nRows: number;
   columns: Array<{ name: string; dtype: string; nullCount: number }>;
   sample: Record<string, unknown>[];
+}
+
+/**
+ * Apply pipeline degenerate-feature guard.
+ *
+ * After the feature engineering script runs, the output dataset's columns
+ * must include AT LEAST ONE column that wasn't in the source dataset.
+ * If the output schema is identical to (or a subset of) the source, the
+ * features silently produced nothing useful — typically because the LLM
+ * materialized placeholder code (`# Placeholder...`) that Python ran as
+ * a no-op, or because the features targeted columns that don't exist in
+ * the active dataset.
+ *
+ * Exported as a pure helper so it can be unit-tested without spinning up
+ * Docker or the full apply pipeline.
+ *
+ * CRITICAL: This guard MUST run BEFORE datasetRepository.create() so a
+ * failure doesn't leave orphaned metadata behind.
+ */
+export function assertFeaturesProducedNewColumns(
+  sourceColumnNames: string[],
+  outputColumnNames: string[],
+  features: Array<{ featureName: string }>,
+  datasetFilename: string,
+  featureCount: number
+): void {
+  const sourceSet = new Set(sourceColumnNames);
+  const newColumns = outputColumnNames.filter((name) => !sourceSet.has(name));
+  if (newColumns.length === 0) {
+    const featureList = features.map((f) => `"${f.featureName}"`).join(', ');
+    throw new Error(
+      `Feature engineering produced no new columns in ${datasetFilename}. ` +
+      `Applied ${featureCount} feature(s) [${featureList}] but the output schema ` +
+      `matches the source exactly. This usually means the feature code was a ` +
+      `placeholder, or the features targeted columns that don't exist in this dataset. ` +
+      `Review the feature code in the notebook and re-run the lifecycle.`
+    );
+  }
 }
 
 function normalizeColumnDataType(dtype: string): ColumnDataType {
@@ -182,6 +230,13 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
   }
 
   for (const feature of enabledFeatures) {
+    // When the LLM authored the code for this feature, skip structural
+    // validation — the notebook already ran it successfully, and the code
+    // handles its own column references. Structural guards only apply to
+    // features that fall back to the method-based codegen map.
+    const hasLlmCode = typeof feature.code === 'string' && feature.code.trim().length > 0;
+    if (hasLlmCode) continue;
+
     if (INTERACTION_METHODS.has(feature.method) && !feature.secondaryColumn) {
       throw new Error(`Feature "${feature.featureName}" requires a secondary column.`);
     }
@@ -239,6 +294,19 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     dtype: normalizeColumnDataType(column.dtype)
   }));
 
+  // Degenerate-feature guard: verify the apply actually added new columns.
+  // Runs BEFORE datasetRepository.create to prevent orphaned metadata when
+  // the script was a no-op (placeholder code, missing source columns, etc.)
+  const sourceColumnNames = dataset.columns.map((col) => col.name);
+  const outputColumnNames = normalizedColumns.map((col) => col.name);
+  assertFeaturesProducedNewColumns(
+    sourceColumnNames,
+    outputColumnNames,
+    enabledFeatures,
+    dataset.filename,
+    enabledFeatures.length
+  );
+
   const derivedDataset = await datasetRepository.create({
     projectId: input.projectId,
     filename: outputFilename,
@@ -257,40 +325,73 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
       }
     }
   });
+  const sqlName = await assignDatasetSqlName({
+    repository: datasetRepository,
+    projectId: input.projectId,
+    filename: outputFilename,
+    datasetId: derivedDataset.datasetId
+  });
 
   const datasetDir = join(env.datasetStorageDir, derivedDataset.datasetId);
   await mkdir(datasetDir, { recursive: true });
   await writeFile(join(datasetDir, outputFilename), outputBuffer);
 
-  let tableName = sanitizeTableName(outputFilename, derivedDataset.datasetId);
+  let tableName = buildDatasetTableName(outputFilename, derivedDataset.datasetId);
+  let warning: string | undefined;
 
   if (hasDatabaseConfiguration()) {
-    const { tableName: loadedName, rowsLoaded } = await loadDatasetIntoPostgres({
-      datasetId: derivedDataset.datasetId,
-      filename: outputFilename,
-      fileType: outputFormat,
-      buffer: outputBuffer,
-      columns: normalizedColumns
-    });
-    tableName = loadedName;
-    const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
-      ...current,
-      nRows: rowsLoaded,
-      metadata: {
-        ...(current.metadata ?? {}),
-        tableName,
-        rowsLoaded
+    try {
+      const { tableName: loadedName, rowsLoaded } = await loadDatasetIntoPostgres({
+        datasetId: derivedDataset.datasetId,
+        filename: outputFilename,
+        fileType: outputFormat,
+        buffer: outputBuffer,
+        columns: normalizedColumns,
+        tableName
+      });
+      tableName = loadedName;
+      const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
+        ...current,
+        nRows: rowsLoaded,
+        metadata: {
+          ...(current.metadata ?? {}),
+          sqlName,
+          tableName,
+          rowsLoaded
+        }
+      }));
+      if (updated) {
+        derivedDataset.nRows = updated.nRows;
+        derivedDataset.metadata = updated.metadata;
       }
-    }));
-    if (updated) {
-      derivedDataset.nRows = updated.nRows;
-      derivedDataset.metadata = updated.metadata;
+    } catch (error) {
+      warning = 'Dataset was created, but database indexing failed. It may be temporarily non-queryable.';
+      appLogger.warn('[feature-engineering] Derived dataset DB load failed; keeping file-backed dataset', {
+        datasetId: derivedDataset.datasetId,
+        projectId: input.projectId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
+        ...current,
+        metadata: {
+          ...(current.metadata ?? {}),
+          sqlName,
+          tableName,
+          loadWarning: warning,
+          queryError: error instanceof Error ? error.message : String(error)
+        }
+      }));
+      if (updated) {
+        derivedDataset.metadata = updated.metadata;
+      }
     }
   } else {
     const updated = await datasetRepository.update(derivedDataset.datasetId, (current) => ({
       ...current,
       metadata: {
         ...(current.metadata ?? {}),
+        sqlName,
         tableName
       }
     }));
@@ -306,6 +407,7 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
 
   return {
     dataset: derivedDataset,
-    tableName
+    tableName,
+    warning
   };
 }

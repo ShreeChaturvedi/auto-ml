@@ -60,11 +60,13 @@ export function SignupForm() {
   const password = watch('password') || '';
   const confirmPassword = watch('confirmPassword') || '';
 
+  const user = useAuthStore((state) => state.user);
+
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/');
+    if (isAuthenticated && user) {
+      navigate(user.email_verified ? '/' : '/verify-email/pending');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, user, navigate]);
 
   const onSubmit = async (data: SignupFormValues) => {
     setFormError(null);
@@ -75,7 +77,7 @@ export function SignupForm() {
       setUser(response.user);
       setTokens(response.accessToken, response.refreshToken);
       setButtonState('success');
-      setTimeout(() => navigate('/'), 500);
+      setTimeout(() => navigate(response.user.email_verified ? '/' : '/verify-email/pending'), 500);
     } catch (error: unknown) {
       if (error instanceof Error && 'status' in error && (error as { status: number }).status === 409) {
         setFormError('Email already registered');
@@ -106,7 +108,7 @@ export function SignupForm() {
         <div className="space-y-6">
           {/* Header */}
           <div className="space-y-2 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Create an Account</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Create an Account</h1>
             <p className="text-sm text-neutral-400">
               Enter your information to get started
             </p>
@@ -121,7 +123,7 @@ export function SignupForm() {
                 type="text"
                 placeholder="John Doe"
                 autoComplete="name"
-                className="bg-neutral-900/50 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('name')}
               />
               {errors.name && (
@@ -136,7 +138,7 @@ export function SignupForm() {
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="bg-neutral-900/50 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('email')}
               />
               {errors.email && (
@@ -152,14 +154,14 @@ export function SignupForm() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Create a password"
                   autoComplete="new-password"
-                  className="bg-neutral-900/50 border-neutral-700 pr-10 text-white placeholder:text-neutral-500"
+                  className="border-border pr-10 text-white placeholder:text-neutral-500"
                   {...register('password')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white"
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -178,14 +180,14 @@ export function SignupForm() {
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="Confirm your password"
                   autoComplete="new-password"
-                  className="bg-neutral-900/50 border-neutral-700 pr-10 text-white placeholder:text-neutral-500"
+                  className="border-border pr-10 text-white placeholder:text-neutral-500"
                   {...register('confirmPassword')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword((prev) => !prev)}
                   aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white"
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white"
                 >
                   {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

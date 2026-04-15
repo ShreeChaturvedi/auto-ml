@@ -19,10 +19,14 @@ interface QuestionCardsProps {
 
 type AnswerState = Record<string, string | string[]>;
 
+// Option chip states — default (muted border over a faint surface), hover
+// (border/background brighten), selected (primary ring + accent fill). All
+// opacity steps are valid Tailwind stops so the classes resolve in both the
+// frontend and landing builds.
 const getCardClassName = (selected: boolean) =>
   cn(
-    'cursor-pointer border transition-colors hover:border-primary/40',
-    selected && 'border-primary bg-primary/5'
+    'cursor-pointer border border-border bg-background/40 transition-all hover:border-primary/40 hover:bg-accent/40',
+    selected && 'border-primary/70 bg-primary/10 ring-1 ring-primary/70 hover:bg-primary/10'
   );
 
 function OptionCard({
@@ -42,6 +46,8 @@ function OptionCard({
   questionId: string;
   onToggle: () => void;
 }) {
+  const optionId = `${questionId}-${inputType}-${optionLabel.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()}`;
+
   if (inputType === 'radio') {
     return (
       <button
@@ -65,6 +71,8 @@ function OptionCard({
       data-testid={`multi-option-${questionId}-${optionLabel}`}
     >
       <input
+        id={optionId}
+        name={questionId}
         type="checkbox"
         checked={isSelected}
         disabled={disabled}
@@ -299,6 +307,7 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
 
           {missingSelectableOptions ? (
             <Textarea
+              name={`${currentQuestion.id}-fallback`}
               value={typeof selected === 'string' ? selected : ''}
               onChange={(event) => {
                 setAnswers((prev) => ({ ...prev, [currentQuestion.id]: event.target.value }));
@@ -314,6 +323,7 @@ export function QuestionCards({ questions, onSubmit, disabled = false }: Questio
           {currentQuestion.type === 'free_text' ? (
             <div className="space-y-2">
               <Textarea
+                name={currentQuestion.id}
                 value={typeof selected === 'string' ? selected : ''}
                 onChange={(event) => {
                   setAnswers((prev) => ({ ...prev, [currentQuestion.id]: event.target.value }));

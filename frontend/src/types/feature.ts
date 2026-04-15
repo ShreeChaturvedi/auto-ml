@@ -84,8 +84,9 @@ export interface FeatureTemplate {
 export interface FeatureSpec {
   id: string;
   projectId: string;
+  versionId?: string;
   sourceColumn: string;
-  secondaryColumn?: string; // For interaction features
+  secondaryColumn?: string; // For interaction features (ratio, difference, product, groupby shares)
   featureName: string;
   description: string;
   method: FeatureMethod;
@@ -93,6 +94,13 @@ export interface FeatureSpec {
   params: Record<string, unknown>;
   enabled: boolean;
   createdAt: string;
+  /**
+   * Optional LLM-authored Python code. When present, the apply pipeline
+   * uses this code verbatim instead of regenerating from the method-based
+   * codegen map. Ensures exported data matches what the notebook produced
+   * for complex features (e.g., groupby transforms labelled as "ratio").
+   */
+  code?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -135,4 +143,3 @@ export interface PipelineVersion {
   /** Linked notebook ID for the 1:1 workbook model. Optional for backward compat. */
   notebookId?: string;
 }
-

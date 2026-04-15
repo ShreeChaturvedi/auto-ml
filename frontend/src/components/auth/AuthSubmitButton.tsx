@@ -47,7 +47,7 @@ export function AuthSubmitButton({
         disabled={state === 'loading' || disabled}
         onClick={onClick}
         className={cn(
-          'relative w-full h-11 text-sm font-medium transition-all duration-200',
+          'relative w-full h-11 text-sm font-medium transition-colors duration-200',
           'bg-neutral-800 hover:bg-neutral-700 border-neutral-700',
           'group',
           className
@@ -70,7 +70,7 @@ export function AuthSubmitButton({
             <span className="transition-transform duration-200 group-hover:-translate-x-2">
               {idleText}
             </span>
-            <ArrowRight className="absolute -right-6 h-4 w-4 opacity-0 translate-x-0 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-1" />
+            <ArrowRight className="absolute -right-6 h-4 w-4 opacity-0 translate-x-0 transition-[opacity,transform] duration-200 group-hover:opacity-100 group-hover:translate-x-1" />
           </span>
         )}
       </Button>

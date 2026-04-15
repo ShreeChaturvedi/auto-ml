@@ -86,6 +86,7 @@ export const env = {
   insightsCacheDir: resolveBackendPath(process.env.INSIGHTS_CACHE_DIR ?? 'storage/insights'),
   modelStorageDir: resolveBackendPath(process.env.MODEL_STORAGE_DIR ?? 'storage/models/artifacts'),
   modelMetadataPath: resolveBackendPath(process.env.MODEL_METADATA_PATH ?? 'storage/models/metadata.json'),
+  deploymentStorageDir: resolveBackendPath(process.env.DEPLOYMENT_STORAGE_DIR ?? 'storage/deployments'),
   databaseUrl: process.env.DATABASE_URL,
   pgSslMode: process.env.PGSSLMODE ?? 'disable',
   pgPoolMin: parseInteger(process.env.PG_POOL_MIN, 0),
@@ -97,10 +98,12 @@ export const env = {
   queryCacheMaxEntries: parseInteger(process.env.QUERY_CACHE_MAX_ENTRIES, 500),
   docChunkSize: parseInteger(process.env.DOC_CHUNK_SIZE, 500),
   docChunkOverlap: parseInteger(process.env.DOC_CHUNK_OVERLAP, 50),
-  answerCacheTtlMs: parseInteger(process.env.ANSWER_CACHE_TTL_MS, 2 * 60 * 1000),
 
   // Execution Environment
-  executionTimeoutMs: parseInteger(process.env.EXECUTION_TIMEOUT_MS, 30000),
+  // 30s was too short for Training (RandomForest 300 trees + 5-fold CV
+  // timed out repeatedly). 5 minutes handles complex training jobs while
+  // still catching infinite loops. Override with EXECUTION_TIMEOUT_MS.
+  executionTimeoutMs: parseInteger(process.env.EXECUTION_TIMEOUT_MS, 300000),
   executionMaxMemoryMb: parseInteger(process.env.EXECUTION_MAX_MEMORY_MB, 2048),
   executionMaxCpuPercent: parseInteger(process.env.EXECUTION_MAX_CPU_PERCENT, 100),
   executionTmpfsMb: parseInteger(process.env.EXECUTION_TMPFS_MB, 1024),

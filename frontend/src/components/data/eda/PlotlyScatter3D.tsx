@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { Box } from 'lucide-react';
 import { PlotEmptyState } from './PlotEmptyState';
 import {
   LazyPlot,
@@ -91,7 +90,7 @@ export function PlotlyScatter3D({
 
   // Guard: need at least 3 numeric columns
   if (!rows || rows.length === 0 || columnNames.length < 3) {
-    return <PlotEmptyState icon={Box} message="Need at least 3 numeric columns and row data for 3D scatter" className={className} />;
+    return <PlotEmptyState message="Need at least 3 numeric columns and row data for 3D scatter" className={className} />;
   }
 
   return (

@@ -75,7 +75,7 @@ npm run db:migrate
 
 This creates tables for datasets, documents, chunks, embeddings, query cache, and auth scaffolding. The backend will log a connection check on startup.
 
-If you are running from the repo root, `npm run dev` will spin up a local Postgres container and run migrations automatically.
+If you are running from the repo root, `npm run dev` will spin up or reuse the managed local Postgres container and run migrations automatically. Containers created or started by that invocation are stopped on shutdown, while compatible containers that were already running are left running.
 
 ## Benchmarking
 
@@ -158,5 +158,5 @@ Legacy preprocessing endpoints remain mounted only as deprecated guards and retu
 ## Notes
 
 - Dataset profiling uses the first 5,000 rows for column stats and sampling; row counts reflect the full parsed file.
-- Embeddings are lightweight hash-based vectors (no pgvector yet).
+- Embeddings use `pgvector` for semantic search in Postgres-backed environments.
 - NL→SQL is deterministic and only intended as a placeholder.

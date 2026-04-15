@@ -16,11 +16,20 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock('@/components/theme-provider', () => ({
   useTheme: () => ({
-    theme: mockState.appTheme
+    theme: mockState.appTheme,
+    resolvedTheme: mockState.appTheme
   })
 }));
 
 vi.mock('@monaco-editor/react', () => ({
+  loader: {
+    init: vi.fn().mockResolvedValue({
+      editor: {
+        defineTheme: vi.fn(),
+        setTheme: vi.fn()
+      }
+    })
+  },
   default: ({
     theme,
     language,
@@ -89,9 +98,9 @@ describe('QueryPanel theme handling', () => {
     const onExecute = vi.fn();
 
     const firstRender = render(<QueryPanel onExecute={onExecute} />);
-    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
-    expect(mockState.renderedThemes[0]).toBe('sql-light');
-    expect(mockState.renderedThemes).not.toContain('sql-dark');
+    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'adaptive-light');
+    expect(mockState.renderedThemes[0]).toBe('adaptive-light');
+    expect(mockState.renderedThemes).not.toContain('adaptive-dark');
     expect(screen.getByTestId('mock-monaco-editor')).toHaveAttribute('data-language', 'sql');
     expect(mockState.renderedQuickSuggestions.at(-1)).toBe(true);
     expect(mockState.renderedTriggerSuggestions.at(-1)).toBe(true);
@@ -100,8 +109,8 @@ describe('QueryPanel theme handling', () => {
     firstRender.unmount();
 
     render(<QueryPanel onExecute={onExecute} />);
-    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'sql-light');
-    expect(mockState.renderedThemes).not.toContain('sql-dark');
+    expect(await screen.findByTestId('mock-monaco-editor')).toHaveAttribute('data-theme', 'adaptive-light');
+    expect(mockState.renderedThemes).not.toContain('adaptive-dark');
   });
 
   it('expands from collapsed overlay click', () => {
@@ -129,6 +138,7 @@ describe('QueryPanel theme handling', () => {
   });
 
   it('uses the route project suggestion entry when english mode opens', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useNlSuggestionStore.setState({
       byProject: {
         'route-project': {
@@ -166,9 +176,11 @@ describe('QueryPanel theme handling', () => {
 
     expect(await screen.findAllByText(/compare weekly revenue and average order value/i)).not.toHaveLength(0);
     expect(screen.queryByText(/this stale project suggestion should never appear/i)).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('keeps english placeholders visible across sql mode toggles', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useNlSuggestionStore.setState({
       byProject: {
         'route-project': {
@@ -200,5 +212,6 @@ describe('QueryPanel theme handling', () => {
     expect(container.textContent).toContain(
       'Compare weekly revenue and average order value over the last 8 weeks.'
     );
+    vi.useRealTimers();
   });
 });

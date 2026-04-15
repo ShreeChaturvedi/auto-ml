@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAuthAllowUnverified, invalidateUserCache } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
@@ -51,6 +51,14 @@ const updateProfileSchema = z.object({
   newPassword: z.string().min(8).optional()
 });
 
+const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Token is required')
+});
+
+const resendVerificationSchema = z.object({
+  email: z.string().email('Invalid email address').optional()
+});
+
 const googleCallbackSchema = z.object({
   code: z.string().min(1, 'Authorization code is required')
 });
@@ -58,6 +66,8 @@ const googleCallbackSchema = z.object({
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
+
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export function registerAuthRoutes(router: Router, pool: Pool) {
   const userRepository = new UserRepository(pool);
@@ -69,6 +79,15 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     const expiresAt = new Date(Date.now() + authService.refreshTokenExpiryMs(rememberMe));
     await userRepository.storeRefreshToken(user.user_id, hash, expiresAt, req.ip, req.get('user-agent'));
     return tokens;
+  }
+
+  /** Generate a verification token, persist it, and send the verification email. */
+  async function sendVerificationToken(userId: string, email: string) {
+    const token = authService.generateSecureToken();
+    const hash = authService.hashRefreshToken(token);
+    const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+    await userRepository.storeEmailVerificationToken(userId, hash, expiresAt);
+    await emailService.sendVerificationEmail(email, token);
   }
 
   // POST /auth/register
@@ -86,6 +105,12 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       const password_hash = await authService.hashPassword(password);
       const user = await userRepository.create({ email, password, name, password_hash });
+
+      // Fire-and-forget: don't block registration on email delivery
+      sendVerificationToken(user.user_id, user.email).catch((err) =>
+        appLogger.error(`[auth] failed to send verification email to ${user.email}`, err)
+      );
+
       const tokens = await issueAndStoreTokens(user, req);
 
       appLogger.info(`[auth] registered user ${user.email}`);
@@ -162,6 +187,53 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
 
       appLogger.info(`[auth] logout ${req.user.email}`);
       return res.status(204).send();
+    })
+  );
+
+  // POST /auth/revoke-all-sessions — revoke all sessions for the current user
+  router.post(
+    '/auth/revoke-all-sessions',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      await userRepository.revokeAllUserTokens(req.user.user_id);
+      appLogger.info(`[auth] all sessions revoked for ${req.user.email}`);
+      return res.json({ message: 'All sessions revoked' });
+    })
+  );
+
+  // GET /auth/sessions — list active sessions, flag the current one
+  router.get(
+    '/auth/sessions',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      const sessions = await userRepository.getActiveSessions(req.user.user_id);
+
+      const currentRefreshToken = req.get('x-refresh-token');
+      const currentHash = currentRefreshToken
+        ? authService.hashRefreshToken(currentRefreshToken)
+        : null;
+
+      const result = sessions.map(({ token_hash, ...rest }) => ({
+        ...rest,
+        current: currentHash === token_hash,
+      }));
+
+      return res.json({ sessions: result });
+    })
+  );
+
+  // DELETE /auth/sessions/:tokenId — revoke a single session
+  router.delete(
+    '/auth/sessions/:tokenId',
+    requireAuth,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      const { tokenId } = req.params;
+      const revoked = await userRepository.revokeSessionById(tokenId, req.user.user_id);
+      if (!revoked) {
+        return res.status(404).json({ error: 'Session not found or already revoked' });
+      }
+      appLogger.info(`[auth] session ${tokenId} revoked for ${req.user.email}`);
+      return res.json({ message: 'Session revoked' });
     })
   );
 
@@ -268,6 +340,83 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       }
 
       return res.json({ user: req.user });
+    })
+  );
+
+  // POST /auth/verify-email — consume verification token from email link
+  router.post(
+    '/auth/verify-email',
+    validateRequest(verifyEmailSchema),
+    asyncHandler(async (req, res) => {
+      const { token } = req.body;
+      const tokenHash = authService.hashRefreshToken(token);
+      const tokenRecord = await userRepository.findEmailVerificationToken(tokenHash);
+
+      if (!tokenRecord || tokenRecord.used || new Date() > tokenRecord.expires_at) {
+        sendBadRequest(res, 'Invalid or expired verification token');
+        return;
+      }
+
+      await userRepository.markEmailVerificationTokenUsed(tokenHash);
+      await userRepository.markEmailVerified(tokenRecord.user_id);
+      invalidateUserCache(tokenRecord.user_id);
+
+      appLogger.info(`[auth] email verified for user ${tokenRecord.user_id}`);
+      return res.json({ message: 'Email verified successfully' });
+    })
+  );
+
+  // POST /auth/resend-verification — resend verification email (rate-limited)
+  router.post(
+    '/auth/resend-verification',
+    requireAuthAllowUnverified,
+    validateRequest(resendVerificationSchema),
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      const user = req.user;
+
+      if (user.email_verified) {
+        sendBadRequest(res, 'Email is already verified');
+        return;
+      }
+
+      // Rate limit: 60s between resends
+      const latest = await userRepository.findLatestEmailVerificationToken(user.user_id);
+      if (latest) {
+        const elapsed = Date.now() - new Date(latest.created_at).getTime();
+        if (elapsed < 60_000) {
+          const retryAfter = Math.ceil((60_000 - elapsed) / 1000);
+          res.status(429).json({ error: 'Please wait before requesting another email', retryAfter });
+          return;
+        }
+      }
+
+      // Allow email correction
+      let targetEmail = user.email;
+      if (req.body.email && req.body.email !== user.email) {
+        targetEmail = req.body.email;
+        await userRepository.updateEmail(user.user_id, targetEmail);
+        invalidateUserCache(user.user_id);
+      }
+
+      await sendVerificationToken(user.user_id, targetEmail);
+
+      appLogger.info(`[auth] verification email resent to ${targetEmail}`);
+      return res.json({ message: 'Verification email sent' });
+    })
+  );
+
+  // GET /auth/verification-status — poll whether email has been verified
+  router.get(
+    '/auth/verification-status',
+    requireAuthAllowUnverified,
+    asyncHandler(async (req: AuthenticatedRequest, res) => {
+      // Bypass cache — read fresh from DB
+      const freshUser = await userRepository.findById(req.user.user_id);
+      if (!freshUser) {
+        sendNotFound(res, 'User');
+        return;
+      }
+      return res.json({ emailVerified: freshUser.email_verified });
     })
   );
 

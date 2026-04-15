@@ -10,6 +10,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireProjectOwnership, verifyProjectOwnership } from '../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../repositories/projectRepository.js';
 import { runErrorAnalysis } from '../services/errorAttributionService.js';
+import { runEvaluation } from '../services/evaluationService.js';
 import { validateEvaluationForErrorAnalysis } from '../services/evaluationStatusValidator.js';
 import {
   buildModelSummaries,
@@ -95,6 +96,32 @@ export function createExperimentsRouter(): Router {
     } else {
       res.status(404).json({ error: 'SHAP data not found' });
     }
+  }));
+
+  router.post('/:modelId/evaluation/retry', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { modelId } = req.params;
+    const model = await getModelById(modelId);
+
+    if (!model) {
+      res.status(404).json({ error: 'Model not found' });
+      return;
+    }
+
+    if (req.user) {
+      const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
+      if (!project) {
+        res.status(404).json({ error: 'Model not found' });
+        return;
+      }
+    }
+
+    await runEvaluation(modelId);
+    const updatedModel = await getModelById(modelId);
+
+    res.json({
+      ok: true,
+      evaluationStatus: updatedModel?.evaluationStatus ?? model.evaluationStatus ?? 'pending',
+    });
   }));
 
   // POST /experiments/:projectId/tune — Optuna hyperparameter optimization (NDJSON stream)
@@ -202,7 +229,9 @@ export function createExperimentsRouter(): Router {
       const normalizer = createNlFilterNormalizer(ctx);
 
       const result = await requestStructuredJson({
-        client: createLlmClient(),
+        // Use the cheap model (nl2sqlModel defaults to mini) — the nl-filter
+        // schema is trivial and this endpoint fires on every keystroke.
+        client: createLlmClient(env.nl2sqlModel),
         systemPrompt,
         userPrompt: query,
         schema: NlFilterResponseSchema,
@@ -291,7 +320,9 @@ export function createExperimentsRouter(): Router {
     setupNdjsonStream(res);
 
     try {
-      const client = isReport ? createLlmClient(undefined, 180_000) : createLlmClient();
+      // Reports need the strong model for long-form prose; all other insight
+      // types use the cheap model (mini) — they're short structured outputs.
+      const client = isReport ? createLlmClient(undefined, 180_000) : createLlmClient(env.nl2sqlModel);
       let accumulated = '';
 
       await client.stream(

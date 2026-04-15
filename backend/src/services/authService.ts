@@ -102,12 +102,14 @@ export class AuthService {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  /**
-   * Generate a password reset token
-   * Returns 64-character hex string
-   */
-  generatePasswordResetToken(): string {
+  /** Generate a 64-character hex token for one-time-use flows (password reset, email verification). */
+  generateSecureToken(): string {
     return crypto.randomBytes(32).toString('hex');
+  }
+
+  /** @deprecated Use generateSecureToken(). Kept for existing call-sites. */
+  generatePasswordResetToken(): string {
+    return this.generateSecureToken();
   }
 
   /**

@@ -33,6 +33,8 @@ export interface NotebookState {
   cells: NotebookCell[];
   cellSummaries: CellSummary[];
   lockedCells: Map<string, CellLock>;
+  /** Cell currently executing inside `runAllCells`, if any. */
+  runAllRunningCellId: string | null;
 
   // Loading states
   isLoading: boolean;
@@ -53,7 +55,7 @@ export interface NotebookState {
   streamAbortControllers: Map<string, AbortController>;
 
   // Actions - Initialization
-  initializeNotebook: (projectId: string) => Promise<void>;
+  initializeNotebook: (projectId: string, notebookId?: string) => Promise<void>;
   disconnect: () => void;
 
   // Actions - Notebook management
@@ -74,6 +76,8 @@ export interface NotebookState {
 
   // Actions - Execution
   runCell: (cellId: string, projectId: string) => Promise<void>;
+  runAllCells: (projectId: string, signal: AbortSignal) => Promise<void>;
+  stopRunAllCells: (projectId: string) => Promise<void>;
 
   // Actions - Locking
   getCellLock: (cellId: string) => Promise<CellLock | null>;

@@ -113,6 +113,11 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
           items: { type: 'string' },
           description: 'Notebook cell IDs that contain the training code.'
         },
+        prepSegments: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Notebook preparation code segments required to rebuild the training feature frame during later evaluation.'
+        },
         metrics: {
           type: 'object',
           description: 'Training metrics captured from execution output.',
@@ -213,7 +218,7 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
         },
         artifactPath: {
           type: 'string',
-          description: 'Path to the serialized model artifact, if saved.'
+          description: 'Relative path to the serialized model artifact (for example "model.joblib").'
         },
         tags: {
           type: 'array',
@@ -221,7 +226,7 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
           description: 'Optional tags for categorizing the model (e.g. "baseline", "tuned", "production").'
         }
       },
-      required: ['experimentId', 'modelName', 'modelType', 'metrics']
+      required: ['experimentId', 'modelName', 'modelType', 'metrics', 'artifactPath']
     }
   },
   {
@@ -244,6 +249,11 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
         includeHyperparameters: {
           type: 'boolean',
           description: 'Whether to include hyperparameter details in the comparison.'
+        },
+        sortOrder: {
+          type: 'string',
+          enum: ['ascending', 'descending'],
+          description: 'Sort order for ranking. Use "ascending" for error metrics (RMSE, MAE) where lower is better. Defaults to auto-detect based on metric name.'
         }
       },
       required: ['experimentIds', 'primaryMetric']

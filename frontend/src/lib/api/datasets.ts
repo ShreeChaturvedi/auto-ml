@@ -15,9 +15,13 @@ export interface UploadDatasetResponse {
     null_counts: Record<string, number>;
     sample: Record<string, unknown>[];
     createdAt: string;
-    tableName?: string; // Postgres table name for SQL querying
+    tableName?: string; // User-facing SQL table name
+    queryable?: boolean;
+    queryError?: string;
     eda?: EdaSummary;
+    warning?: string;
   };
+  warning?: string;
 }
 
 export async function uploadDatasetFile(file: File, projectId?: string) {
@@ -63,6 +67,8 @@ export interface DatasetProfile {
   createdAt: string;
   updatedAt: string;
   tableName?: string;
+  queryable?: boolean;
+  queryError?: string;
   metadata?: {
     tableName?: string;
     rowsLoaded?: number;
@@ -113,6 +119,13 @@ export async function getDatasetRows(
     offset: number;
     limit: number;
   }>(`/datasets/${datasetId}/rows?${search.toString()}`, { method: 'GET' });
+}
+
+export async function renameDataset(datasetId: string, filename: string) {
+  return apiRequest<{ dataset: DatasetProfile }>(`/datasets/${datasetId}`, {
+    method: 'PATCH',
+    body: { filename }
+  });
 }
 
 export async function deleteDataset(datasetId: string) {

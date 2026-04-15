@@ -1,41 +1,54 @@
-import { useCallback, useRef, type RefObject } from 'react';
+import { useCallback, useRef } from 'react';
 
-import type { MentionInputHandle } from '@/components/llm/MentionInput';
 import { usePushToTalk } from '@/hooks/usePushToTalk';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { useVoiceTranscript } from '@/hooks/useVoiceTranscript';
+import {
+  focusVoiceComposer,
+  getVoiceComposerSelectionOffset,
+  syncVoiceComposerValue,
+  type GetVoiceComposer,
+  type VoiceComposerAnimateRange,
+} from '@/hooks/voiceComposerSurface';
 
 interface UseComposerVoiceInputOptions {
   value: string;
   disabled?: boolean;
-  inputRef: RefObject<MentionInputHandle | null>;
+  getComposer: GetVoiceComposer;
   onValueChange: (value: string, cursorOffset?: number) => void;
 }
 
 export function useComposerVoiceInput({
   value,
   disabled,
-  inputRef,
+  getComposer,
   onValueChange,
 }: UseComposerVoiceInputOptions) {
   const valueRef = useRef(value);
   valueRef.current = value;
+  const getComposerRef = useRef(getComposer);
+  getComposerRef.current = getComposer;
 
   const getValue = useCallback(() => valueRef.current, []);
+  const resolveComposer = useCallback(() => getComposerRef.current(), []);
 
   const getCursorOffset = useCallback(() => {
-    const handle = inputRef.current;
-    if (!handle) {
-      return valueRef.current.length;
-    }
+    return getVoiceComposerSelectionOffset(resolveComposer, valueRef.current);
+  }, [resolveComposer]);
 
-    return handle.getSelectionOffset();
-  }, [inputRef]);
-
-  const applyValue = useCallback((nextValue: string, cursorOffset: number, animateRange?: { start: number; end: number }) => {
-    inputRef.current?.syncValue(nextValue, cursorOffset, animateRange);
-    onValueChange(nextValue, cursorOffset);
-  }, [inputRef, onValueChange]);
+  const applyValue = useCallback((
+    nextValue: string,
+    cursorOffset: number,
+    animateRange?: VoiceComposerAnimateRange
+  ) => {
+    syncVoiceComposerValue({
+      getComposer: resolveComposer,
+      value: nextValue,
+      cursorOffset,
+      onValueChange,
+      animateRange,
+    });
+  }, [onValueChange, resolveComposer]);
 
   const {
     handleTranscriptEvent,
@@ -61,8 +74,8 @@ export function useComposerVoiceInput({
   });
 
   const focusInput = useCallback(() => {
-    inputRef.current?.focus();
-  }, [inputRef]);
+    focusVoiceComposer(resolveComposer);
+  }, [resolveComposer]);
 
   const handleToggleRecording = useCallback(() => {
     if (state === 'idle' || state === 'error') {
@@ -72,20 +85,26 @@ export function useComposerVoiceInput({
     toggleRecording();
   }, [focusInput, state, toggleRecording]);
 
+  const getInputSnapshot = useCallback(() => ({
+    value: valueRef.current,
+    cursor: getCursorOffset(),
+  }), [getCursorOffset]);
+
+  const restoreInput = useCallback((snapshot: { value: string; cursor: number }) => {
+    applyValue(snapshot.value, snapshot.cursor);
+  }, [applyValue]);
+
+  const startPushToTalkRecording = useCallback(() => {
+    focusInput();
+    startRecording();
+  }, [focusInput, startRecording]);
+
   const pushToTalk = usePushToTalk({
     disabled,
     voiceState: state,
-    getInputSnapshot: () => ({
-      value: valueRef.current,
-      cursor: getCursorOffset(),
-    }),
-    restoreInput: (snapshot) => {
-      applyValue(snapshot.value, snapshot.cursor);
-    },
-    startRecording: () => {
-      focusInput();
-      startRecording();
-    },
+    getInputSnapshot,
+    restoreInput,
+    startRecording: startPushToTalkRecording,
     stopRecording,
   });
 

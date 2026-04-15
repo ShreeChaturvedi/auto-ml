@@ -1,61 +1,61 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 
 interface FeatureApprovalGateProps {
-  isApproved: boolean;
-  isReadyForApproval: boolean;
+  activeFeaturesCount: number;
+  implementedFeaturesCount: number;
+  isGenerating: boolean;
   panelError: string | null;
   agentError: string | null;
-  onApprove: () => void;
-  onNewDraft: () => void;
+  onImplement: () => void;
 }
 
 export function FeatureApprovalGate({
-  isApproved,
-  isReadyForApproval,
+  activeFeaturesCount,
+  implementedFeaturesCount,
+  isGenerating,
   panelError,
   agentError,
-  onApprove,
-  onNewDraft
+  onImplement
 }: FeatureApprovalGateProps) {
+  const pendingFeaturesCount = Math.max(activeFeaturesCount - implementedFeaturesCount, 0);
+  const canImplement = activeFeaturesCount > 0 && !isGenerating;
+
   return (
     <div className="space-y-4 pb-4">
       <Card
-        className={cn(
-          'border',
-          isApproved ? 'border-emerald-300 bg-emerald-50/70' : 'border-muted bg-muted/30'
-        )}
+        className="border-muted bg-muted/30"
       >
         <CardContent className="flex items-start justify-between gap-4 p-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              {isApproved ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <Info className="h-4 w-4 text-muted-foreground" />
-              )}
+              <Sparkles className="h-4 w-4 text-sky-600" />
               <p className="text-sm font-semibold">
-                {isApproved ? 'Pipeline Approved' : 'Approval Gate: Readiness Review'}
+                {activeFeaturesCount === 0 ? 'Choose Features To Build' : 'Build Enabled Features'}
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              {isApproved
-                ? 'This feature engineering pipeline is locked and ready for training.'
-                : 'Enable features and review readiness evidence before approval.'}
+              {activeFeaturesCount === 0
+                ? 'Enable one or more proposed features. Then generate notebook steps to write, run, and validate them in this draft.'
+                : pendingFeaturesCount > 0
+                  ? `${pendingFeaturesCount} enabled feature${pendingFeaturesCount === 1 ? '' : 's'} still need notebook steps.`
+                  : 'The enabled features already have notebook work in this draft. Generate notebook steps again after changing selections or parameters.'}
             </p>
           </div>
           <div className="shrink-0">
-            {isApproved ? (
-              <Button variant="outline" size="sm" onClick={onNewDraft}>
-                Start New Draft
-              </Button>
-            ) : (
-              <Button size="sm" disabled={!isReadyForApproval} onClick={onApprove}>
-                Approve Pipeline
-              </Button>
-            )}
+            <Button size="sm" disabled={!canImplement} onClick={onImplement}>
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  Working
+                </>
+              ) : (
+                activeFeaturesCount === 0 || pendingFeaturesCount > 0
+                  ? 'Generate Notebook Steps'
+                  : 'Update Notebook Steps'
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>

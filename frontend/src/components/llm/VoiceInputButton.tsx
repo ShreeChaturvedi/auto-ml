@@ -121,7 +121,7 @@ export function VoiceInputButton({
             aria-label={isActive ? 'Stop voice recording' : 'Start voice recording'}
             aria-pressed={isActive}
             className={cn(
-              'h-9 w-9 rounded-full p-0 shrink-0 transition-colors',
+              'h-9 w-9 rounded-full p-0 shrink-0 transition-[color,background-color,opacity] focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2',
               (isActive || isConnecting) && 'text-white hover:opacity-90',
               isError && 'text-destructive',
               !isActive && !isConnecting && !isError && 'text-muted-foreground voice-idle-btn',

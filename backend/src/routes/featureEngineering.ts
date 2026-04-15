@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { resolveDatasetTableName } from '../services/datasetLoader.js';
+import { resolveDatasetSqlName } from '../services/datasetSqlNames.js';
 import { applyFeatureEngineering, FEATURE_METHODS } from '../services/featureEngineering.js';
 import { featureRunRepository } from '../services/workflows/phases/featureEngineering.js';
 import { getErrorMessage } from '../utils/errors.js';
@@ -25,7 +26,11 @@ const featureSpecSchema = z.object({
   method: z.enum(FEATURE_METHODS),
   category: z.string().optional(),
   params: z.record(z.unknown()).optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  // LLM-authored Python code. Capped at 50KB per feature (typical
+  // real-world LLM code is 1-4KB; this gives 10x+ headroom and keeps
+  // a 50-feature apply payload under ~2.5MB, well below Express's 10MB body limit).
+  code: z.string().max(50000).optional()
 });
 
 const applySchema = z.object({
@@ -77,8 +82,11 @@ export function createFeatureEngineeringRouter() {
           null_counts: Object.fromEntries(dataset.columns.map((column) => [column.name, column.nullCount])),
           sample: dataset.sample,
           createdAt: dataset.createdAt,
-          tableName
-        }
+          tableName: resolveDatasetSqlName(dataset),
+          physicalTableName: tableName,
+          warning: result.warning
+        },
+        warning: result.warning
       });
     } catch (error) {
       appLogger.error('[feature-engineering] Apply failed:', error);

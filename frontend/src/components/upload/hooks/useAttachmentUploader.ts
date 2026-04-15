@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
-import { uploadDatasetFile } from '@/lib/api/datasets';
-import { uploadDocument } from '@/lib/api/documents';
-import { getFileType } from '@/lib/fileUtils';
-import type { UploadedFile } from '@/types/file';
 import { useDataStore } from '@/stores/dataStore';
+import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
+import { ingestProjectFile } from '../projectFileIngestion';
 
 export const CONTEXT_ATTACHMENT_ACCEPT =
   '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.html,.htm,.xml,.yml,.yaml,.rtf';
@@ -50,6 +48,8 @@ export function useAttachmentUploader({ projectId }: UseAttachmentUploaderProps)
   const addFile = useDataStore((state) => state.addFile);
   const addPreview = useDataStore((state) => state.addPreview);
   const setFileMetadata = useDataStore((state) => state.setFileMetadata);
+  const hydrateFromBackend = useDataStore((state) => state.hydrateFromBackend);
+  const fetchProjectSuggestions = useNlSuggestionStore((state) => state.fetchProjectSuggestions);
 
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentFeedback, setAttachmentFeedback] = useState<{ status: AttachmentStatus; message: string } | null>(null);
@@ -136,68 +136,20 @@ export function useAttachmentUploader({ projectId }: UseAttachmentUploaderProps)
         );
 
         try {
-          const fileType = getFileType(attachment.file);
-          const uploadedFileId = crypto.randomUUID();
-          const uploadedFile: UploadedFile = {
-            id: uploadedFileId,
-            name: attachment.name,
-            size: attachment.size,
-            type: fileType,
-            uploadedAt: new Date(),
+          const { summary } = await ingestProjectFile({
             projectId,
-            file: attachment.file
-          };
-
-          if (fileType === 'csv' || fileType === 'json' || fileType === 'excel') {
-            const response = await uploadDatasetFile(attachment.file, projectId);
-            const dataset = response.dataset;
-
-            addFile(uploadedFile);
-            setFileMetadata(uploadedFileId, {
-              datasetId: dataset.datasetId,
-              tableName: dataset.tableName,
-              rowCount: dataset.n_rows,
-              columnCount: dataset.n_cols,
-              columns: dataset.columns,
-              datasetProfile: {
-                nRows: dataset.n_rows,
-                nCols: dataset.n_cols,
-                dtypes: dataset.dtypes,
-                nullCounts: dataset.null_counts
-              }
-            });
-            addPreview({
-              fileId: uploadedFileId,
-              headers: dataset.columns,
-              rows: dataset.sample,
-              totalRows: dataset.n_rows,
-              previewRows: dataset.sample.length
-            });
-            uploaded.push({
-              name: attachment.name,
-              kind: 'dataset',
-              fileType: fileType,
-              size: attachment.size,
-              nRows: dataset.n_rows,
-              nCols: dataset.n_cols,
-              sample: dataset.sample.slice(0, 2)
-            });
-          } else {
-            const response = await uploadDocument(projectId, attachment.file);
-            addFile(uploadedFile);
-            setFileMetadata(uploadedFileId, {
-              documentId: response.document.documentId,
-              chunkCount: response.document.chunkCount,
-              embeddingDimension: response.document.embeddingDimension
-            });
-            uploaded.push({
-              name: attachment.name,
-              kind: 'document',
-              fileType: response.document.mimeType,
-              size: attachment.size,
-              chunkCount: response.document.chunkCount
-            });
-          }
+            file: attachment.file,
+            addFileWhen: 'after-upload',
+            addFile,
+            addPreview,
+            setFileMetadata,
+            hydrateFromBackend,
+            refreshProjectSuggestions: fetchProjectSuggestions,
+          });
+          uploaded.push({
+            name: attachment.name,
+            ...summary,
+          });
 
           setPendingAttachments((prev) =>
             prev.map((item) =>
@@ -234,7 +186,7 @@ export function useAttachmentUploader({ projectId }: UseAttachmentUploaderProps)
 
       return { uploaded, failedCount };
     },
-    [pendingAttachments, projectId, addFile, addPreview, setFileMetadata]
+    [pendingAttachments, projectId, addFile, addPreview, setFileMetadata, hydrateFromBackend, fetchProjectSuggestions]
   );
 
   const handleAttachFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {

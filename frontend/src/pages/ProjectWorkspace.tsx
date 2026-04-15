@@ -1,15 +1,91 @@
-import { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { UploadArea } from '@/components/upload/UploadArea';
-import { DataViewerTab } from '@/components/data/DataViewerTab';
-import { PreprocessingPanel } from '@/components/preprocessing/PreprocessingPanel';
-import { FeatureEngineeringPanel } from '@/components/features/FeatureEngineeringPanel';
-import { TrainingPanel } from '@/components/training/TrainingPanel';
+import { Button } from '@/components/ui/button';
 import { ExperimentsDashboard } from '@/components/experiments/ExperimentsDashboard';
-import { NotebookPage } from '@/components/notebook/NotebookPage';
+import { DeploymentDashboard } from '@/components/deployment/DeploymentDashboard';
 import { useProjectStore } from '@/stores/projectStore';
-import { isAuxiliaryPhase } from '@/types/phase';
+import { useNotebookStore } from '@/stores/notebookStore';
+import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
 import type { Phase } from '@/types/phase';
+import {
+  loadDataViewerTab,
+  loadFeatureEngineeringPanel,
+  loadPreprocessingPanel,
+  loadTrainingPanel,
+  loadUploadArea,
+} from './projectWorkspacePhaseLoaders';
+
+const UploadArea = lazy(loadUploadArea);
+const DataViewerTab = lazy(loadDataViewerTab);
+const PreprocessingPanel = lazy(loadPreprocessingPanel);
+const FeatureEngineeringPanel = lazy(loadFeatureEngineeringPanel);
+const TrainingPanel = lazy(loadTrainingPanel);
+
+const NOTEBOOK_SESSION_PRESERVED_PHASES = new Set<Phase>([
+  'preprocessing',
+  'feature-engineering',
+  'training',
+  // These routes do not render the notebook UI, but preserving the active
+  // phase notebook session avoids a visible reconnect/repaint when the user
+  // jumps back into FE or Training from them.
+  'experiments',
+  'deployment'
+]);
+
+function shouldPreserveNotebookSession(
+  projectId: string,
+  phase: Phase,
+  isPhaseUnlocked: (projectId: string, phase: Phase) => boolean
+): boolean {
+  if ((phase as string) === 'processing') {
+    return true;
+  }
+
+  if (!isPhaseUnlocked(projectId, phase)) {
+    return true;
+  }
+
+  return NOTEBOOK_SESSION_PRESERVED_PHASES.has(phase);
+}
+
+// ---------------------------------------------------------------------------
+// Phase-level ErrorBoundary — prevents a single phase crash from white-screening
+// ---------------------------------------------------------------------------
+class PhaseErrorBoundary extends React.Component<
+  { children: React.ReactNode; onReset?: () => void },
+  { hasError: boolean; error?: Error }
+> {
+  state = { hasError: false, error: undefined as Error | undefined };
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[PhaseErrorBoundary]', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+          <p className="text-sm text-muted-foreground">Something went wrong in this phase.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              this.setState({ hasError: false, error: undefined });
+              this.props.onReset?.();
+            }}
+          >
+            Try Again
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Redirect to current phase
 export function ProjectRedirect() {
@@ -41,24 +117,38 @@ export function ProjectWorkspace() {
   const isPhaseUnlocked = useProjectStore((state) => state.isPhaseUnlocked);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
   const isInitialized = useProjectStore((state) => state.isInitialized);
+  const disconnectNotebook = useNotebookStore((state) => state.disconnect);
 
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
 
   useEffect(() => {
     if (!isInitialized || !projectId) return;
     if (projectId !== activeProjectId) {
+      useExperimentsStore.setState(createInitialExperimentsState());
       setActiveProject(projectId);
     }
   }, [isInitialized, projectId, activeProjectId, setActiveProject]);
 
   useEffect(() => {
     if (!isInitialized || !project || !phase) return;
-    // Auxiliary phases (e.g. notebook) aren't persisted as the user's current workflow phase.
-    if (isAuxiliaryPhase(phase as Phase)) return;
     if (project.currentPhase !== phase) {
       setCurrentPhase(project.id, phase as Phase);
     }
   }, [isInitialized, project, phase, setCurrentPhase]);
+
+  useEffect(() => {
+    if (!project || !phase) {
+      return;
+    }
+
+    if (!shouldPreserveNotebookSession(project.id, phase as Phase, isPhaseUnlocked)) {
+      disconnectNotebook();
+    }
+  }, [disconnectNotebook, isPhaseUnlocked, phase, project]);
+
+  useEffect(() => () => {
+    disconnectNotebook();
+  }, [disconnectNotebook]);
 
   if (!isInitialized) {
     return (
@@ -78,8 +168,7 @@ export function ProjectWorkspace() {
     return <Navigate to={`/project/${project.id}/${project.currentPhase || 'upload'}`} replace />;
   }
 
-  // Auxiliary phases (e.g. notebook) bypass the unlock check
-  if (!isAuxiliaryPhase(phase as Phase) && !isPhaseUnlocked(project.id, phase as Phase)) {
+  if (!isPhaseUnlocked(project.id, phase as Phase)) {
     // Redirect to current phase if locked
     return <Navigate to={`/project/${project.id}/${project.currentPhase}`} replace />;
   }
@@ -92,40 +181,63 @@ export function ProjectWorkspace() {
   // Render content based on phase
   switch (phase as Phase) {
     case 'upload':
-      return <UploadArea />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <UploadArea />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'data-viewer':
-      return <DataViewerTab />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <DataViewerTab />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'preprocessing':
-      return <PreprocessingPanel />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <PreprocessingPanel />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'feature-engineering':
-      return <FeatureEngineeringPanel projectId={projectId!} />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <FeatureEngineeringPanel projectId={projectId!} />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'training':
-      return <TrainingPanel />;
+      return (
+        <PhaseErrorBoundary>
+          <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/50" />}>
+            <TrainingPanel />
+          </Suspense>
+        </PhaseErrorBoundary>
+      );
 
     case 'experiments':
-      return <ExperimentsDashboard />;
+      return (
+        <PhaseErrorBoundary>
+          <ExperimentsDashboard />
+        </PhaseErrorBoundary>
+      );
 
     case 'deployment':
       return (
-        <div className="flex h-full items-center justify-center p-6">
-          <div className="text-center space-y-2">
-            <h3 className="text-lg font-semibold text-foreground">Deployment</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Model deployment interface with containerization and API endpoint management.
-            </p>
-            <p className="text-xs text-muted-foreground italic">
-              TODO: Implement deployment UI.
-            </p>
-          </div>
-        </div>
+        <PhaseErrorBoundary>
+          <DeploymentDashboard />
+        </PhaseErrorBoundary>
       );
-
-    case 'notebook':
-      return <NotebookPage projectId={projectId!} />;
 
     default:
       return <Navigate to={`/project/${project.id}/upload`} replace />;

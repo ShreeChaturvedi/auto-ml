@@ -1,8 +1,14 @@
 /**
- * Shared helpers for tool result renderers.
+ * Shared helpers for tool result renderers (pure functions / constants only).
+ *
+ * Component helpers live in `sharedComponents.tsx` — keeping this file all
+ * non-component exports lets Fast Refresh HMR work without `eslint-disable`
+ * pragmas. `normalizeStatus` lives in `@/components/llm/shared/statusHelpers`
+ * because it's not renderer-specific.
  */
 import type { ReactNode } from 'react';
 import { Hash, Calendar, ToggleLeft, Type } from 'lucide-react';
+import { clamp01 } from '@/lib/utils';
 
 export function formatNumber(n: number): string {
   if (Number.isInteger(n)) return n.toLocaleString();
@@ -15,20 +21,7 @@ export function truncate(s: string, max: number): string {
 
 /** Score as a 0–1 float → percentage */
 export function scorePercent(score: number): number {
-  return Math.round(Math.min(1, Math.max(0, score)) * 100);
-}
-
-/** Colour stop based on relevance score, using project theme fill with opacity tiers */
-export function scoreColor(score: number, projectFill?: string): string {
-  if (projectFill) {
-    // All tiers use the project theme color — lower scores use reduced opacity
-    if (score >= 0.7) return projectFill;
-    if (score >= 0.4) return `${projectFill} opacity-60`;
-    return `${projectFill} opacity-35`;
-  }
-  if (score >= 0.7) return 'bg-emerald-500';
-  if (score >= 0.4) return 'bg-amber-500';
-  return 'bg-rose-400';
+  return Math.round(clamp01(score) * 100);
 }
 
 /** Map dtype strings to a short badge label + icon hint */
@@ -42,3 +35,9 @@ export function dtypeInfo(dtype: string): { label: string; icon: ReactNode } {
     return { label: 'boolean', icon: <ToggleLeft className="h-3 w-3" /> };
   return { label: 'text', icon: <Type className="h-3 w-3" /> };
 }
+
+// `normalizeStatus` was moved to `@/components/llm/shared/statusHelpers`
+// so non-renderer consumers can import it without reaching into the
+// renderer-only subdirectory. Re-exported here for backwards compatibility
+// with existing renderer imports.
+export { normalizeStatus } from '@/components/llm/shared/statusHelpers';

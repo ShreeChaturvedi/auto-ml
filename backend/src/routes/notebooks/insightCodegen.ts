@@ -10,6 +10,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 
+import { env } from '../../config.js';
 import { createLlmClient } from '../../services/llm/llmClient.js';
 import { buildInsightCodegenPrompt } from '../../services/llm/prompts/insightCodegen.js';
 import { acquireLock, releaseLock } from '../../services/notebook/cellLockingService.js';
@@ -93,7 +94,9 @@ export async function handleSuggestCell(req: Request, res: Response): Promise<vo
 
     // 4. Build prompt and stream LLM response
     const messages = buildInsightCodegenPrompt(insightContext);
-    const client = createLlmClient();
+    // Short Python cell generation — use the cheap model (mini) to avoid
+    // hitting base-model TPM limits for a routine task.
+    const client = createLlmClient(env.nl2sqlModel);
 
     const content = await client.stream(
       { messages, maxOutputTokens: 2048, temperature: 0.3 },

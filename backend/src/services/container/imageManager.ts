@@ -5,14 +5,18 @@
  * runtime image building for sandboxed Python execution containers.
  */
 
-import { existsSync } from 'fs';
-import { dirname, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { env } from '../../config.js';
 import { appLogger } from '../../logging/logger.js';
 import type { PythonVersion } from '../../types/execution.js';
 import { execDocker } from '../dockerUtils.js';
+
+const DOCKERFILE_HASH_LABEL = 'automl.dockerfile.hash';
 
 function resolveRuntimeDockerfilePath(): string {
     const candidates = [
@@ -66,13 +70,55 @@ export async function isImageAvailable(imageName: string): Promise<boolean> {
     }
 }
 
+/** SHA-256 hash of the Dockerfile content, used to detect stale images. */
+export async function computeDockerfileHash(dockerfilePath: string): Promise<string> {
+    const content = await readFile(dockerfilePath, 'utf8');
+    return createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * Read the `automl.dockerfile.hash` label from an existing Docker image.
+ * Returns `null` if the image has no such label or the inspect fails.
+ */
+export async function getImageDockerfileHash(imageName: string): Promise<string | null> {
+    try {
+        const { stdout } = await execDocker([
+            'image', 'inspect',
+            '--format', `{{index .Config.Labels "${DOCKERFILE_HASH_LABEL}"}}`,
+            imageName,
+        ]);
+        const hash = stdout.trim();
+        // Docker outputs "<no value>" when label is missing
+        return hash && hash !== '<no value>' ? hash : null;
+    } catch {
+        return null;
+    }
+}
+
 export async function ensureRuntimeImage(pythonVersion: PythonVersion): Promise<string> {
     const imageName = getImageName(pythonVersion);
     const available = await isImageAvailable(imageName);
-    if (available) return imageName;
+    let dockerfileHash: string | undefined;
+
+    if (available) {
+        const [currentHash, imageHash] = await Promise.all([
+            computeDockerfileHash(runtimeDockerfilePath),
+            getImageDockerfileHash(imageName),
+        ]);
+        dockerfileHash = currentHash;
+
+        if (imageHash === currentHash) {
+            return imageName;
+        }
+
+        appLogger.info(
+            `[containerManager] Stale image detected for ${imageName} ` +
+            `(image hash: ${imageHash ?? 'none'}, dockerfile hash: ${currentHash}). Rebuilding.`
+        );
+    }
 
     if (!env.executionAutoBuildImage) {
-        throw new Error(`Docker image "${imageName}" is missing. Build it with backend/docker/build-runtime.sh.`);
+        throw new Error(`Docker image "${imageName}" is missing or stale. Build it with backend/docker/build-runtime.sh.`);
     }
 
     const existingBuild = imageBuilds.get(imageName);
@@ -88,8 +134,14 @@ export async function ensureRuntimeImage(pythonVersion: PythonVersion): Promise<
             tags.add(latestTag);
         }
 
+        dockerfileHash ??= await computeDockerfileHash(runtimeDockerfilePath);
+
         appLogger.info(`[containerManager] Building runtime image: ${imageName}`);
-        const buildArgs = ['build', '--build-arg', `PYTHON_VERSION=${pythonVersion}`];
+        const buildArgs = [
+            'build',
+            '--build-arg', `PYTHON_VERSION=${pythonVersion}`,
+            '--label', `${DOCKERFILE_HASH_LABEL}=${dockerfileHash}`,
+        ];
         if (env.executionDockerPlatform) {
             buildArgs.push('--platform', env.executionDockerPlatform);
         }

@@ -81,9 +81,9 @@ export function AnimatedExecuteIcon({ isExecuting, colorClassName }: AnimatedExe
       <path
         d={boltPath}
         fill="currentColor"
-        fillOpacity="0.1"
+        fillOpacity="0.2"
         stroke="currentColor"
-        strokeOpacity="0.3"
+        strokeOpacity="0.8"
         pathLength={1}
       />
 
@@ -140,7 +140,7 @@ export function AnimatedBrainIcon({ colorClassName }: AnimatedBrainIconProps) {
       strokeLinejoin="round"
     >
       {/* Base strokes (translucent so the fully opaque shine pops) */}
-      <g stroke="currentColor" strokeOpacity="0.3">
+      <g stroke="currentColor" strokeOpacity="0.8">
         {brainPaths.map((d, i) => (
           <path key={`base-${i}`} d={d} pathLength={1} />
         ))}

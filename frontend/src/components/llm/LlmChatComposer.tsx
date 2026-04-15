@@ -1,4 +1,12 @@
-import { useRef, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type RefObject
+} from 'react';
 
 import { MentionInput, type MentionInputHandle } from '@/components/llm/MentionInput';
 import type { LlmUsage } from '@/types/llmUi';
@@ -16,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { isDemoMode } from '@/lib/demoMode';
 import {
   type AssistantModelOption,
   type ReasoningEffort,
@@ -23,6 +32,12 @@ import {
 } from './modelOptions';
 import { ComposerModelBar } from './ComposerModelBar';
 import { ComposerAttachments } from './ComposerAttachments';
+
+export const LLM_CHAT_COMPOSER_MIN_WIDTH_PX = 360;
+
+const TIPS_HIDE_WIDTH_PX = 480;
+const MODEL_SELECTOR_HIDE_WIDTH_PX = 340;
+const USAGE_INDICATOR_HIDE_WIDTH_PX = 420;
 
 export type AttachmentStatus = 'idle' | 'queued' | 'uploading' | 'success' | 'error';
 
@@ -88,6 +103,8 @@ export interface ComposerSlots {
   leftSlot?: ReactNode;
   metaSlot?: ReactNode;
   voiceSlot?: ReactNode;
+  /** Rotating contextual tips shown in the toolbar's right group. */
+  tipsSlot?: ReactNode;
   attachment?: AttachmentConfig;
   mentionSlot?: MentionSlotConfig;
   maxWidthClassName?: string;
@@ -105,6 +122,43 @@ interface LlmChatComposerProps {
   reasoningConfig: ReasoningConfig;
   usageConfig?: UsageConfig;
   slots?: ComposerSlots;
+  /**
+   * Landing-page demo flag. When true, short-circuits the send action so the
+   * composer looks fully active but no message is dispatched. The visual
+   * appearance is identical to `readOnly={false}` — the button is NOT
+   * disabled or styled differently. Non-intrusive: the real app never sets
+   * this, it's purely for the marketing landing page's live demo islands.
+   */
+  readOnly?: boolean;
+}
+
+function useObservedWidth<T extends HTMLElement>(ref: RefObject<T | null>) {
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const updateWidth = (nextWidth: number) => {
+      setWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth));
+    };
+
+    const initialWidth = Math.round(element.getBoundingClientRect().width);
+    if (initialWidth > 0) updateWidth(initialWidth);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      updateWidth(Math.round(entry.contentRect.width));
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
 }
 
 export function LlmChatComposer({
@@ -112,8 +166,10 @@ export function LlmChatComposer({
   modelConfig,
   reasoningConfig,
   usageConfig,
-  slots = {}
+  slots = {},
+  readOnly = false
 }: LlmChatComposerProps) {
+  const demoReadOnly = readOnly || isDemoMode();
   const {
     value,
     onValueChange,
@@ -126,10 +182,24 @@ export function LlmChatComposer({
     onStop
   } = chatInput;
 
+  const handleSend = () => {
+    if (demoReadOnly) return;
+    onSend();
+  };
+
+  const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (demoReadOnly && event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      return;
+    }
+    onKeyDown(event);
+  };
+
   const {
     leftSlot,
     metaSlot,
     voiceSlot,
+    tipsSlot,
     attachment,
     mentionSlot,
     maxWidthClassName = 'max-w-5xl',
@@ -140,11 +210,21 @@ export function LlmChatComposer({
   const canSend = value.trim().length > 0;
   const attachmentItems = attachment?.items ?? [];
   const attachmentSupportLabel = 'Attach files';
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const toolbarWidth = useObservedWidth(toolbarRef);
+  const showTips = toolbarWidth === null || toolbarWidth >= TIPS_HIDE_WIDTH_PX;
+  const showModelSelector = toolbarWidth === null || toolbarWidth >= MODEL_SELECTOR_HIDE_WIDTH_PX;
+  const showUsageIndicator = toolbarWidth === null || toolbarWidth >= USAGE_INDICATOR_HIDE_WIDTH_PX;
 
   const { wrapperRef, isFocused, onFocusCapture, onBlurCapture } = useMetallicBorder();
 
   return (
-    <div className={cn('mx-auto w-full space-y-2', maxWidthClassName)}>
+    <div
+      className={cn(
+        'mx-auto w-full min-w-[360px] space-y-2',
+        maxWidthClassName
+      )}
+    >
       {attachment && attachmentItems.length > 0 ? (
         <ComposerAttachments items={attachmentItems} attachment={attachment} />
       ) : null}
@@ -156,13 +236,13 @@ export function LlmChatComposer({
         onFocusCapture={onFocusCapture}
         onBlurCapture={onBlurCapture}
       >
-        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+        <InputGroup className="has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:shadow-none">
           {mentionSlot ? (
             <MentionInput
               ref={mentionSlot.inputRef}
               value={value}
               onValueChange={mentionSlot.onValueChange}
-              onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLDivElement>) => void}
+              onKeyDown={handleComposerKeyDown as (event: ReactKeyboardEvent<HTMLDivElement>) => void}
               mentionNames={mentionSlot.mentionNames}
               mentionTypes={mentionSlot.mentionTypes}
               themeColor={mentionSlot.themeColor}
@@ -175,9 +255,11 @@ export function LlmChatComposer({
           ) : (
             <InputGroupTextarea
               ref={textareaRef}
+              id="llm-chat-composer-input"
+              name="message"
               value={value}
               onChange={(event) => onValueChange(event.target.value)}
-              onKeyDown={onKeyDown as (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void}
+              onKeyDown={handleComposerKeyDown as (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void}
               placeholder={placeholder}
               aria-label="Message input"
               disabled={disabled}
@@ -185,26 +267,40 @@ export function LlmChatComposer({
             />
           )}
         <InputGroupAddon align="block-end">
-          <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div
+            ref={toolbarRef}
+            className="flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-hidden"
+          >
+            <div className="flex shrink-0 items-center gap-2">
               {leftSlot}
               <ComposerModelBar
                 modelConfig={modelConfig}
                 reasoningConfig={reasoningConfig}
                 usageConfig={usageConfig}
+                showModelSelector={showModelSelector}
+                showUsageIndicator={showUsageIndicator}
               />
             </div>
 
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
-              <span className="hidden sm:flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
-                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
-                  <ArrowUp className="h-3 w-3" />
-                </kbd>
-                <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
-                  <CornerDownLeft className="h-3 w-3" />
-                </kbd>
-                <span>for newline</span>
-              </span>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="min-w-0 flex-1 overflow-hidden">
+                {showTips ? (
+                  <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                    {tipsSlot ?? (
+                      <>
+                        <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                          <ArrowUp className="h-3 w-3" />
+                        </kbd>
+                        <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-muted/50 px-1.5">
+                          <CornerDownLeft className="h-3 w-3" />
+                        </kbd>
+                        <span>for newline</span>
+                      </>
+                    )}
+                  </span>
+                ) : null}
+              </div>
+
               <div className="min-w-0 max-w-full overflow-hidden">
                 {metaSlot}
               </div>
@@ -217,10 +313,15 @@ export function LlmChatComposer({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => attachmentInputRef.current?.click()}
+                          onClick={() => {
+                            if (demoReadOnly) {
+                              return;
+                            }
+                            attachmentInputRef.current?.click();
+                          }}
                           disabled={attachment.status === 'uploading'}
                           aria-label="Attach file"
-                          className="h-7 px-2 text-xs shrink-0"
+                          className="h-7 px-2 text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2"
                         >
                           {attachment.status === 'uploading'
                             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -233,6 +334,8 @@ export function LlmChatComposer({
 
                   <input
                     ref={attachmentInputRef}
+                    id="llm-chat-attachment-input"
+                    name="chatAttachment"
                     type="file"
                     className="hidden"
                     accept={attachment.accept ?? '.pdf,.md,.txt'}
@@ -245,11 +348,11 @@ export function LlmChatComposer({
 
               <InputGroupButton
                 size="sm"
-                onClick={isStreaming ? onStop : onSend}
+                onClick={isStreaming ? onStop : handleSend}
                 disabled={isStreaming ? false : !canSend}
                 aria-label={isStreaming ? 'Stop generating' : 'Send message'}
                 variant="ghost"
-                className="h-9 w-9 rounded-full border border-foreground/30 bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-muted/30 disabled:text-muted-foreground shrink-0"
+                className="h-9 w-9 rounded-full p-0 shrink-0 transition-[background-color,color,opacity] bg-accent-fill text-accent-on-fill hover:bg-accent-fill-hover active:bg-accent-fill-active focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:ring-offset-2 disabled:bg-muted/30 disabled:text-muted-foreground dark:shadow-none"
               >
                 {isStreaming ? <Square className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
               </InputGroupButton>

@@ -9,10 +9,10 @@ import {
 } from '../streamdownConfig';
 
 describe('streamdownConfig', () => {
-  it('enables code, math, and mermaid plugins', () => {
+  it('enables code and math plugins without mermaid', () => {
     expect(streamdownPlugins.code?.name).toBe('shiki');
     expect(streamdownPlugins.math?.name).toBe('katex');
-    expect(streamdownPlugins.mermaid?.name).toBe('mermaid');
+    expect(streamdownPlugins.mermaid).toBeUndefined();
   });
 
   it('configures character-level slide-up animation', () => {
@@ -30,9 +30,7 @@ describe('streamdownConfig', () => {
     expect(typeof streamdownControls).toBe('object');
     expect((streamdownControls as { table?: boolean }).table).toBe(true);
     expect((streamdownControls as { code?: boolean }).code).toBe(true);
-    const mermaidControls = (streamdownControls as { mermaid?: { fullscreen?: boolean; panZoom?: boolean } }).mermaid;
-    expect(mermaidControls?.fullscreen).toBe(true);
-    expect(mermaidControls?.panZoom).toBe(true);
+    expect((streamdownControls as { mermaid?: unknown }).mermaid).toBeUndefined();
   });
 
   it('uses secure mermaid defaults and shared streamdown props', () => {

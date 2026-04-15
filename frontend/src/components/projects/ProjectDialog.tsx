@@ -19,21 +19,19 @@ import { HexColorPicker } from 'react-colorful';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { AnimatedPlaceholderTextarea } from '@/components/ui/animated-placeholder-textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useProjectStore } from '@/stores/projectStore';
 import type { Project, ProjectColor } from '@/types/project';
 import { resolveProjectColor } from '@/types/project';
 import { cn } from '@/lib/utils';
-import * as LucideIcons from 'lucide-react';
+import { getLucideIcon } from '@/lib/icons';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,12 +71,16 @@ const presetColorHex: Record<string, string> = {
 };
 
 const descriptionPlaceholders = [
-  'Predict customer churn using historical data',
-  'Image classification with transfer learning',
-  'Sentiment analysis on product reviews',
-  'Time series forecasting for sales data',
-  'Anomaly detection in network traffic',
-  'Recommendation engine for e-commerce'
+  'Predict customer churn from subscription and usage patterns over the last 12 months',
+  'Classify plant disease from leaf photos using a fine-tuned ResNet backbone',
+  'Sentiment analysis on Amazon product reviews to surface common complaints',
+  'Forecast weekly retail sales across 50 stores using weather and holiday features',
+  'Detect fraudulent credit-card transactions in a highly imbalanced dataset',
+  'Build a collaborative-filtering recommender for a movie streaming catalog',
+  'Segment MRI brain scans to identify tumor regions for radiology triage',
+  'Predict 30-day hospital readmission risk from patient discharge records',
+  'Classify support tickets by urgency and route them to the right team',
+  'Estimate housing prices from neighborhood demographics and listing features',
 ];
 
 const RAINBOW_GRADIENT = 'conic-gradient(in oklch longer hue, oklch(0.7 0.15 0), oklch(0.7 0.15 360))';
@@ -166,33 +168,33 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
     }
   };
 
-  const PreviewIcon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[selectedIcon];
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isEditMode) {
+      handleSubmit(onSubmit)();
+      return;
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const PreviewIcon = getLucideIcon(selectedIcon);
   const previewColors = resolveProjectColor(selectedColor, customColor);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px]">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-[460px]" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Edit Project' : 'Create New Project'}</DialogTitle>
-          <DialogDescription>
-            {isEditMode
-              ? 'Update your project details.'
-              : 'Create a new project to organize your AutoML workflows.'}
-          </DialogDescription>
+          <DialogTitle>{isEditMode ? 'Edit Project' : 'New Project'}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
           {/* ── Title + Icon ─────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label htmlFor="title">
-              Title <span className="text-destructive">*</span>
-            </Label>
+          <div>
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => setIsIconPickerOpen(true)}
                 className={cn(
-                  'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-all hover:scale-105 focus:outline-none',
+                  'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border-2 transition-[transform,border-color] hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   selectedColor !== 'custom' && previewColors.bg,
                   selectedColor !== 'custom' && previewColors.text,
                   selectedColor !== 'custom' && previewColors.border
@@ -202,28 +204,22 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
               >
                 {PreviewIcon && <PreviewIcon className="h-5 w-5" />}
               </button>
-              <Input id="title" className="flex-1 bg-muted/40" placeholder="My ML Project" {...register('title')} />
+              <Input id="title" className="flex-1 bg-muted/40" placeholder="Project name" {...register('title')} />
             </div>
             {errors.title && (
-              <p className="text-xs text-destructive">{errors.title.message}</p>
+              <p className="mt-1.5 text-xs text-destructive">{errors.title.message}</p>
             )}
           </div>
 
           {/* ── Description ──────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between">
-              <Label htmlFor="description">Description</Label>
-              <span className="text-[11px] tabular-nums text-muted-foreground">
-                {descriptionValue.length}/200
-              </span>
-            </div>
+          <div className="relative">
             <AnimatedPlaceholderTextarea
               id="description"
               placeholders={descriptionPlaceholders}
               interval={3500}
               autoResize
-              rows={1}
-              className="w-full resize-none bg-muted/40"
+              rows={2}
+              className="w-full resize-none bg-muted/40 pb-6"
               value={descriptionValue}
               onChange={(e) => {
                 if (e.target.value.length <= 200) {
@@ -231,27 +227,28 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                 }
               }}
             />
+            <span className={cn(
+              'absolute bottom-2 right-3 text-[11px] tabular-nums',
+              descriptionValue.length >= 190 ? 'text-destructive' : 'text-muted-foreground'
+            )}>
+              {descriptionValue.length}/200
+            </span>
             {errors.description && (
-              <p className="text-xs text-destructive">{errors.description.message}</p>
+              <p className="mt-1.5 text-xs text-destructive">{errors.description.message}</p>
             )}
           </div>
 
-          {formError && (
-            <p className="text-xs text-destructive">{formError}</p>
-          )}
-
           {/* ── Color ────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label>Color</Label>
+          <div className="pt-1">
             <div className="flex flex-wrap items-center gap-1.5">
               {presetColors.map((color) => (
                 <button
                   key={color}
                   type="button"
                   className={cn(
-                    'h-7 w-7 rounded-full border-2 transition-all',
+                    'h-6 w-6 rounded-full border-2 transition-[transform,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                     selectedColor === color
-                      ? 'border-foreground scale-110'
+                      ? 'border-foreground scale-[1.15]'
                       : 'border-transparent hover:border-foreground/40 hover:scale-105'
                   )}
                   style={{ backgroundColor: presetColorHex[color] }}
@@ -269,9 +266,9 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
                   <button
                     type="button"
                     className={cn(
-                      'relative h-7 w-7 rounded-full border-2 p-0 transition-all',
+                      'relative h-6 w-6 rounded-full border-2 p-0 transition-[transform,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                       selectedColor === 'custom'
-                        ? 'border-black dark:border-white scale-110'
+                        ? 'border-black dark:border-white scale-[1.15]'
                         : 'border-transparent hover:border-foreground/40 hover:scale-105'
                     )}
                     aria-label="Select custom color"
@@ -298,42 +295,44 @@ export function ProjectDialog({ open, onOpenChange, project }: ProjectDialogProp
               </Popover>
             </div>
             {errors.customColor && (
-              <p className="text-xs text-destructive">{errors.customColor.message}</p>
+              <p className="mt-1.5 text-xs text-destructive">{errors.customColor.message}</p>
             )}
           </div>
 
+          {formError && (
+            <p className="text-xs text-destructive">{formError}</p>
+          )}
+
           {/* ── Footer ───────────────────────────────────────────────── */}
-          <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isEditMode ? 'Save Changes' : 'Create Project'}
-            </Button>
-          </DialogFooter>
+          {!isEditMode && (
+            <DialogFooter className="pt-1">
+              <Button type="submit" disabled={isSubmitting}>
+                Create Project
+              </Button>
+            </DialogFooter>
+          )}
         </form>
       </DialogContent>
 
       {/* Icon Picker Dialog */}
       <Dialog open={isIconPickerOpen} onOpenChange={setIsIconPickerOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
           <DialogHeader>
-            <DialogTitle>Choose an Icon</DialogTitle>
-            <DialogDescription>Select an icon for your project</DialogDescription>
+            <DialogTitle>Icon</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-6 gap-2 py-4">
+          <div className="grid grid-cols-6 gap-2 place-items-center py-4">
             {projectIcons.map((iconName) => {
-              const Icon = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[iconName];
+              const Icon = getLucideIcon(iconName);
               return (
                 <button
                   key={iconName}
                   type="button"
                   onClick={() => { setValue('icon', iconName); setIsIconPickerOpen(false); }}
                   className={cn(
-                    'flex h-12 w-12 items-center justify-center rounded-md border-2 transition-all hover:scale-105',
+                    'flex h-12 w-12 items-center justify-center rounded-md border-2 border-transparent transition-[border-color,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     selectedIcon === iconName
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50 hover:bg-accent'
+                      ? 'ring-2 ring-primary bg-primary/10'
+                      : 'hover:bg-accent hover:border-primary/50'
                   )}
                   title={iconName}
                 >

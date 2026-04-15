@@ -24,6 +24,7 @@ const mockState = vi.hoisted(() => ({
   setFeatureStepMock: vi.fn(),
   fetchFeatureRunMock: vi.fn(),
   fetchFeatureRunsMock: vi.fn(),
+  featureRunIdInStore: null as string | null,
   workflowSession: undefined as { runId?: string } | undefined,
   hydrationError: null as string | null
 }));
@@ -53,7 +54,7 @@ vi.mock('@/stores/featureStore', () => {
     currentVersionId: { p1: 'v1' },
     featureSteps: {},
     currentStage: null,
-    featureRunId: null,
+    featureRunId: mockState.featureRunIdInStore,
     hydrateFromProject: mockState.hydrateFeaturesMock,
     setFeatureRunId: mockState.setFeatureRunIdMock,
     setFeatureStep: mockState.setFeatureStepMock
@@ -149,7 +150,6 @@ vi.mock('../useFeatureApply', () => ({
 vi.mock('../useSuggestionDrafts', () => ({
   useSuggestionDrafts: () => ({
     suggestionDrafts: {},
-    setSuggestionDrafts: vi.fn(),
     toggleSuggestion: vi.fn(),
     updateSuggestionControl: vi.fn()
   })
@@ -163,6 +163,7 @@ describe('useFeaturePipelineState', () => {
     mockState.setFeatureStepMock.mockReset();
     mockState.fetchFeatureRunMock.mockReset();
     mockState.fetchFeatureRunsMock.mockReset();
+    mockState.featureRunIdInStore = null;
     mockState.hydrationError = null;
     mockState.fetchFeatureRunMock.mockResolvedValue({
       run: {
@@ -177,7 +178,7 @@ describe('useFeaturePipelineState', () => {
     mockState.workflowSession = undefined;
   });
 
-  it('starts a new draft with empty lifecycle state when no session run exists', async () => {
+  it('starts a new draft with empty lifecycle state when no feature run exists', async () => {
     const callOrder: string[] = [];
     mockState.hydrateFromBackendMock.mockImplementation(async () => {
       callOrder.push('data');
@@ -190,42 +191,50 @@ describe('useFeaturePipelineState', () => {
 
     await waitFor(() => {
       expect(mockState.hydrateFromBackendMock).toHaveBeenCalledWith('p1');
-      expect(mockState.hydrateFeaturesMock).toHaveBeenCalledWith('p1', { force: true });
+      expect(mockState.hydrateFeaturesMock).toHaveBeenCalledWith('p1');
     });
 
     expect(callOrder).toEqual(['data', 'features']);
+    // With no featureRunId in store, hydration falls back to fetchFeatureRuns
+    // which returns empty runs — so no run is hydrated
     expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
-    expect(mockState.fetchFeatureRunsMock).not.toHaveBeenCalled();
+    expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
     expect(mockState.setFeatureRunIdMock).not.toHaveBeenCalled();
     expect(mockState.setFeatureStepMock).not.toHaveBeenCalled();
   });
 
-  it('rehydrates a draft when a session runId exists', async () => {
-    mockState.workflowSession = { runId: 'feature-run-1' };
+  it('rehydrates a draft when fetchFeatureRuns returns a run', async () => {
+    // No featureRunId in store — hydration falls back to fetchFeatureRuns
+    mockState.fetchFeatureRunsMock.mockResolvedValueOnce({
+      runs: [{ runId: 'feature-run-1', projectId: 'p1', features: {}, createdAt: '2026-02-24T00:00:00.000Z', updatedAt: '2026-02-24T00:00:00.000Z' }],
+      count: 1
+    });
 
     renderHook(() => useFeaturePipelineState('p1'));
 
     await waitFor(() => {
-      expect(mockState.fetchFeatureRunMock).toHaveBeenCalledWith('feature-run-1');
+      expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
+      expect(mockState.setFeatureRunIdMock).toHaveBeenCalledWith('feature-run-1');
     });
   });
 
   it('ignores stale cached runs that are missing a features map', async () => {
-    mockState.workflowSession = { runId: 'feature-run-1' };
-    mockState.fetchFeatureRunMock.mockResolvedValueOnce({
-      run: {
+    // fetchFeatureRuns returns a run with undefined features
+    mockState.fetchFeatureRunsMock.mockResolvedValueOnce({
+      runs: [{
         runId: 'feature-run-1',
         projectId: 'p1',
         features: undefined,
         createdAt: new Date('2026-02-24T00:00:00.000Z').toISOString(),
         updatedAt: new Date('2026-02-24T00:00:00.000Z').toISOString()
-      }
+      }],
+      count: 1
     });
 
     renderHook(() => useFeaturePipelineState('p1'));
 
     await waitFor(() => {
-      expect(mockState.fetchFeatureRunMock).toHaveBeenCalledWith('feature-run-1');
+      expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
     });
 
     expect(mockState.setFeatureRunIdMock).toHaveBeenCalledWith('feature-run-1');
@@ -255,5 +264,40 @@ describe('useFeaturePipelineState', () => {
 
     expect(mockState.hydrateFeaturesMock).not.toHaveBeenCalled();
     expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale workflow run ids and falls back to project-level feature runs', async () => {
+    mockState.featureRunIdInStore = 'workflow-run-1';
+    mockState.fetchFeatureRunsMock.mockResolvedValueOnce({
+      runs: [{
+        runId: 'feat-123',
+        projectId: 'p1',
+        features: {},
+        createdAt: new Date('2026-02-24T00:00:00.000Z').toISOString(),
+        updatedAt: new Date('2026-02-24T00:00:00.000Z').toISOString()
+      }],
+      count: 1,
+      projectId: 'p1'
+    });
+
+    renderHook(() => useFeaturePipelineState('p1'));
+
+    await waitFor(() => {
+      expect(mockState.fetchFeatureRunsMock).toHaveBeenCalledWith('p1', 1);
+      expect(mockState.setFeatureRunIdMock).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockState.fetchFeatureRunMock).not.toHaveBeenCalled();
+    expect(mockState.setFeatureRunIdMock).toHaveBeenLastCalledWith('feat-123');
+  });
+
+  it('does not auto-select the first dataset column as the FE target', async () => {
+    const { result } = renderHook(() => useFeaturePipelineState('p1'));
+
+    await waitFor(() => {
+      expect(result.current.selectedDataset).toBe('dataset-1');
+    });
+
+    expect(result.current.targetColumn).toBeUndefined();
   });
 });

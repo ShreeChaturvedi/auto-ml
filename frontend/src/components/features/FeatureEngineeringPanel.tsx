@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { AgenticShell } from '@/components/agentic/AgenticShell';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
@@ -14,24 +13,43 @@ import { FeatureUiItemRenderer } from './FeatureUiItemRenderer';
 import {
   hasUiItems,
 } from './featureEngineeringUtils';
+import { buildFeatureIntentPrompt } from './featurePrompt';
 import { useFeaturePipelineState } from './hooks/useFeaturePipelineState';
 import { useFeatureUrlSync } from './hooks/useFeatureUrlSync';
-import { useNotebookStore } from '@/stores/notebookStore';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
 import { DeletePipelineDialog } from './DeletePipelineDialog';
 import { FeatureEngineeringLeftPane } from './FeatureEngineeringLeftPane';
 import { cn } from '@/lib/utils';
+import { useFeatureNotebookSync } from './hooks/useFeatureNotebookSync';
+import { useFeatureCodeGen } from './hooks/useFeatureCodeGen';
+import { usePhaseNotebookRecovery } from '@/hooks/usePhaseNotebookRecovery';
 
 import type { ChatMessage } from '@/types/llmUi';
+import type { UiItem } from '@/types/llmUi';
 
 interface FeatureEngineeringPanelProps {
   projectId: string;
 }
 
+function isRenderableUiItem(item: unknown): item is UiItem {
+  return Boolean(item && typeof item === 'object' && !Array.isArray(item) && 'type' in item);
+}
+
+function getFeatureUiItemKey(item: UiItem, index: number): string {
+  if (item.type === 'dataset_summary') {
+    return item.datasetId;
+  }
+  if ('id' in item) {
+    return item.id;
+  }
+  if ('text' in item) {
+    return `${item.type}-${item.text}`;
+  }
+  return `ui-item-${index}`;
+}
+
 export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelProps) {
   const composerPlaceholders = useWorkflowPlaceholders(projectId, 'featureEngineering');
-  const [searchParams] = useSearchParams();
-  const initialNotebookId = searchParams.get('notebook') ?? undefined;
 
   const {
     selectedDataset,
@@ -44,12 +62,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     datasetColumns,
     versions,
     currentVersion,
-    isApproved,
+    chatSessionVersion,
     isCurrentVersionDraft,
     activeFeatures,
     featureById,
+    featureSteps,
+    currentStage,
     readinessReport,
-    isReadyForApproval,
     readinessReportUnlocked,
     isReadinessExpanded,
     setIsReadinessExpanded,
@@ -77,56 +96,75 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
     handleRenameConfirm,
     deleteDialogOpen,
     setDeleteDialogOpen,
-    handleDeleteConfirm,
-    approveVersion
+    handleDeleteConfirm
   } = useFeaturePipelineState(projectId);
 
   // --- URL synchronization and version management ---
   const {
     handleVersionSelect,
     handleCreateDraft,
-    handleApproveCurrentVersion,
     handleDeleteCurrentDraft
   } = useFeatureUrlSync({
     projectId,
     currentVersion,
     handleVersionSwitch,
     handleNewDraft,
-    handleDeleteDraft,
-    approveVersion
+    handleDeleteDraft
   });
 
-  // Tag notebook with feature-engineering phase metadata
-  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
-  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
-  const notebooks = useNotebookStore((state) => state.notebooks);
-  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
+  const implementedFeaturesCount = useMemo(() => {
+    const implementedStatuses = new Set([
+      'code_ready',
+      'executing',
+      'executed',
+      'validated',
+      'registered',
+      'completed'
+    ]);
 
-  useEffect(() => {
-    if (!activeNotebookId || !currentVersion) return;
-    void updateNotebookMetadata(activeNotebookId, {
-      phase: 'feature-engineering',
-      tabId: currentVersion.id,
-      tabName: currentVersion.name
-    });
-  }, [activeNotebookId, currentVersion?.id, currentVersion?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+    return activeFeatures.filter((feature) => {
+      const step = featureSteps[feature.id];
+      return step ? implementedStatuses.has(step.status) : false;
+    }).length;
+  }, [activeFeatures, featureSteps]);
 
-  useEffect(() => {
-    if (!initialNotebookId || notebookProjectId !== projectId) return;
-    if (!notebooks.some((entry) => entry.notebookId === initialNotebookId)) return;
-    void useNotebookStore.getState().setActiveNotebook(initialNotebookId);
-  }, [initialNotebookId, notebookProjectId, notebooks, projectId]);
+  const {
+    notebookId: resolvedNotebookId,
+    isReady: isFeatureNotebookReady
+  } = useFeatureNotebookSync({
+    projectId,
+    currentVersion
+  });
+
+  const featureStorageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
+  const { isRecoveryReady } = usePhaseNotebookRecovery({
+    projectId,
+    phase: 'feature-engineering',
+    notebookId: resolvedNotebookId,
+    storageKey: featureStorageKey,
+    enabled: isFeatureNotebookReady
+  });
+
+  useFeatureCodeGen(activeFeatures, selectedDatasetFile, resolvedNotebookId);
 
   const adapter = useMemo(() => {
-    const storageKey = `feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`;
-    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
+    const sessionKey = buildWorkflowSessionKey(
+      projectId,
+      [
+        featureStorageKey,
+        selectedDatasetFile?.metadata?.datasetId ?? 'none',
+        targetColumn ?? 'no-target'
+      ].join(':')
+    );
     return createFeatureEngineeringAdapter({
       projectId,
+      currentVersionId: currentVersion?.id,
       datasetId: selectedDatasetFile?.metadata?.datasetId,
       targetColumn,
       datasetFiles,
       documentFiles,
       sessionKey,
+      notebookId: resolvedNotebookId ?? undefined,
       notebookName: currentVersion?.name ?? 'Feature Engineering Notebook',
       notebookMetadata: currentVersion
         ? {
@@ -138,7 +176,23 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             phase: 'feature-engineering'
           }
     });
-  }, [currentVersion, datasetFiles, documentFiles, projectId, selectedDatasetFile, targetColumn]);
+  }, [
+    currentVersion,
+    datasetFiles,
+    documentFiles,
+    featureStorageKey,
+    projectId,
+    resolvedNotebookId,
+    selectedDatasetFile,
+    targetColumn
+  ]);
+
+  const prepareFeaturePrompt = useCallback(async (prompt: string): Promise<string> => (
+    buildFeatureIntentPrompt(prompt, {
+      datasetLabel: selectedDatasetFile?.name,
+      targetColumn
+    })
+  ), [selectedDatasetFile?.name, targetColumn]);
 
   const baseRenderLifecycleCard = useLifecycleCards();
 
@@ -164,11 +218,10 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
                     (!section.layout || section.layout === 'column') && 'space-y-3'
                   )}
                 >
-                  {section.items.map((item) => (
+                  {section.items.filter(isRenderableUiItem).map((item, itemIndex) => (
                     <FeatureUiItemRenderer
-                      key={item.type === 'dataset_summary' ? item.datasetId : ('id' in item ? item.id : item.text)}
+                      key={getFeatureUiItemKey(item, itemIndex)}
                       item={item}
-                      isApproved={isApproved}
                       datasetColumns={datasetColumns}
                       suggestionDrafts={suggestionDrafts}
                       featureById={featureById}
@@ -186,27 +239,25 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
       // Delegate tool_call messages to the shared lifecycle cards
       return baseRenderLifecycleCard(message);
     },
-    [baseRenderLifecycleCard, isApproved, datasetColumns, suggestionDrafts, featureById, toggleSuggestion, updateSuggestionControl]
+    [baseRenderLifecycleCard, datasetColumns, suggestionDrafts, featureById, toggleSuggestion, updateSuggestionControl]
   );
 
   return (
     <>
+      {isFeatureNotebookReady && isRecoveryReady ? (
       <AgenticShell
-        key={currentVersion?.id ?? 'feature-engineering-default'}
         projectId={projectId}
         composerPlaceholders={composerPlaceholders}
-        storageKey={`feature-engineering-messages-v3-${currentVersion?.id ?? 'default'}`}
+        storageKey={featureStorageKey}
+        sessionVersion={chatSessionVersion}
+        beforeSubmit={prepareFeaturePrompt}
         domainAdapter={adapter}
-        domainLockReason={
-          isApproved
-            ? 'This feature pipeline is approved and locked. Start a new draft to continue editing.'
-            : undefined
-        }
         renderLeftPane={(renderProps) => (
           <FeatureEngineeringLeftPane
             renderProps={renderProps}
-            isApproved={isApproved}
-            isReadyForApproval={isReadyForApproval}
+            activeFeaturesCount={activeFeatures.length}
+            implementedFeaturesCount={implementedFeaturesCount}
+            currentStage={currentStage}
             panelError={panelError}
             readinessReportUnlocked={readinessReportUnlocked}
             isReadinessExpanded={isReadinessExpanded}
@@ -220,8 +271,6 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
             applyStatus={applyStatus}
             applyMessage={applyMessage}
             activeFeatures={activeFeatures}
-            onApprove={handleApproveCurrentVersion}
-            onNewDraft={handleCreateDraft}
             renderLifecycleCard={renderLifecycleCard}
           />
         )}
@@ -250,7 +299,13 @@ export function FeatureEngineeringPanel({ projectId }: FeatureEngineeringPanelPr
           />
         }
         leftPaneScrollable={false}
+        notebookId={resolvedNotebookId}
       />
+      ) : (
+        <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/20 text-sm text-muted-foreground">
+          Preparing feature notebook...
+        </div>
+      )}
 
       {/* Rename draft dialog */}
       <RenameTabDialog

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { prepareRunForTurn } from './turnState.js';
+import type { WorkflowGraphState } from './graphState.js';
+import {
+  getApprovalPauseDetails,
+  getToolResultPauseReason,
+  prepareRunForTurn,
+  resolvePauseReason,
+  resolvePendingInputKind,
+  shouldRestoreWorkflowHistory
+} from './turnState.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
 
 describe('prepareRunForTurn', () => {
@@ -40,5 +48,79 @@ describe('prepareRunForTurn', () => {
       lastFailureCode: undefined,
       lastFailureMessage: undefined
     });
+  });
+});
+
+describe('shouldRestoreWorkflowHistory', () => {
+  const baseRun: WorkflowRunState = {
+    runId: 'run-1',
+    threadId: 'thread-1',
+    projectId: 'project-1',
+    phase: 'training',
+    status: 'running',
+    currentNode: 'configure_experiment',
+    revision: 1,
+    retryBudget: 3,
+    repairAttemptCount: 0,
+    createdAt: '2026-04-09T00:00:00.000Z',
+    updatedAt: '2026-04-09T00:00:00.000Z'
+  };
+
+  it('restores history for resumable runs', () => {
+    expect(shouldRestoreWorkflowHistory(baseRun)).toBe(true);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'paused' })).toBe(true);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed_retryable' })).toBe(true);
+  });
+
+  it('does not restore history for terminal runs', () => {
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'completed' })).toBe(false);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'failed_terminal' })).toBe(false);
+    expect(shouldRestoreWorkflowHistory({ ...baseRun, status: 'interrupted' })).toBe(false);
+  });
+});
+
+describe('workflow pause detection', () => {
+  it('detects approval pauses from top-level or nested step status', () => {
+    expect(
+      getToolResultPauseReason({
+        output: { status: 'awaiting_approval' }
+      })
+    ).toBe('awaiting_approval');
+
+    expect(
+      getToolResultPauseReason({
+        output: { step: { status: 'awaiting_approval' } }
+      })
+    ).toBe('awaiting_approval');
+
+    expect(
+      getToolResultPauseReason({
+        output: { reasonCode: 'STEP_APPROVAL_REQUIRED' }
+      })
+    ).toBe('awaiting_approval');
+  });
+
+  it('builds approval pause details from any matching tool result', () => {
+    expect(getApprovalPauseDetails([
+      { output: { status: 'completed' } },
+      { output: { step: { status: 'awaiting_approval' } } }
+    ])).toEqual({
+      pendingInputKind: 'approval',
+      pauseReason: 'awaiting_approval'
+    });
+  });
+
+  it('resolves approval pause state from tool results when explicit pause fields are absent', () => {
+    const result = {
+      pauseReason: null,
+      pendingInputKind: null,
+      askUserPayload: null,
+      planExitPayload: null,
+      uiPayload: null,
+      toolResultHistory: [{ output: { reasonCode: 'STEP_APPROVAL_USER_REQUIRED' } }]
+    } as unknown as WorkflowGraphState;
+
+    expect(resolvePauseReason(result)).toBe('awaiting_approval');
+    expect(resolvePendingInputKind(result)).toBe('approval');
   });
 });

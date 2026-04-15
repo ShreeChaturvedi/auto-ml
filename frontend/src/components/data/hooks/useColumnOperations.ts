@@ -82,14 +82,14 @@ export function useColumnOperations(
 ) {
   const tableNames = useMemo(() => {
     return files
-      .filter((f) => f.metadata?.tableName)
+      .filter((f) => f.metadata?.tableName && f.metadata?.queryable !== false)
       .map((f) => f.metadata!.tableName!);
   }, [files]);
 
   const columnsByTable = useMemo(() => {
     const result: Record<string, string[]> = {};
     for (const file of files) {
-      if (!file.metadata?.tableName) continue;
+      if (!file.metadata?.tableName || file.metadata?.queryable === false) continue;
       const preview = previews.find((p) => p.fileId === file.id);
       if (preview) {
         result[file.metadata.tableName] = preview.headers;

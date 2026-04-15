@@ -16,8 +16,10 @@ export interface TrainingRunState {
 interface ModelState {
   templates: ModelTemplate[];
   models: ModelRecord[];
+  modelsProjectId: string | null;
   isLoadingTemplates: boolean;
   isLoadingModels: boolean;
+  activeModelsRequestScope: string | null;
   isTraining: boolean;
   error: string | null;
   /** Training lifecycle state */
@@ -37,8 +39,10 @@ interface ModelState {
 export const useModelStore = create<ModelState>((set, get) => ({
   templates: [],
   models: [],
+  modelsProjectId: null,
   isLoadingTemplates: false,
   isLoadingModels: false,
+  activeModelsRequestScope: null,
   isTraining: false,
   error: null,
   trainingRunStates: {},
@@ -60,14 +64,31 @@ export const useModelStore = create<ModelState>((set, get) => ({
   },
 
   refreshModels: async (projectId) => {
-    if (get().isLoadingModels) return;
-    set({ isLoadingModels: true, error: null });
+    const requestScope = projectId ?? '__all__';
+    const state = get();
+    if (state.activeModelsRequestScope === requestScope) {
+      return;
+    }
+
+    const hasWarmProjectModels = state.modelsProjectId === (projectId ?? null);
+    set({
+      activeModelsRequestScope: requestScope,
+      isLoadingModels: hasWarmProjectModels ? state.isLoadingModels : true,
+      error: null
+    });
+
     try {
       const response = await modelApi.listModels(projectId);
-      set({ models: response.models, isLoadingModels: false });
+      set({
+        models: response.models,
+        modelsProjectId: projectId ?? null,
+        isLoadingModels: false,
+        activeModelsRequestScope: null
+      });
     } catch (error) {
       set({
         isLoadingModels: false,
+        activeModelsRequestScope: null,
         error: error instanceof Error ? error.message : 'Failed to load models.'
       });
     }
@@ -79,7 +100,11 @@ export const useModelStore = create<ModelState>((set, get) => ({
     try {
       const response = await modelApi.trainModel(request);
       set((state) => ({
-        models: [response.model, ...state.models],
+        models:
+          state.modelsProjectId === response.model.projectId
+            ? [response.model, ...state.models.filter((model) => model.modelId !== response.model.modelId)]
+            : [response.model],
+        modelsProjectId: response.model.projectId,
         isTraining: false
       }));
       return response.model;

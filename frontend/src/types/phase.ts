@@ -12,8 +12,7 @@ export type Phase =
   | 'feature-engineering'
   | 'training'
   | 'experiments'
-  | 'deployment'
-  | 'notebook';
+  | 'deployment';
 
 /**
  * Phase configuration for each workflow stage
@@ -76,22 +75,8 @@ export const phaseConfig: Record<Phase, PhaseConfig> = {
     label: 'Deployment',
     description: 'Deploy models to production',
     order: 6
-  },
-  'notebook': {
-    icon: 'BookOpen',
-    label: 'Notebook',
-    description: 'Interactive notebook for data exploration',
-    order: 7
   }
 };
-
-/** Phases that are auxiliary (accessible from other phases, not part of the linear workflow). */
-export const AUXILIARY_PHASES: ReadonlySet<Phase> = new Set<Phase>(['notebook']);
-
-/** Check if a phase is auxiliary (not part of the main workflow progression). */
-export function isAuxiliaryPhase(phase: Phase): boolean {
-  return AUXILIARY_PHASES.has(phase);
-}
 
 /**
  * Get all phases sorted by workflow order
@@ -102,10 +87,8 @@ export function getAllPhasesSorted(): Phase[] {
   );
 }
 
-/** Pre-computed workflow phases (excludes auxiliary phases like notebook). */
-export const WORKFLOW_PHASES: readonly Phase[] = getAllPhasesSorted().filter(
-  (p) => !AUXILIARY_PHASES.has(p)
-);
+/** Pre-computed workflow phases in canonical order. */
+export const WORKFLOW_PHASES: readonly Phase[] = getAllPhasesSorted();
 
 /**
  * Get the next phase in the workflow

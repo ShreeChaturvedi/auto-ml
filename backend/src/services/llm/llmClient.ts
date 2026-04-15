@@ -1,6 +1,7 @@
 import { env } from '../../config.js';
+import { appLogger } from '../../logging/logger.js';
 
-import { resolveCatalogModel, type LlmReasoningEffort } from './modelCatalog.js';
+import { getModelCatalogEntry, resolveCatalogModel, type LlmReasoningEffort } from './modelCatalog.js';
 import { OpenAiClient } from './providers/openaiClient.js';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
@@ -21,6 +22,7 @@ export type LlmToolChoice = 'auto' | 'any' | 'none';
 export interface LlmToolCall {
   name: string;
   args: Record<string, unknown>;
+  rawArgsText?: string;
   thoughtSignature?: string;
 }
 
@@ -72,6 +74,24 @@ export interface LlmClient {
 export function createLlmClient(modelOverride?: string, timeoutMsOverride?: number): LlmClient {
   const timeoutMs = timeoutMsOverride ?? env.llmTimeoutMs;
   const resolvedModel = resolveCatalogModel(modelOverride || env.llmModel);
+
+  // Warn loudly when a caller asked for a specific model but it wasn't in the
+  // catalog — this is how "user selected mini but backend used base" bugs
+  // hide. Fallback is still served; the warn just makes it traceable.
+  if (modelOverride && getModelCatalogEntry(modelOverride) == null) {
+    appLogger.warn('[createLlmClient] Unknown model override; falling back to default', {
+      requested: modelOverride,
+      resolved: resolvedModel.id,
+      envDefault: env.llmModel
+    });
+  }
+
+  appLogger.info('[createLlmClient] Resolved LLM client', {
+    override: modelOverride ?? null,
+    resolved: resolvedModel.id,
+    envDefault: env.llmModel,
+    timeoutMs
+  });
 
   return new OpenAiClient({
     apiKey: env.openaiApiKey,

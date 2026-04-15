@@ -1,84 +1,43 @@
-import { useEffect, useRef, useState, useLayoutEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Dialog, DialogPortal, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogPortal, DialogOverlay, DialogTitle, DialogContent, DialogHeader, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Download, RefreshCcw, Clock, X } from 'lucide-react';
+import { Download, RefreshCcw, Clock, Rocket, X, BarChart3, Brain, AlertTriangle, GitBranch, SlidersHorizontal } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { useDeploymentStore } from '@/stores/deploymentStore';
 import { getModelArtifactUrl } from '@/lib/api/models';
 import { cn } from '@/lib/utils';
 import { resolveModelIcon, TASK_TEXT_STYLES, TASK_LABELS, METRIC_ICONS } from './modelIcons';
+import { IconModeToggle, type IconModeToggleOption } from '@/components/data/IconModeToggle';
+import type { ExperimentDetailTab } from '@/types/experiments';
+import { Pill } from '@/components/ui/pill';
 import { PlotsTab } from './tabs/PlotsTab';
 import { InterpretabilityTab } from './tabs/InterpretabilityTab';
 import { ErrorsTab } from './tabs/ErrorsTab';
 import { ProvenanceTab } from './tabs/ProvenanceTab';
 import { TuneTab } from './tabs/tune/TuneTab';
 import { EvalTabContent } from './EvalTabContent';
-import { formatMetric, formatDuration } from './utils';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
-import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
+import { formatMetric, formatDurationCompact, formatMetricDisplayName } from './utils';
 
-const TABS = [
-  { value: 'plots', label: 'Plots' },
-  { value: 'interpretability', label: 'Interpretability' },
-  { value: 'errors', label: 'Errors' },
-  { value: 'provenance', label: 'Provenance' },
-  { value: 'tune', label: 'Tune' },
-];
+const TAB_OPTIONS = [
+  { value: 'plots', ariaLabel: 'Plots', icon: BarChart3, tooltip: 'Plots' },
+  { value: 'interpretability', ariaLabel: 'Interpretability', icon: Brain, tooltip: 'Interpretability' },
+  { value: 'errors', ariaLabel: 'Errors', icon: AlertTriangle, tooltip: 'Errors' },
+  { value: 'provenance', ariaLabel: 'Provenance', icon: GitBranch, tooltip: 'Provenance' },
+  { value: 'tune', ariaLabel: 'Tune', icon: SlidersHorizontal, tooltip: 'Tune' },
+] as const satisfies readonly IconModeToggleOption<ExperimentDetailTab>[];
 
 export interface ModelDetailPanelProps {
   modelId: string | null;
   open: boolean;
   onClose: () => void;
-}
-
-const TAB_INDICATOR_REF_WIDTH = 1;
-
-function TabIndicator({ containerRef, activeValue, themeColor, prefersReducedMotion }: { containerRef: React.RefObject<HTMLDivElement | null>; activeValue: string; themeColor: string | undefined; prefersReducedMotion: boolean }) {
-  const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0 });
-
-  const measure = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const active = container.querySelector<HTMLElement>(`[data-value="${activeValue}"]`);
-    if (!active) { setStyle((s) => ({ ...s, opacity: 0 })); return; }
-    const cRect = container.getBoundingClientRect();
-    const aRect = active.getBoundingClientRect();
-    const offset = aRect.left - cRect.left;
-    const ratio = aRect.width / TAB_INDICATOR_REF_WIDTH;
-    setStyle({
-      width: TAB_INDICATOR_REF_WIDTH,
-      transformOrigin: 'left',
-      transform: `translateX(${offset}px) scaleX(${ratio})`,
-      opacity: 1,
-      transition: prefersReducedMotion
-        ? 'none'
-        : 'transform 200ms cubic-bezier(.4,0,.2,1), opacity 150ms',
-    });
-  }, [containerRef, activeValue, prefersReducedMotion]);
-
-  useLayoutEffect(() => {
-    measure();
-    const id = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(id);
-  }, [measure]);
-
-  useEffect(() => {
-    let rafId = 0;
-    const throttled = () => { cancelAnimationFrame(rafId); rafId = requestAnimationFrame(measure); };
-    window.addEventListener('resize', throttled);
-    return () => { window.removeEventListener('resize', throttled); cancelAnimationFrame(rafId); };
-  }, [measure]);
-
-  return (
-    <span
-      aria-hidden
-      className="tab-indicator absolute bottom-0 h-[2px] rounded-full"
-      style={{ ...style, backgroundColor: themeColor ?? 'hsl(var(--foreground))' }}
-    />
-  );
 }
 
 const iconBtnCls = 'h-7 w-7 rounded-md text-muted-foreground hover:text-foreground';
@@ -88,13 +47,44 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
   const model = useModelStore((s) => modelId ? s.models.find((m) => m.modelId === modelId) : undefined);
   const evaluation = useExperimentsStore((s) => modelId ? s.evaluations[modelId] : undefined);
   const fetchEvaluation = useExperimentsStore((s) => s.fetchEvaluation);
+  const retryEvaluation = useExperimentsStore((s) => s.retryEvaluation);
+  const refreshModels = useModelStore((s) => s.refreshModels);
   const activeTab = useExperimentsStore((s) => modelId ? (s.activeDetailTab[modelId] ?? 'plots') : 'plots');
   const setActiveTab = useExperimentsStore((s) => s.setActiveDetailTab);
-  const { themeColor } = useProjectThemeColor();
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const tabBarRef = useRef<HTMLDivElement | null>(null);
+
+  const [deployOpen, setDeployOpen] = useState(false);
+  const [deployName, setDeployName] = useState('');
+  const [deploying, setDeploying] = useState(false);
+  const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
+  const completePhase = useProjectStore((s) => s.completePhase);
+  const deploy = useDeploymentStore((s) => s.deploy);
+
+  useEffect(() => {
+    if (deployOpen && model) setDeployName(`${model.name} endpoint`);
+  }, [deployOpen, model]);
+
+  async function handleDeploy() {
+    if (!model || !projectId) return;
+    setDeploying(true);
+    try {
+      await deploy(model.modelId, projectId, deployName);
+      completePhase(projectId, 'experiments');
+      setDeployOpen(false);
+      navigate(`/project/${projectId}/deployment`);
+    } catch {
+      // Error stored in deploymentStore
+    } finally {
+      setDeploying(false);
+    }
+  }
 
   useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
+  useEffect(() => {
+    if (modelId && model?.evaluationStatus === 'ready' && evaluation === null) {
+      void fetchEvaluation(modelId, true);
+    }
+  }, [evaluation, fetchEvaluation, model?.evaluationStatus, modelId]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
 
   if (!model || !modelId) return null;
@@ -121,20 +111,8 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-1/2
             data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-1/2
             duration-200"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-          }}
+          onOpenAutoFocus={(e) => { e.preventDefault(); }}
         >
-          <div
-            className="h-[1px] w-full shrink-0"
-            style={{
-              background: themeColor
-                ? `linear-gradient(90deg, transparent 0%, ${themeColor}60 30%, ${themeColor} 50%, ${themeColor}60 70%, transparent 100%)`
-                : 'linear-gradient(90deg, transparent 0%, hsl(var(--muted-foreground) / 0.3) 50%, transparent 100%)',
-            }}
-          />
-
           <div className="flex h-14 items-center gap-3 border-b border-border/40 px-5 shrink-0">
             <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
             <DialogTitle className="text-sm font-semibold truncate min-w-0">
@@ -144,44 +122,24 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {TASK_LABELS[model.taskType]}
             </span>
 
-            {metricEntries.length > 0 && (
+            {(model.trainingMs != null || metricEntries.length > 0) && (
               <div className="h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-border/60 to-transparent" />
             )}
 
-            {metricEntries.length > 0 && (
-              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide min-w-0">
-                {metricEntries.map(([key, value]) => {
-                  const MetricIcon = METRIC_ICONS[key];
-                  return (
-                    <Tooltip key={key}>
-                      <TooltipTrigger asChild>
-                        <span
-                          className="flex flex-col items-center gap-0.5 rounded-md bg-muted/20 px-2.5 py-1 cursor-default"
-                          tabIndex={0}
-                        >
-                          <span className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground leading-none">
-                            {MetricIcon && <MetricIcon className="h-3 w-3" />}
-                            {key}
-                          </span>
-                          <span className="text-sm tabular-nums font-medium text-foreground leading-none">
-                            {formatMetric(value)}
-                          </span>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent><span className="capitalize">{key}</span></TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide min-w-0">
+              {model.trainingMs != null && (
+                <Pill icon={Clock} tooltip="Training duration" className="tabular-nums shrink-0">
+                  {formatDurationCompact(model.trainingMs)}
+                </Pill>
+              )}
+              {metricEntries.map(([key, value]) => (
+                <Pill key={key} icon={METRIC_ICONS[key]} tooltip={formatMetricDisplayName(key)} className="tabular-nums shrink-0">
+                  {formatMetric(value)}
+                </Pill>
+              ))}
+            </div>
 
             <div className="flex items-center gap-1 ml-auto shrink-0">
-              {model.trainingMs != null && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap mr-1">
-                  <Clock className="h-3 w-3" /> {formatDuration(model.trainingMs)}
-                </span>
-              )}
-
               {(model.artifact || isFailed) && (
                 <ToolbarDivider />
               )}
@@ -201,20 +159,42 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
               {isFailed && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => {
-                      useExperimentsStore.setState((s) => {
-                        const next = { ...s.evaluations };
-                        delete next[modelId];
-                        return { evaluations: next };
-                      });
-                      fetchEvaluation(modelId);
-                    }}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={iconBtnCls}
+                      onClick={() => {
+                        void (async () => {
+                          await retryEvaluation(modelId);
+                          await refreshModels(model.projectId);
+                        })();
+                      }}
+                    >
                       <RefreshCcw className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Retry evaluation</TooltipContent>
                 </Tooltip>
               )}
+
+              {model.taskType !== 'clustering' && model.evaluationStatus === 'ready' && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className={iconBtnCls} onClick={() => setDeployOpen(true)}>
+                      <Rocket className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Deploy model</TooltipContent>
+                </Tooltip>
+              )}
+
+              <ToolbarDivider />
+
+              <IconModeToggle<ExperimentDetailTab>
+                value={activeTab}
+                onValueChange={(tab) => { setActiveTab(modelId, tab); }}
+                options={TAB_OPTIONS}
+              />
 
               <ToolbarDivider />
 
@@ -225,48 +205,7 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             </div>
           </div>
 
-          <div className="border-b border-border/40 px-5 shrink-0">
-            <div
-              ref={tabBarRef}
-              className="relative flex items-end gap-0"
-              role="tablist"
-              onKeyDown={(e) => {
-                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-                const idx = TABS.findIndex((t) => t.value === activeTab);
-                const next = e.key === 'ArrowRight'
-                  ? (idx + 1) % TABS.length
-                  : (idx - 1 + TABS.length) % TABS.length;
-                setActiveTab(modelId, TABS[next].value);
-                const btn = tabBarRef.current?.querySelector<HTMLElement>(`[data-value="${TABS[next].value}"]`);
-                btn?.focus();
-              }}
-            >
-              {TABS.map((t) => (
-                <button
-                  key={t.value}
-                  id={`tab-${t.value}-${modelId}`}
-                  role="tab"
-                  data-value={t.value}
-                  aria-selected={activeTab === t.value}
-                  aria-controls={`tabpanel-${modelId}`}
-                  tabIndex={activeTab === t.value ? 0 : -1}
-                  onClick={() => setActiveTab(modelId, t.value)}
-                  className={cn(
-                    'relative px-3 py-2.5 text-xs font-medium transition-colors rounded-t-md',
-                    'hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-                    activeTab === t.value
-                      ? 'text-foreground'
-                      : 'text-muted-foreground hover:text-foreground/80',
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-              <TabIndicator containerRef={tabBarRef} activeValue={activeTab} themeColor={themeColor} prefersReducedMotion={prefersReducedMotion} />
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0" role="tabpanel" id={`tabpanel-${modelId}`} aria-labelledby={`tab-${activeTab}-${modelId}`}>
+          <div className="flex-1 min-h-0" role="tabpanel" id={`tabpanel-${modelId}`} aria-label={TAB_OPTIONS.find(t => t.value === activeTab)?.tooltip ?? 'Content'}>
             <ScrollArea key={modelId} className="h-full">
               {activeTab === 'plots' && (
                 <EvalTabContent {...evalProps} failedLabel="Basic metrics shown from training.">
@@ -289,6 +228,41 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
           </div>
         </DialogPrimitive.Content>
       </DialogPortal>
+
+      <Dialog open={deployOpen} onOpenChange={setDeployOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-4 w-4" />
+              Deploy model
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="deploy-model-name">Model</Label>
+              <Input id="deploy-model-name" value={model.name} readOnly className="bg-muted/30 text-muted-foreground" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="deploy-endpoint-name">Deployment name</Label>
+              <Input
+                id="deploy-endpoint-name"
+                value={deployName}
+                onChange={(e) => setDeployName(e.target.value)}
+                placeholder="e.g. my-model-endpoint"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm" disabled={deploying}>Cancel</Button>
+            </DialogClose>
+            <Button size="sm" disabled={!deployName.trim() || deploying} onClick={handleDeploy}>
+              {deploying ? 'Deploying…' : 'Deploy'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

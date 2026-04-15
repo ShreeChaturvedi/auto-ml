@@ -10,7 +10,6 @@ import {
 import { truncateText } from './edaFormatters';
 import { subsampleRows } from './edaDataUtils';
 import { PlotEmptyState } from './PlotEmptyState';
-import { ScatterChart } from 'lucide-react';
 
 const MAX_ROWS = 500;
 const MAX_COLS = 6;
@@ -75,7 +74,7 @@ export function PlotlyPairPlot({
 
   // Guard: empty rows or insufficient columns
   if (!rows || rows.length === 0 || cols.length < 2) {
-    return <PlotEmptyState icon={ScatterChart} message="Need at least 2 numeric columns and row data for pair plot" className={className} />;
+    return <PlotEmptyState message="Need at least 2 numeric columns and row data for pair plot" className={className} />;
   }
 
   return (

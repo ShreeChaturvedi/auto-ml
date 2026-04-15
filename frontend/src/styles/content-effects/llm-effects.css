@@ -1,0 +1,162 @@
+/* Per-character progressive reveal animation for streamed LLM text.
+   Mirrors placeholder glow timing while preserving existing text color theme. */
+@keyframes llm-char-in {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+    color: hsl(var(--foreground));
+    text-shadow: 0 0 6px currentColor;
+    filter: brightness(1.2);
+  }
+
+  25% {
+    opacity: 1;
+    transform: translateY(1px);
+    color: hsl(var(--foreground));
+    text-shadow: 0 0 3px currentColor;
+    filter: brightness(1.1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    color: inherit;
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.llm-char-enter {
+  animation: llm-char-in 260ms ease-out both;
+}
+
+@keyframes llm-streamdown-bloom {
+  0% {
+    text-shadow: 0 0 6px currentColor;
+    filter: brightness(1.2);
+  }
+
+  100% {
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.llm-streamdown-wrap {
+  position: relative;
+}
+
+.llm-streamdown [data-sd-animate] {
+  animation-name: var(--sd-animation, sd-fadeIn), llm-streamdown-bloom;
+  animation-duration: var(--sd-duration, 150ms), 260ms;
+  animation-timing-function: var(--sd-easing, ease), ease-out;
+  animation-fill-mode: both, both;
+}
+
+.llm-streamdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.llm-notebook-markdown .llm-streamdown {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.llm-notebook-markdown .llm-streamdown p {
+  margin: 0;
+}
+
+.llm-notebook-markdown .llm-streamdown p + p {
+  margin-top: 0.5rem;
+}
+
+.llm-notebook-markdown .llm-streamdown code {
+  font-size: 0.85em;
+}
+
+.llm-notebook-markdown .llm-streamdown pre {
+  margin: 0.5rem 0;
+}
+
+.nl-model-work-stream .llm-streamdown {
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.nl-model-work-stream .llm-streamdown p {
+  margin: 0;
+}
+
+.nl-model-work-stream .llm-streamdown p + p {
+  margin-top: 0.45rem;
+}
+
+.nl-model-work-stream .llm-streamdown ul,
+.nl-model-work-stream .llm-streamdown ol {
+  margin: 0.45rem 0 0.45rem 1rem;
+}
+
+.nl-model-work-stream .llm-streamdown li + li {
+  margin-top: 0.18rem;
+}
+
+.nl-model-work-stream .llm-streamdown pre {
+  margin: 0.5rem 0 0;
+  border-radius: 0.5rem;
+}
+
+.nl-model-work-stream .llm-streamdown code {
+  font-size: 0.84em;
+}
+
+/* Boost bloom animation for compact transcript — more visible at small font sizes */
+.nl-model-work-stream .llm-streamdown [data-sd-animate] {
+  animation-name: var(--sd-animation, sd-fadeIn), nl-work-bloom;
+  animation-duration: var(--sd-duration, 150ms), 320ms;
+  animation-timing-function: var(--sd-easing, ease), ease-out;
+  animation-fill-mode: both, both;
+}
+
+@keyframes nl-work-bloom {
+  0% {
+    text-shadow: 0 0 8px currentColor;
+    filter: brightness(1.35);
+  }
+  100% {
+    text-shadow: none;
+    filter: none;
+  }
+}
+
+.nl-model-work-viewport {
+  --nl-work-fade-top: 0px;
+  --nl-work-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black var(--nl-work-fade-top),
+    black calc(100% - var(--nl-work-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black var(--nl-work-fade-top),
+    black calc(100% - var(--nl-work-fade-bottom)),
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .llm-char-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .llm-streamdown [data-sd-animate] {
+    animation: none;
+    opacity: 1;
+  }
+}

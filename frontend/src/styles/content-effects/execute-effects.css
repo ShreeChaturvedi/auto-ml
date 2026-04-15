@@ -1,0 +1,50 @@
+/* Execute icon: layered traces flow along stroke paths */
+@keyframes execute-trace-movement {
+  from {
+    stroke-dashoffset: 1;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.execute-icon-trace-base {
+  animation: execute-trace-movement 1.5s linear infinite;
+  animation-play-state: paused;
+  stroke-linecap: round;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+.execute-icon {
+  --comet-head-color: currentColor;
+  --comet-head-max: 100%;
+}
+
+.dark .execute-icon {
+  --comet-head-color: white;
+  --comet-head-max: 100%;
+}
+
+.group\/execute:hover .execute-icon-trace-base {
+  animation-play-state: running;
+  opacity: 1;
+  transition: opacity 0.3s ease-in;
+}
+
+.group\/execute[disabled] .execute-icon-trace-base,
+.group\/execute[disabled]:hover .execute-icon-trace-base {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .execute-icon-trace-base {
+    animation: none;
+  }
+
+  .group\/execute:hover .execute-icon-trace-base {
+    opacity: 0.5;
+  }
+}

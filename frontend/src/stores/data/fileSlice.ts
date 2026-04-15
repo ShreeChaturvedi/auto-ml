@@ -9,9 +9,11 @@ import type {
   FileMetadata,
   ColumnDataType
 } from '@/types/file';
+import type { OpenTab, TabType } from '@/types/dataViewer';
 import { deleteDataset, updateDatasetColumnType } from '@/lib/api/datasets';
 import { deleteDocument } from '@/lib/api/documents';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
+import { useNotebookStore } from '@/stores/notebookStore';
 import type { DataState } from '../dataStore';
 
 export interface FileSlice {
@@ -20,8 +22,8 @@ export interface FileSlice {
   previews: DataPreview[];
   isProcessing: boolean;
   activeFileTabId: string | null;
-  fileTabType: 'file' | 'artifact' | 'plan' | null;
-  openFileTabs: string[];
+  fileTabType: TabType | 'plan' | null;
+  openFileTabs: OpenTab[];
 
   // Actions
   addFile: (file: UploadedFile) => void;
@@ -43,10 +45,13 @@ export interface FileSlice {
   clearProjectData: (projectId: string) => void;
   setFileMetadata: (fileId: string, metadata: Partial<FileMetadata>) => void;
   updateColumnType: (datasetId: string, columnName: string, newType: ColumnDataType) => Promise<void>;
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => void;
+  setActiveFileTab: (id: string | null, type: TabType | 'plan' | null) => void;
   openFileTab: (id: string) => void;
-  closeFileTab: (id: string) => void;
+  openNotebookTab: (notebookId: string) => void;
+  closeFileTab: (id: string, type: TabType) => void;
 }
+
+export const MAX_PREVIEW_ROWS = 2000;
 
 export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set, get) => ({
   files: [],
@@ -57,39 +62,63 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
   openFileTabs: [],
 
   addFile: (file: UploadedFile) => {
-    set((state) => ({
-      files: [...state.files, file],
-      openFileTabs:
-        ['csv', 'json', 'excel'].includes(file.type) && !state.openFileTabs.includes(file.id)
-          ? [...state.openFileTabs, file.id]
+    set((state) => {
+      const alreadyOpen = state.openFileTabs.some(
+        (tab) => tab.type === 'file' && tab.id === file.id
+      );
+      const shouldOpen = ['csv', 'json', 'excel'].includes(file.type) && !alreadyOpen;
+      return {
+        files: [...state.files, file],
+        openFileTabs: shouldOpen
+          ? [...state.openFileTabs, { id: file.id, type: 'file' as const }]
           : state.openFileTabs
-    }));
+      };
+    });
   },
 
   removeFile: (id: string) => {
-    set((state) => ({
-      files: state.files.filter((f) => f.id !== id),
-      previews: state.previews.filter((p) => p.fileId !== id),
-      openFileTabs: state.openFileTabs.filter((tabId) => tabId !== id),
-      ...(() => {
-        if (state.activeFileTabId !== id || state.fileTabType !== 'file') {
-          return {};
+    set((state) => {
+      const nextOpenTabs = state.openFileTabs.filter(
+        (tab) => !(tab.id === id && tab.type === 'file')
+      );
+
+      const activeIsRemovedFile =
+        state.activeFileTabId === id && state.fileTabType === 'file';
+
+      let activeUpdate: Partial<DataState> = {};
+      if (activeIsRemovedFile) {
+        const nextFileTab = nextOpenTabs.find((tab) => tab.type === 'file');
+        if (nextFileTab) {
+          activeUpdate = {
+            activeFileTabId: nextFileTab.id,
+            fileTabType: 'file' as const
+          };
+        } else if (state.queryArtifacts.length > 0) {
+          activeUpdate = {
+            activeFileTabId: state.queryArtifacts[0].id,
+            fileTabType: 'artifact' as const
+          };
+        } else {
+          activeUpdate = { activeFileTabId: null, fileTabType: null };
         }
-        const remainingTabs = state.openFileTabs.filter((tabId) => tabId !== id);
-        if (remainingTabs.length > 0) {
-          return { activeFileTabId: remainingTabs[0], fileTabType: 'file' as const };
-        }
-        if (state.queryArtifacts.length > 0) {
-          return { activeFileTabId: state.queryArtifacts[0].id, fileTabType: 'artifact' as const };
-        }
-        return { activeFileTabId: null, fileTabType: null };
-      })()
-    }));
+      }
+
+      return {
+        files: state.files.filter((f) => f.id !== id),
+        previews: state.previews.filter((p) => p.fileId !== id),
+        openFileTabs: nextOpenTabs,
+        ...activeUpdate
+      };
+    });
   },
 
   deleteFile: async (id: string) => {
     const file = get().files.find((f) => f.id === id);
     if (!file) return;
+
+    // Mark as recently deleted to guard against hydration races
+    if (file.metadata?.datasetId) get().markDeleted(file.metadata.datasetId);
+    if (file.metadata?.documentId) get().markDeleted(file.metadata.documentId);
 
     if (file.metadata?.datasetId) {
       try {
@@ -110,9 +139,15 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
 
     get().removeFile(id);
 
+    const promises: Promise<unknown>[] = [];
     if (file.metadata?.datasetId && file.projectId) {
-      void useNlSuggestionStore.getState().fetchProjectSuggestions(file.projectId, { force: true });
+      promises.push(useNlSuggestionStore.getState().fetchProjectSuggestions(file.projectId, { force: true }));
     }
+    // Re-hydrate to reconcile local state with backend's post-delete state
+    if (file.projectId) {
+      promises.push(get().hydrateFromBackend(file.projectId, { force: true }));
+    }
+    await Promise.all(promises);
   },
 
   getFilesByProject: (projectId: string) => {
@@ -141,12 +176,13 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
         const nextRows = overlap >= rows.length
           ? preview.rows
           : [...preview.rows, ...rows.slice(overlap)];
+        const clamped = nextRows.length > MAX_PREVIEW_ROWS ? nextRows.slice(0, MAX_PREVIEW_ROWS) : nextRows;
 
         return {
           ...preview,
-          rows: nextRows,
+          rows: clamped,
           totalRows: rowCount,
-          previewRows: nextRows.length
+          previewRows: clamped.length
         };
       })
     }));
@@ -168,19 +204,45 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
 
   clearProjectData: (projectId: string) => {
     const filesToRemove = get().files.filter((f) => f.projectId === projectId);
-    const fileIdsToRemove = filesToRemove.map((f) => f.id);
+    const fileIdsToRemove = new Set(filesToRemove.map((f) => f.id));
 
-    set((state) => ({
-      files: state.files.filter((f) => f.projectId !== projectId),
-      previews: state.previews.filter((p) => !fileIdsToRemove.includes(p.fileId)),
-      openFileTabs: state.openFileTabs.filter((tabId) => !fileIdsToRemove.includes(tabId)),
-      ...(() => {
-        if (!state.activeFileTabId || !fileIdsToRemove.includes(state.activeFileTabId)) {
-          return {};
+    const notebookIdsInProject = new Set(
+      useNotebookStore
+        .getState()
+        .notebooks.filter((n) => n.projectId === projectId)
+        .map((n) => n.notebookId)
+    );
+    const artifactIdsInProject = new Set(
+      get()
+        .queryArtifacts.filter((a) => a.projectId === projectId)
+        .map((a) => a.id)
+    );
+
+    set((state) => {
+      const nextOpenTabs = state.openFileTabs.filter((tab) => {
+        if (tab.type === 'file') return !fileIdsToRemove.has(tab.id);
+        if (tab.type === 'artifact') return !artifactIdsInProject.has(tab.id);
+        if (tab.type === 'notebook') return !notebookIdsInProject.has(tab.id);
+        return true;
+      });
+
+      let activeUpdate: Partial<DataState> = {};
+      if (state.activeFileTabId) {
+        const stillActive = nextOpenTabs.some(
+          (tab) => tab.id === state.activeFileTabId && tab.type === state.fileTabType
+        );
+        if (!stillActive) {
+          activeUpdate = { activeFileTabId: null, fileTabType: null };
         }
-        return { activeFileTabId: null, fileTabType: null };
-      })()
-    }));
+      }
+
+      return {
+        files: state.files.filter((f) => f.projectId !== projectId),
+        previews: state.previews.filter((p) => !fileIdsToRemove.has(p.fileId)),
+        openFileTabs: nextOpenTabs,
+        ...activeUpdate
+      };
+    });
   },
 
   setFileMetadata: (fileId: string, metadata: Partial<FileMetadata>) => {
@@ -212,42 +274,85 @@ export const createFileSlice: StateCreator<DataState, [], [], FileSlice> = (set,
     ]);
   },
 
-  setActiveFileTab: (id: string | null, type: 'file' | 'artifact' | 'plan' | null) => {
+  setActiveFileTab: (id: string | null, type: TabType | 'plan' | null) => {
+    const state = get();
+    if (state.activeFileTabId === id && state.fileTabType === type) {
+      return;
+    }
     set({ activeFileTabId: id, fileTabType: type });
   },
 
   openFileTab: (id: string) => {
-    set((state) => ({
-      openFileTabs: state.openFileTabs.includes(id)
-        ? state.openFileTabs
-        : [...state.openFileTabs, id],
-      activeFileTabId: id,
-      fileTabType: 'file'
-    }));
+    set((state) => {
+      const alreadyOpen = state.openFileTabs.some(
+        (tab) => tab.id === id && tab.type === 'file'
+      );
+      const alreadyActive =
+        state.activeFileTabId === id && state.fileTabType === 'file';
+      if (alreadyOpen && alreadyActive) {
+        return state;
+      }
+      return {
+        openFileTabs: alreadyOpen
+          ? state.openFileTabs
+          : [...state.openFileTabs, { id, type: 'file' as const }],
+        activeFileTabId: id,
+        fileTabType: 'file' as const
+      };
+    });
   },
 
-  closeFileTab: (id: string) => {
+  openNotebookTab: (notebookId: string) => {
     set((state) => {
-      const remainingTabs = state.openFileTabs.filter((tabId) => tabId !== id);
-      if (state.activeFileTabId !== id || state.fileTabType !== 'file') {
-        return { openFileTabs: remainingTabs };
+      const alreadyOpen = state.openFileTabs.some(
+        (tab) => tab.id === notebookId && tab.type === 'notebook'
+      );
+      const alreadyActive =
+        state.activeFileTabId === notebookId && state.fileTabType === 'notebook';
+      if (alreadyOpen && alreadyActive) {
+        return state;
       }
-      if (remainingTabs.length > 0) {
+      return {
+        openFileTabs: alreadyOpen
+          ? state.openFileTabs
+          : [...state.openFileTabs, { id: notebookId, type: 'notebook' as const }],
+        activeFileTabId: notebookId,
+        fileTabType: 'notebook' as const
+      };
+    });
+  },
+
+  closeFileTab: (id: string, type: TabType) => {
+    set((state) => {
+      const nextOpenTabs = state.openFileTabs.filter(
+        (tab) => !(tab.id === id && tab.type === type)
+      );
+      const isClosingActive =
+        state.activeFileTabId === id && state.fileTabType === type;
+
+      if (!isClosingActive) {
+        return { openFileTabs: nextOpenTabs };
+      }
+
+      // Fall-through: prefer next tab of any type preserving its type; then
+      // any remaining query artifact; else null.
+      if (nextOpenTabs.length > 0) {
+        const nextTab = nextOpenTabs[0];
         return {
-          openFileTabs: remainingTabs,
-          activeFileTabId: remainingTabs[0],
-          fileTabType: 'file'
+          openFileTabs: nextOpenTabs,
+          activeFileTabId: nextTab.id,
+          fileTabType: nextTab.type
         };
       }
       if (state.queryArtifacts.length > 0) {
         return {
-          openFileTabs: remainingTabs,
+          openFileTabs: nextOpenTabs,
           activeFileTabId: state.queryArtifacts[0].id,
-          fileTabType: 'artifact'
+          fileTabType: 'artifact' as const
         };
       }
       return {
-        openFileTabs: remainingTabs,
+        openFileTabs: nextOpenTabs,
         activeFileTabId: null,
         fileTabType: null
       };

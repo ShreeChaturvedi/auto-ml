@@ -135,11 +135,34 @@ export function TuneTab({ modelId }: TuneTabProps) {
           case 'convergence_update':
             setConvergenceStatus(event.status);
             break;
-          case 'done':
+          case 'done': {
+            // The done event carries the authoritative optimization_history
+            // from tuning_summary.json.  Stream-relayed trial_result events
+            // may be incomplete when trials finish faster than the Jupyter
+            // IOPub channel delivers stdout, so rebuild the full trial list.
+            if (event.optimization_history) {
+              const { trial_numbers, values, best_values } = event.optimization_history;
+              const fullTrials: TuningTrialEvent[] = trial_numbers.map((num, i) => ({
+                type: 'trial_result' as const,
+                trial_number: num,
+                state: 'COMPLETE' as const,
+                value: values[i],
+                params: {},
+                best_value: best_values[i],
+                best_params: event.best_params ?? {},
+                n_complete: i + 1,
+                n_total: trial_numbers.length,
+              }));
+              setTrials(fullTrials);
+              bestValueRef.current = event.best_value ?? best_values[best_values.length - 1];
+              setBestValue(bestValueRef.current);
+              setBestParams(event.best_params ?? null);
+            }
             setResultModelId(event.resultModelId ?? null);
             transitionTo('insight');
             if (projectId) await refreshModels(projectId);
             return;
+          }
           case 'error':
             setErrorMessage(event.message);
             transitionTo('error');
@@ -255,7 +278,9 @@ export function TuneTab({ modelId }: TuneTabProps) {
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
             <div className="space-y-1">
               <p className="text-sm font-medium text-destructive">Tuning Failed</p>
-              <p className="text-sm text-muted-foreground">{errorMessage ?? 'An unknown error occurred.'}</p>
+              <pre className="mt-1 max-h-[200px] overflow-auto rounded border border-muted/50 bg-muted/30 p-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                {errorMessage ?? 'An unknown error occurred.'}
+              </pre>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5">

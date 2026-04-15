@@ -60,6 +60,28 @@ export async function updateProfile(payload: UpdateProfilePayload): Promise<{ us
   });
 }
 
+// ---------------------------------------------------------------------------
+// Email verification
+// ---------------------------------------------------------------------------
+
+export async function verifyEmail(token: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/auth/verify-email', {
+    method: 'POST',
+    body: { token }
+  });
+}
+
+export async function resendVerification(email?: string): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>('/auth/resend-verification', {
+    method: 'POST',
+    body: email ? { email } : {}
+  });
+}
+
+export async function getVerificationStatus(): Promise<{ emailVerified: boolean }> {
+  return apiRequest<{ emailVerified: boolean }>('/auth/verification-status');
+}
+
 /**
  * Initiate Google OAuth flow
  * Returns a URL to redirect the user to Google's consent screen
@@ -79,4 +101,25 @@ export async function googleCallback(code: string): Promise<AuthResponse> {
     method: 'POST',
     body: { code }
   });
+}
+
+export interface ActiveSession {
+  token_id: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+  current: boolean;
+}
+
+export async function getActiveSessions(refreshToken: string | null): Promise<ActiveSession[]> {
+  const headers: Record<string, string> = {};
+  if (refreshToken) {
+    headers['x-refresh-token'] = refreshToken;
+  }
+  const res = await apiRequest<{ sessions: ActiveSession[] }>('/auth/sessions', { headers });
+  return res.sessions;
+}
+
+export async function revokeSession(tokenId: string): Promise<void> {
+  await apiRequest(`/auth/sessions/${tokenId}`, { method: 'DELETE' });
 }

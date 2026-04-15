@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 28" width="140" height="28">
+  <!-- Miami University red M mark (scaled from logo-2021.svg) -->
+  <g transform="translate(0, 1) scale(0.5217)">
+    <polygon fill="#C41230" points="15.6,11.7 12.4,11.7 8.8,5.7 24,5.7 24,5.7 37.8,28.6 51.6,5.7 66.8,5.7 63.2,11.7 60,11.7 60,45.7 63.2,45.7 66.8,51.7 44.7,51.7 48.4,45.7 51.6,45.7 51.6,21.9 42.7,36.7 37.8,44.8 37.8,44.8 37.8,44.8 32.9,36.7 24,21.9 24,45.7 27.2,45.7 30.9,51.7 8.8,51.7 12.4,45.7 15.6,45.7"/>
+  </g>
+  <!-- "Miami University" text -->
+  <text x="40" y="18" fill="#333333" font-family="'Satoshi', sans-serif" font-size="14" font-weight="500">Miami University</text>
+</svg>

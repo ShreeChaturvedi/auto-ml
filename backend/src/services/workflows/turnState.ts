@@ -1,7 +1,56 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ToolResult } from '../../types/llm.js';
+
 import type { WorkflowGraphState } from './graphState.js';
 import type { WorkflowRunState, WorkflowTurnRequest } from './types.js';
+
+export interface WorkflowPauseDetails {
+  pendingInputKind: 'approval';
+  pauseReason: 'awaiting_approval';
+}
+
+function getPauseRecord(output: unknown): Record<string, unknown> | null {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return null;
+  }
+
+  return output as Record<string, unknown>;
+}
+
+export function getToolResultPauseReason(
+  result: Pick<ToolResult, 'output'> | undefined
+): WorkflowPauseDetails['pauseReason'] | undefined {
+  const record = getPauseRecord(result?.output);
+  if (!record) {
+    return undefined;
+  }
+
+  const step = getPauseRecord(record.step);
+  const reasonCode = typeof record.reasonCode === 'string' ? record.reasonCode : undefined;
+  const status = typeof record.status === 'string'
+    ? record.status
+    : typeof step?.status === 'string'
+      ? step.status
+      : undefined;
+
+  if (reasonCode === 'STEP_APPROVAL_REQUIRED' || reasonCode === 'STEP_APPROVAL_USER_REQUIRED') {
+    return 'awaiting_approval';
+  }
+
+  return status === 'awaiting_approval' ? 'awaiting_approval' : undefined;
+}
+
+export function getApprovalPauseDetails(
+  results: readonly Pick<ToolResult, 'output'>[]
+): WorkflowPauseDetails | null {
+  return results.some((result) => getToolResultPauseReason(result) === 'awaiting_approval')
+    ? {
+        pendingInputKind: 'approval',
+        pauseReason: 'awaiting_approval'
+      }
+    : null;
+}
 
 export function buildInitialRun(
   turn: WorkflowTurnRequest
@@ -60,11 +109,18 @@ export function prepareRunForTurn(
   };
 }
 
+export function shouldRestoreWorkflowHistory(run: WorkflowRunState): boolean {
+  return run.status === 'running'
+    || run.status === 'paused'
+    || run.status === 'failed_retryable';
+}
+
 export function resolveFailureStatus(errorCode: string | null): WorkflowRunState['status'] {
   if (
     errorCode === 'DATASET_NOT_FOUND'
     || errorCode === 'DATASET_REQUIRED'
     || errorCode === 'FE_PIPELINE_APPROVAL_REQUIRED'
+    || errorCode === 'UPSTREAM_AUTH_FAILED'
   ) {
     return 'failed_terminal';
   }
@@ -86,24 +142,7 @@ export function resolvePauseReason(result: WorkflowGraphState): string | undefin
     return 'ui_ready';
   }
 
-  const latestToolResult = result.toolResultHistory.at(-1);
-  const output = latestToolResult?.output;
-  if (!output || typeof output !== 'object' || Array.isArray(output)) {
-    return undefined;
-  }
-
-  const record = output as Record<string, unknown>;
-  const reasonCode = typeof record.reasonCode === 'string' ? record.reasonCode : undefined;
-  const status = typeof record.status === 'string' ? record.status : undefined;
-
-  if (reasonCode === 'STEP_APPROVAL_REQUIRED' || reasonCode === 'STEP_APPROVAL_USER_REQUIRED') {
-    return 'awaiting_approval';
-  }
-  if (status === 'awaiting_approval') {
-    return 'awaiting_approval';
-  }
-
-  return undefined;
+  return getToolResultPauseReason(result.toolResultHistory.at(-1));
 }
 
 export function resolvePendingInputKind(

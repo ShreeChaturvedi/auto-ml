@@ -14,12 +14,11 @@ import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
+import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
 import { deleteTuningStudiesByModelId } from './tuningService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
-
-const DEFAULT_TEST_SIZE = 0.2;
 
 function pyLiteral(value: unknown): string {
   if (value === null || value === undefined) return 'None';
@@ -79,6 +78,10 @@ function buildTrainingScript(params: {
 
   if (template.taskType !== 'clustering') {
     lines.push('from sklearn.model_selection import train_test_split');
+    lines.push('from sklearn.pipeline import Pipeline');
+    lines.push('from sklearn.compose import ColumnTransformer');
+    lines.push('from sklearn.preprocessing import StandardScaler, OneHotEncoder');
+    lines.push('from sklearn.impute import SimpleImputer');
   }
 
   if (template.taskType === 'classification') {
@@ -112,16 +115,51 @@ function buildTrainingScript(params: {
   lines.push('if X.shape[1] == 0:');
   lines.push('    raise ValueError("No feature columns available for training.")');
 
+  lines.push('');
   lines.push('numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()');
   lines.push('categorical_cols = [col for col in X.columns if col not in numeric_cols]');
-  lines.push('if numeric_cols:');
-  lines.push('    X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].median())');
-  lines.push('if categorical_cols:');
-  lines.push("    X[categorical_cols] = X[categorical_cols].fillna('missing')");
-  lines.push('if categorical_cols:');
-  lines.push('    X = pd.get_dummies(X, columns=categorical_cols, drop_first=False)');
-  lines.push('X = X.fillna(0)');
-  lines.push('feature_columns = list(X.columns)');
+  lines.push('feature_columns = numeric_cols + categorical_cols');
+
+  if (template.taskType === 'clustering') {
+    // Clustering: keep inline preprocessing (no Pipeline)
+    lines.push('if numeric_cols:');
+    lines.push('    X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].median())');
+    lines.push('if categorical_cols:');
+    lines.push("    X[categorical_cols] = X[categorical_cols].fillna('missing')");
+    lines.push('if categorical_cols:');
+    lines.push('    X = pd.get_dummies(X, columns=categorical_cols, drop_first=False)');
+    lines.push('X = X.fillna(0)');
+  } else {
+    // Supervised: build Pipeline + ColumnTransformer
+    lines.push('');
+    lines.push('# Build feature type metadata');
+    lines.push('feature_types = {}');
+    lines.push('for col in numeric_cols:');
+    lines.push('    dtype = X[col].dtype');
+    lines.push("    feature_types[col] = 'int' if np.issubdtype(dtype, np.integer) else 'float'");
+    lines.push('for col in categorical_cols:');
+    lines.push("    feature_types[col] = 'str'");
+    lines.push('');
+    lines.push('# Build sample request from first row');
+    lines.push('sample_row = X.iloc[0].to_dict()');
+    lines.push('for k, v in sample_row.items():');
+    lines.push('    if isinstance(v, (np.integer,)):');
+    lines.push('        sample_row[k] = int(v)');
+    lines.push('    elif isinstance(v, (np.floating,)):');
+    lines.push('        sample_row[k] = float(v)');
+    lines.push('    elif isinstance(v, (np.bool_,)):');
+    lines.push('        sample_row[k] = bool(v)');
+    lines.push('');
+    lines.push('# Build ColumnTransformer preprocessor');
+    lines.push("numeric_pipeline = Pipeline([('imputer', SimpleImputer(strategy='median')), ('scaler', StandardScaler())])");
+    lines.push("categorical_pipeline = Pipeline([('imputer', SimpleImputer(strategy='constant', fill_value='missing')), ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))])");
+    lines.push('transformers = []');
+    lines.push('if numeric_cols:');
+    lines.push("    transformers.append(('num', numeric_pipeline, numeric_cols))");
+    lines.push('if categorical_cols:');
+    lines.push("    transformers.append(('cat', categorical_pipeline, categorical_cols))");
+    lines.push("preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')");
+  }
 
   if (template.taskType !== 'clustering') {
     lines.push(`test_size = ${testSize}`);
@@ -137,13 +175,14 @@ function buildTrainingScript(params: {
     .map(([key, value]) => `${key}=${pyLiteral(value)}`);
 
   lines.push('');
-  lines.push(`model = ${template.modelClass}(${paramEntries.join(', ')})`);
 
   if (template.taskType === 'clustering') {
+    lines.push(`model = ${template.modelClass}(${paramEntries.join(', ')})`);
     lines.push('labels = model.fit_predict(X)');
   } else {
-    lines.push('model.fit(X_train, y_train)');
-    lines.push('y_pred = model.predict(X_test)');
+    lines.push(`pipeline = Pipeline([('preprocessor', preprocessor), ('model', ${template.modelClass}(${paramEntries.join(', ')}))])`);
+    lines.push('pipeline.fit(X_train, y_train)');
+    lines.push('y_pred = pipeline.predict(X_test)');
   }
 
   lines.push('metrics = {}');
@@ -154,7 +193,7 @@ function buildTrainingScript(params: {
     lines.push('metrics["recall"] = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))');
     lines.push('metrics["f1"] = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))');
   } else if (template.taskType === 'regression') {
-    lines.push('metrics["rmse"] = float(mean_squared_error(y_test, y_pred, squared=False))');
+    lines.push('metrics["rmse"] = float(np.sqrt(mean_squared_error(y_test, y_pred)))');
     lines.push('metrics["mae"] = float(mean_absolute_error(y_test, y_pred))');
     lines.push('metrics["r2"] = float(r2_score(y_test, y_pred))');
   } else {
@@ -169,8 +208,44 @@ function buildTrainingScript(params: {
   lines.push(`output_dir = ${JSON.stringify(outputDir)}`);
   lines.push('os.makedirs(output_dir, exist_ok=True)');
   lines.push('model_path = os.path.join(output_dir, "model.joblib")');
-  lines.push('joblib.dump(model, model_path)');
 
+  if (template.taskType === 'clustering') {
+    lines.push('joblib.dump(model, model_path)');
+  } else {
+    lines.push('joblib.dump(pipeline, model_path)');
+  }
+
+  if (template.taskType !== 'clustering') {
+    // Baseline statistics for drift detection (computed from X_train only)
+    lines.push('');
+    lines.push("baseline = {'numeric': {}, 'categorical': {}, 'prediction_distribution': {}}");
+    lines.push('for col in numeric_cols:');
+    lines.push('    col_data = X_train[col].dropna()');
+    lines.push('    if len(col_data) > 0:');
+    lines.push('        hist_counts, hist_edges = np.histogram(col_data, bins=20)');
+    lines.push("        baseline['numeric'][col] = {");
+    lines.push("            'mean': float(col_data.mean()), 'std': float(col_data.std()),");
+    lines.push("            'min': float(col_data.min()), 'max': float(col_data.max()),");
+    lines.push("            'q25': float(col_data.quantile(0.25)), 'q50': float(col_data.quantile(0.50)), 'q75': float(col_data.quantile(0.75)),");
+    lines.push("            'histogram': {'bins': hist_edges.tolist(), 'counts': hist_counts.tolist()}");
+    lines.push('        }');
+    lines.push('for col in categorical_cols:');
+    lines.push('    col_data = X_train[col].dropna()');
+    lines.push("    baseline['categorical'][col] = dict(col_data.value_counts().head(50).items())");
+    lines.push('y_pred_baseline = pipeline.predict(X_test)');
+    lines.push("y_pred_list = y_pred_baseline.tolist() if hasattr(y_pred_baseline, 'tolist') else list(y_pred_baseline)");
+    lines.push(`if '${template.taskType}' == 'classification':`);
+    lines.push('    from collections import Counter');
+    lines.push("    baseline['prediction_distribution'] = dict(Counter(str(v) for v in y_pred_list))");
+    lines.push('else:');
+    lines.push('    pred_arr = np.array(y_pred_list, dtype=float)');
+    lines.push('    hist_counts, hist_edges = np.histogram(pred_arr, bins=20)');
+    lines.push("    baseline['prediction_distribution'] = {'bins': hist_edges.tolist(), 'counts': hist_counts.tolist()}");
+    lines.push('with open(os.path.join(output_dir, "baseline.json"), "w") as f:');
+    lines.push('    json.dump(baseline, f)');
+  }
+
+  lines.push('');
   lines.push('meta = {');
   lines.push('    "metrics": metrics,');
   lines.push('    "featureColumns": feature_columns,');
@@ -178,6 +253,8 @@ function buildTrainingScript(params: {
   if (template.taskType !== 'clustering') {
     lines.push('    ,"targetColumn": target_col');
     lines.push('    ,"testSize": float(test_size)');
+    lines.push('    ,"featureTypes": feature_types');
+    lines.push('    ,"sampleRequest": sample_row');
   }
   if (template.taskType === 'clustering') {
     lines.push('    ,"clusterSizes": cluster_sizes');
@@ -231,7 +308,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
   }
 
   const modelId = randomUUID();
-  const testSize = Math.max(0.1, Math.min(input.testSize ?? DEFAULT_TEST_SIZE, 0.4));
+  const testSize = normalizeModelTestSize(input.testSize ?? DEFAULT_MODEL_TEST_SIZE);
   const mergedParams = Object.fromEntries(
     Object.entries({
       ...template.defaultParams,
@@ -302,6 +379,8 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     sampleCount?: number;
     targetColumn?: string;
     clusterSizes?: Record<string, number>;
+    featureTypes?: Record<string, 'float' | 'int' | 'str'>;
+    sampleRequest?: Record<string, unknown>;
   };
 
   const storageDir = join(env.modelStorageDir, modelId);
@@ -309,11 +388,16 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
   const storedModelPath = join(storageDir, 'model.joblib');
   const storedMetricsPath = join(storageDir, 'metrics.json');
 
-  await Promise.all([
+  const fileCopies: Promise<void>[] = [
     copyFile(modelPath, storedModelPath),
     copyFile(metricsPath, storedMetricsPath),
     writeFile(join(storageDir, 'train.py'), script, 'utf8')
-  ]);
+  ];
+  const baselinePath = join(runDir, 'baseline.json');
+  if (existsSync(baselinePath)) {
+    fileCopies.push(copyFile(baselinePath, join(storageDir, 'baseline.json')));
+  }
+  await Promise.all(fileCopies);
 
   const record = await modelRepository.create({
     projectId: input.projectId,
@@ -329,15 +413,18 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     trainingMs: Date.now() - start,
     targetColumn: metricsPayload.targetColumn ?? input.targetColumn,
     featureColumns: metricsPayload.featureColumns,
+    featureTypes: metricsPayload.featureTypes,
+    sampleRequest: metricsPayload.sampleRequest,
     sampleCount: metricsPayload.sampleCount,
     artifact: {
       filename: 'model.joblib',
       path: storedModelPath,
       size: artifactStat.size
     },
-    metadata: metricsPayload.clusterSizes
-      ? { clusterSizes: metricsPayload.clusterSizes }
-      : undefined,
+    metadata: {
+      ...(metricsPayload.clusterSizes ? { clusterSizes: metricsPayload.clusterSizes } : {}),
+      testSize,
+    },
     evaluationStatus: 'pending'
   });
 

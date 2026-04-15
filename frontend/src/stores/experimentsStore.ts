@@ -2,291 +2,394 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 
 import type {
-  EvaluationResult,
-  ShapResult,
   ErrorAnalysisResult,
-  FilterPredicate
+  EvaluationResult,
+  ExperimentDetailTab,
+  ExperimentSortDirection,
+  ExperimentSortField,
+  ExperimentView,
+  FilterPredicate,
+  ShapResult,
 } from '@/types/experiments';
 import type { ModelRecord } from '@/types/model';
 import * as experimentsApi from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 
-/** Minimum time (ms) between insight banner LLM calls */
 const INSIGHT_STALE_TIME = 30_000;
+const MAX_CACHED_MODELS = 5;
 
 interface ExperimentsState {
-  // Selection
   selectedModelId: string | null;
   comparisonModelIds: string[];
-
-  // Data caches (keyed by modelId; null means fetched but unavailable)
+  modelAccessOrder: string[];
+  cacheGeneration: number;
   evaluations: Record<string, EvaluationResult | null>;
   shapData: Record<string, ShapResult | null>;
   errorAnalysis: Record<string, ErrorAnalysisResult | null>;
-
-  // LLM content
-  projectInsight: { text: string; isLoading: boolean } | null;
-  insightModelHash: string | null;
-  insightFetchedAt: number;
   compareNarrative: { text: string; isLoading: boolean } | null;
   reportContent: { text: string; isLoading: boolean } | null;
   reportModelHash: string | null;
   reportFetchedAt: number;
-
-  // View switching
-  experimentView: 'overview' | 'leaderboard';
-
-  // Detail dialog tab persistence (keyed by modelId)
-  activeDetailTab: Record<string, string>;
-
-  // Filters
-  nlFilterText: string;
+  experimentView: ExperimentView;
+  activeDetailTab: Record<string, ExperimentDetailTab>;
   activePredicates: FilterPredicate[];
-  sortField: string;
-  sortDirection: 'asc' | 'desc';
-
-  // Actions
+  sortField: ExperimentSortField;
+  sortDirection: ExperimentSortDirection;
+  comparisonRequested: boolean;
+  manualPredicates: FilterPredicate[];
+  nameFilter: string;
   selectModel: (modelId: string | null) => void;
   toggleComparison: (modelId: string) => void;
   clearComparison: () => void;
-  setExperimentView: (view: 'overview' | 'leaderboard') => void;
-  fetchEvaluation: (modelId: string) => Promise<void>;
+  setExperimentView: (view: ExperimentView) => void;
+  fetchEvaluation: (modelId: string, force?: boolean) => Promise<void>;
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
-  fetchProjectInsight: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchReport: (projectId: string, models: ModelRecord[]) => Promise<void>;
   fetchCompareNarrative: (projectId: string, modelIds: string[], models: ModelRecord[]) => Promise<void>;
-  setNlFilter: (text: string, predicates: FilterPredicate[]) => void;
+  setNlFilter: (predicates: FilterPredicate[]) => void;
   clearFilter: () => void;
-  setSort: (field: string, direction: 'asc' | 'desc') => void;
-  setActiveDetailTab: (modelId: string, tab: string) => void;
+  setSort: (field: ExperimentSortField, direction: ExperimentSortDirection) => void;
+  setActiveDetailTab: (modelId: string, tab: ExperimentDetailTab) => void;
+  startComparison: () => void;
+  stopComparison: () => void;
+  addManualPredicate: (predicate: FilterPredicate) => void;
+  removeManualPredicate: (index: number) => void;
+  setManualPredicates: (predicates: FilterPredicate[]) => void;
+  clearManualPredicates: () => void;
+  setNameFilter: (text: string) => void;
   purgeModelCache: (modelId: string) => void;
+  retryEvaluation: (modelId: string) => Promise<void>;
+  invalidateReport: () => void;
+}
+
+type ExperimentsStateData = Pick<
+  ExperimentsState,
+  | 'selectedModelId'
+  | 'comparisonModelIds'
+  | 'modelAccessOrder'
+  | 'cacheGeneration'
+  | 'evaluations'
+  | 'shapData'
+  | 'errorAnalysis'
+  | 'compareNarrative'
+  | 'reportContent'
+  | 'reportModelHash'
+  | 'reportFetchedAt'
+  | 'experimentView'
+  | 'activeDetailTab'
+  | 'activePredicates'
+  | 'sortField'
+  | 'sortDirection'
+  | 'comparisonRequested'
+  | 'manualPredicates'
+  | 'nameFilter'
+>;
+
+export function createInitialExperimentsState(): ExperimentsStateData {
+  return {
+    selectedModelId: null,
+    comparisonModelIds: [],
+    modelAccessOrder: [],
+    cacheGeneration: 0,
+    evaluations: {},
+    shapData: {},
+    errorAnalysis: {},
+    compareNarrative: null,
+    reportContent: null,
+    reportModelHash: null,
+    reportFetchedAt: 0,
+    experimentView: 'overview',
+    activeDetailTab: {},
+    activePredicates: [],
+    sortField: 'createdAt',
+    sortDirection: 'desc',
+    comparisonRequested: false,
+    manualPredicates: [],
+    nameFilter: '',
+  };
+}
+
+function clearModelCacheEntry<T>(cache: Record<string, T>, modelId: string): Record<string, T> {
+  if (!(modelId in cache)) {
+    return cache;
+  }
+  const next = { ...cache };
+  delete next[modelId];
+  return next;
 }
 
 export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
-  // Selection
-  selectedModelId: null,
-  comparisonModelIds: [],
-
-  // Data caches
-  evaluations: {},
-  shapData: {},
-  errorAnalysis: {},
-
-  // LLM content
-  projectInsight: null,
-  insightModelHash: null,
-  insightFetchedAt: 0,
-  compareNarrative: null,
-  reportContent: null,
-  reportModelHash: null,
-  reportFetchedAt: 0,
-
-  // View switching
-  experimentView: 'overview',
-
-  // Detail dialog tab persistence
-  activeDetailTab: {},
-
-  // Filters
-  nlFilterText: '',
-  activePredicates: [],
-  sortField: 'createdAt',
-  sortDirection: 'desc',
-
-  // ── Actions ──
+  ...createInitialExperimentsState(),
 
   selectModel: (modelId) => {
-    set({ selectedModelId: modelId });
+    if (modelId === null) {
+      set({ selectedModelId: null });
+      return;
+    }
+    set((state) => {
+      // Dedup + push to back (most recently used)
+      const order = [...state.modelAccessOrder.filter((id) => id !== modelId), modelId];
+
+      if (order.length <= MAX_CACHED_MODELS) {
+        return { selectedModelId: modelId, modelAccessOrder: order };
+      }
+
+      // Determine eviction candidates: oldest entries beyond limit, skip pinned comparison models
+      const pinned = new Set(state.comparisonModelIds);
+      const evictSet = new Set<string>();
+      let i = 0;
+      while (order.length - evictSet.size > MAX_CACHED_MODELS && i < order.length - 1) {
+        const candidate = order[i];
+        if (!pinned.has(candidate)) {
+          evictSet.add(candidate);
+        }
+        i++;
+      }
+
+      const pruned = order.filter((id) => !evictSet.has(id));
+
+      const nextEvaluations = { ...state.evaluations };
+      const nextShapData = { ...state.shapData };
+      const nextErrorAnalysis = { ...state.errorAnalysis };
+      const nextActiveDetailTab = { ...state.activeDetailTab };
+      for (const id of evictSet) {
+        delete nextEvaluations[id];
+        delete nextShapData[id];
+        delete nextErrorAnalysis[id];
+        delete nextActiveDetailTab[id];
+      }
+
+      return {
+        selectedModelId: modelId,
+        modelAccessOrder: pruned,
+        cacheGeneration: state.cacheGeneration + 1,
+        evaluations: nextEvaluations,
+        shapData: nextShapData,
+        errorAnalysis: nextErrorAnalysis,
+        activeDetailTab: nextActiveDetailTab,
+      };
+    });
   },
 
   toggleComparison: (modelId) => {
     const current = get().comparisonModelIds;
     if (current.includes(modelId)) {
-      set({ comparisonModelIds: current.filter((id) => id !== modelId) });
-    } else {
-      if (current.length >= 5) {
-        toast.warning('Maximum 5 models can be compared');
-        return;
-      }
-      set({ comparisonModelIds: [...current, modelId] });
+      const next = current.filter((id) => id !== modelId);
+      set({
+        comparisonModelIds: next,
+        ...(next.length < 2 ? { comparisonRequested: false } : {}),
+      });
+      return;
     }
+
+    if (current.length >= 5) {
+      toast.warning('Maximum 5 models can be compared');
+      return;
+    }
+
+    set({ comparisonModelIds: [...current, modelId] });
   },
 
   clearComparison: () => {
-    set({ comparisonModelIds: [] });
+    set({ comparisonModelIds: [], comparisonRequested: false });
+  },
+
+  startComparison: () => {
+    if (get().comparisonModelIds.length >= 2) {
+      set({ comparisonRequested: true, compareNarrative: null });
+    }
+  },
+
+  stopComparison: () => {
+    set({ comparisonRequested: false });
+  },
+
+  addManualPredicate: (predicate) => {
+    set((state) => ({ manualPredicates: [...state.manualPredicates, predicate] }));
+  },
+
+  removeManualPredicate: (index) => {
+    set((state) => ({
+      manualPredicates: state.manualPredicates.filter((_, currentIndex) => currentIndex !== index),
+    }));
+  },
+
+  setManualPredicates: (predicates) => {
+    set({ manualPredicates: predicates });
+  },
+
+  clearManualPredicates: () => {
+    set({ manualPredicates: [] });
+  },
+
+  setNameFilter: (text) => {
+    set({ nameFilter: text });
   },
 
   setExperimentView: (view) => {
     set({ experimentView: view });
   },
 
-  fetchEvaluation: async (modelId) => {
-    if (modelId in get().evaluations) return;
+  fetchEvaluation: async (modelId, force = false) => {
+    if (!force && modelId in get().evaluations) return;
+    const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        evaluations: { ...state.evaluations, [modelId]: result }
+        evaluations: { ...state.evaluations, [modelId]: result },
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchEvaluation failed:', error);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        evaluations: { ...state.evaluations, [modelId]: null }
+        evaluations: { ...state.evaluations, [modelId]: null },
       }));
     }
   },
 
   fetchShap: async (modelId) => {
     if (modelId in get().shapData) return;
+    const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchShap(modelId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        shapData: { ...state.shapData, [modelId]: result }
+        shapData: { ...state.shapData, [modelId]: result },
       }));
     } catch {
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        shapData: { ...state.shapData, [modelId]: null }
+        shapData: { ...state.shapData, [modelId]: null },
       }));
     }
   },
 
   fetchErrorAnalysis: async (modelId) => {
     if (modelId in get().errorAnalysis) return;
+    const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
-      // Backend returns { available: false } when error analysis isn't possible
       const resolved = result?.available === false ? null : result;
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved }
+        errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved },
       }));
     } catch {
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        errorAnalysis: { ...state.errorAnalysis, [modelId]: null }
+        errorAnalysis: { ...state.errorAnalysis, [modelId]: null },
       }));
-    }
-  },
-
-  fetchProjectInsight: async (projectId, models) => {
-    const hash = models.map((m) => m.modelId).sort().join(',');
-    const current = get();
-    if (hash === current.insightModelHash && current.projectInsight?.text) return;
-    if (current.projectInsight?.isLoading) return;
-    if (current.insightFetchedAt && Date.now() - current.insightFetchedAt < INSIGHT_STALE_TIME) return;
-
-    set({ projectInsight: { text: '', isLoading: true }, insightModelHash: hash, insightFetchedAt: Date.now() });
-    try {
-      const response = await experimentsApi.fetchInsights(projectId, {
-        type: 'banner',
-        context: {
-          models: models.map((m) => ({
-            modelId: m.modelId,
-            name: m.name,
-            algorithm: m.algorithm,
-            taskType: m.taskType,
-            metrics: m.metrics,
-            status: m.status
-          }))
-        }
-      });
-      await accumulateTokenStream(response, (accumulated) => {
-        set((state) => ({
-          projectInsight: state.projectInsight
-            ? { ...state.projectInsight, text: accumulated }
-            : null
-        }));
-      });
-      set((state) => ({
-        projectInsight: state.projectInsight
-          ? { ...state.projectInsight, isLoading: false }
-          : null
-      }));
-    } catch {
-      set({ projectInsight: null });
     }
   },
 
   fetchReport: async (projectId, models) => {
-    const hash = models.map((m) => m.modelId).sort().join(',');
+    const hash = models.map((model) => model.modelId).sort().join(',');
     const current = get();
     if (hash === current.reportModelHash && current.reportContent?.text) return;
     if (current.reportContent?.isLoading) return;
     if (current.reportFetchedAt && Date.now() - current.reportFetchedAt < INSIGHT_STALE_TIME) return;
 
-    set({ reportContent: { text: '', isLoading: true }, reportModelHash: hash, reportFetchedAt: Date.now() });
+    const gen = get().cacheGeneration;
+    set({
+      reportContent: { text: '', isLoading: true },
+      reportModelHash: hash,
+      reportFetchedAt: Date.now(),
+    });
+
     let rafId = 0;
     let latestText = '';
     try {
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'report',
-        context: { models: models.map((m) => ({ modelId: m.modelId })) }
+        context: { models: models.map((model) => ({ modelId: model.modelId })) },
       });
       await accumulateTokenStream(response, (accumulated) => {
+        if (get().cacheGeneration !== gen) return;
         latestText = accumulated;
         if (!rafId) {
           rafId = requestAnimationFrame(() => {
             rafId = 0;
+            if (get().cacheGeneration !== gen) return;
             set((state) => ({
               reportContent: state.reportContent
                 ? { ...state.reportContent, text: latestText }
-                : null
+                : null,
             }));
           });
         }
       });
-      // Cancel any trailing rAF before the final flush to avoid a no-op re-render
       if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
-        reportContent: state.reportContent
-          ? { text: latestText, isLoading: false }
-          : null
+        reportContent: state.reportContent ? { text: latestText, isLoading: false } : null,
       }));
     } catch {
       if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set({ reportContent: null });
     }
   },
 
   fetchCompareNarrative: async (projectId, modelIds, models) => {
+    const gen = get().cacheGeneration;
     set({ compareNarrative: { text: '', isLoading: true } });
+    let rafId = 0;
+    let latestText = '';
     try {
       const modelsContext = models
-        .filter((m) => modelIds.includes(m.modelId))
-        .map((m) => ({
-          modelId: m.modelId,
-          name: m.name,
-          algorithm: m.algorithm,
-          taskType: m.taskType,
-          metrics: m.metrics,
+        .filter((model) => modelIds.includes(model.modelId))
+        .map((model) => ({
+          modelId: model.modelId,
+          name: model.name,
+          algorithm: model.algorithm,
+          taskType: model.taskType,
+          metrics: model.metrics,
         }));
       const response = await experimentsApi.fetchInsights(projectId, {
         type: 'compare',
-        context: { modelIds, models: modelsContext }
+        context: { modelIds, models: modelsContext },
       });
       await accumulateTokenStream(response, (accumulated) => {
-        set((state) => ({
-          compareNarrative: state.compareNarrative
-            ? { ...state.compareNarrative, text: accumulated }
-            : null
-        }));
+        if (get().cacheGeneration !== gen) return;
+        latestText = accumulated;
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = 0;
+            if (get().cacheGeneration !== gen) return;
+            set((state) => ({
+              compareNarrative: state.compareNarrative
+                ? { ...state.compareNarrative, text: latestText }
+                : null,
+            }));
+          });
+        }
       });
+      if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set((state) => ({
         compareNarrative: state.compareNarrative
           ? { ...state.compareNarrative, isLoading: false }
-          : null
+          : null,
       }));
     } catch {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (get().cacheGeneration !== gen) return;
       set({ compareNarrative: null });
     }
   },
 
-  setNlFilter: (text, predicates) => {
-    const update: Partial<ExperimentsState> = { nlFilterText: text, activePredicates: predicates };
-    if (predicates.length > 0) update.experimentView = 'leaderboard';
+  setNlFilter: (predicates) => {
+    const update: Partial<ExperimentsState> = { activePredicates: predicates };
+    if (predicates.length > 0) {
+      update.experimentView = 'leaderboard';
+    }
     set(update);
   },
 
   clearFilter: () => {
-    set({ nlFilterText: '', activePredicates: [] });
+    set({ activePredicates: [] });
   },
 
   setSort: (field, direction) => {
@@ -296,21 +399,27 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
   setActiveDetailTab: (modelId, tab) => {
     if (get().activeDetailTab[modelId] === tab) return;
     set((state) => ({
-      activeDetailTab: { ...state.activeDetailTab, [modelId]: tab }
+      activeDetailTab: { ...state.activeDetailTab, [modelId]: tab },
     }));
   },
 
   purgeModelCache: (modelId) => {
-    set((state) => {
-      const evaluations = { ...state.evaluations };
-      const shapData = { ...state.shapData };
-      const errorAnalysis = { ...state.errorAnalysis };
-      const activeDetailTab = { ...state.activeDetailTab };
-      delete evaluations[modelId];
-      delete shapData[modelId];
-      delete errorAnalysis[modelId];
-      delete activeDetailTab[modelId];
-      return { evaluations, shapData, errorAnalysis, activeDetailTab };
-    });
-  }
+    set((state) => ({
+      evaluations: clearModelCacheEntry(state.evaluations, modelId),
+      shapData: clearModelCacheEntry(state.shapData, modelId),
+      errorAnalysis: clearModelCacheEntry(state.errorAnalysis, modelId),
+      activeDetailTab: clearModelCacheEntry(state.activeDetailTab, modelId),
+      modelAccessOrder: state.modelAccessOrder.filter((id) => id !== modelId),
+    }));
+  },
+
+  retryEvaluation: async (modelId) => {
+    get().purgeModelCache(modelId);
+    await experimentsApi.retryEvaluation(modelId);
+    await get().fetchEvaluation(modelId, true);
+  },
+
+  invalidateReport: () => {
+    set({ reportContent: null, reportModelHash: null, reportFetchedAt: 0 });
+  },
 }));

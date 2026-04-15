@@ -1,9 +1,9 @@
 import { Target, TrendingUp, Layers, Crosshair, ScanSearch, Scale, Ruler, Activity, Sigma } from 'lucide-react';
-import type { ComponentType } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import type { ModelTaskType } from '@/types/model';
 
 export function resolveModelIcon(taskType: ModelTaskType): {
-  Icon: ComponentType<{ className?: string }>;
+  Icon: LucideIcon;
   colorClass: string;
 } {
   switch (taskType) {
@@ -31,7 +31,7 @@ export const TASK_TEXT_STYLES: Record<ModelTaskType, string> = {
   clustering: 'text-purple-600 dark:text-purple-400',
 };
 
-export const METRIC_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+export const METRIC_ICONS: Record<string, LucideIcon> = {
   accuracy: Target,
   precision: Crosshair,
   recall: ScanSearch,

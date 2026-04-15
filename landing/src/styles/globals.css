@@ -1,0 +1,13 @@
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/geist-mono/wght.css';
+@import './theme.css';
+@import './motion-policy.css';
+@import './grain.css';
+@import './cursor-outline.css';
+@import '../../../frontend/src/styles/ui-utilities.css';
+@import '../../../frontend/src/styles/content-effects.css';
+@import '../../../frontend/src/styles/surfaces.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

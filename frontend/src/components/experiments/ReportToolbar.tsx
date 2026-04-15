@@ -32,6 +32,7 @@ import {
   COMPACT_TOOLBAR_ICON_BUTTON_CLASS,
 } from '@/components/agentic/toolbarStyles';
 import type { TocHeading } from '@/lib/markdown/tocUtils';
+import type { ExperimentView } from '@/types/experiments';
 import { cn, escapeRegExp } from '@/lib/utils';
 
 const VIEW_OPTIONS = [
@@ -49,8 +50,8 @@ interface ReportToolbarProps {
   scrollToHeading: (slug: string) => void;
   isStreaming: boolean;
   onRegenerate: () => void;
-  experimentView: 'overview' | 'leaderboard';
-  onViewChange: (view: 'overview' | 'leaderboard') => void;
+  experimentView: ExperimentView;
+  onViewChange: (view: ExperimentView) => void;
 }
 
 export function ReportToolbar({
@@ -229,6 +230,8 @@ export function ReportToolbar({
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
               <input
+                id="report-search-input"
+                name="reportSearch"
                 placeholder="Search report..."
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
@@ -263,9 +266,9 @@ export function ReportToolbar({
       </TooltipProvider>
 
       {/* Right: view switcher */}
-      <IconModeToggle
+      <IconModeToggle<ExperimentView>
         value={experimentView}
-        onValueChange={(v) => v && onViewChange(v as 'overview' | 'leaderboard')}
+        onValueChange={onViewChange}
         options={VIEW_OPTIONS}
       />
     </div>

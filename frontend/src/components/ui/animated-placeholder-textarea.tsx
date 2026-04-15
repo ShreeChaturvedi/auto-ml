@@ -1,11 +1,11 @@
-import { useRef, useCallback, forwardRef } from 'react';
+import { useRef, useCallback, forwardRef, useId } from 'react';
 import type { TextareaHTMLAttributes, KeyboardEvent } from 'react';
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import {
   useAnimatedPlaceholder,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
+  computeCharDelay,
 } from './useAnimatedPlaceholder';
 
 interface AnimatedPlaceholderTextareaProps
@@ -20,8 +20,9 @@ interface AnimatedPlaceholderTextareaProps
 const AnimatedPlaceholderTextarea = forwardRef<
   HTMLTextAreaElement,
   AnimatedPlaceholderTextareaProps
->(({ placeholders, interval = 3000, autoResize = false, onTabAccept, className, value, style, onFocus, onBlur, onKeyDown, disabled, readOnly, ...props }, ref) => {
+>(({ placeholders, interval = 3000, autoResize = false, onTabAccept, className, value, style, onFocus, onBlur, onKeyDown, disabled, readOnly, id, name, ...props }, ref) => {
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
+  const generatedId = useId();
 
   const {
     currentPlaceholder,
@@ -61,11 +62,13 @@ const AnimatedPlaceholderTextarea = forwardRef<
           if (typeof ref === 'function') ref(node);
           else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = node;
         }}
+        id={id ?? (name ? undefined : generatedId)}
+        name={name}
         value={value}
         disabled={disabled}
         readOnly={readOnly}
         className={cn(
-          'flex w-full rounded-md border border-input bg-background px-3 py-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          'flex w-full rounded-md border border-input bg-background px-3 py-3 text-sm leading-5 ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
           className
         )}
         style={{
@@ -105,7 +108,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
 
             {/* Current placeholder – slides up and fades out during animation */}
             <span
-              className="block text-sm text-muted-foreground whitespace-pre-wrap break-words"
+              className="block text-sm leading-5 text-muted-foreground whitespace-pre-wrap break-words"
               style={{
                 transform: isAnimating ? 'translateY(-100%)' : 'translateY(0)',
                 opacity: isAnimating ? 0 : 1,
@@ -121,7 +124,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
                 visibility: each character fades in at its staggered time and
                 briefly blooms to full foreground color before settling to muted. */}
             <span
-              className="absolute inset-x-0 top-0 text-sm whitespace-pre-wrap break-words"
+              className="absolute inset-x-0 top-0 text-sm leading-5 whitespace-pre-wrap break-words"
               style={{
                 transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
                 opacity: isAnimating ? 1 : 0,
@@ -135,7 +138,7 @@ const AnimatedPlaceholderTextarea = forwardRef<
                       style={{
                         display: 'inline',
                         animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                        animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                        animationDelay: `${computeCharDelay(i)}ms`,
                       }}
                       >
                       {char}

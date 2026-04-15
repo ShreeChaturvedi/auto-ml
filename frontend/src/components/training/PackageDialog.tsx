@@ -189,7 +189,7 @@ export function PackageDialog({
                   v{displayVersion}
                 </Badge>
                 {isInstalled && (
-                  <span className="inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+                  <span className="inline-flex items-center rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                     Installed
                   </span>
                 )}
@@ -255,7 +255,7 @@ export function PackageDialog({
                   href={displayHomepage}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
                 >
                   <ExternalLink className="h-3 w-3" />
                   Homepage
@@ -265,7 +265,7 @@ export function PackageDialog({
                 href={displayPypiUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
               >
                 <ExternalLink className="h-3 w-3" />
                 PyPI
@@ -305,7 +305,7 @@ export function PackageDialog({
               onClick={handleInstall}
               disabled={installing || completed}
               className={cn(
-                'w-full h-11',
+                'w-full h-11 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 completed && 'bg-emerald-600 hover:bg-emerald-600'
               )}
             >

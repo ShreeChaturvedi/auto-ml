@@ -64,23 +64,31 @@ except OSError:
 # /datasets is mounted read-only; /workspace/datasets is writable.
 # When a file is only found in the read-only mount, copy it to the
 # writable workspace so subsequent writes (df.to_csv) succeed.
+# Paths are scoped by dataset_id to prevent cross-workbook file collisions.
 def resolve_dataset_path(filename, dataset_id=None):
     import shutil
-    writable = [
-        Path("/workspace") / filename,
-        Path("/workspace/datasets") / filename,
-    ]
+    # Prefer dataset_id-scoped paths first to isolate workbook file writes.
+    writable = []
     if dataset_id:
         writable.append(Path("/workspace/datasets") / dataset_id / filename)
+    writable.extend([
+        Path("/workspace/datasets") / filename,
+        Path("/workspace") / filename,
+    ])
     for c in writable:
         if c.exists():
             return str(c)
-    readonly = [Path("/datasets") / filename]
+    readonly = []
     if dataset_id:
         readonly.append(Path("/datasets") / dataset_id / filename)
+    readonly.append(Path("/datasets") / filename)
     for c in readonly:
         if c.exists():
-            dest = Path("/workspace/datasets") / filename
+            # Copy to dataset_id-scoped writable path to avoid collisions.
+            if dataset_id:
+                dest = Path("/workspace/datasets") / dataset_id / filename
+            else:
+                dest = Path("/workspace/datasets") / filename
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(c), str(dest))
             return str(dest)
@@ -93,7 +101,10 @@ def resolve_dataset_path(filename, dataset_id=None):
         if root.exists():
             matches = list(root.rglob(filename))
             if matches:
-                dest = Path("/workspace/datasets") / filename
+                if dataset_id:
+                    dest = Path("/workspace/datasets") / dataset_id / filename
+                else:
+                    dest = Path("/workspace/datasets") / filename
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(matches[0]), str(dest))
                 return str(dest)
@@ -109,9 +120,10 @@ def _display_df(df):
 def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     """Load a dataset into the kernel namespace, reusing a cached copy if available."""
     import pandas as pd
-    cache_key = "_automl_ds_" + df_name
+    # Cache key includes dataset_id to prevent cross-workbook data leaks.
+    cache_key = "_automl_ds_" + df_name + "_" + str(dataset_id or "")
     if cache_key in globals() and isinstance(globals()[cache_key], pd.DataFrame):
-        globals()[df_name] = globals()[cache_key]
+        globals()[df_name] = globals()[cache_key].copy()
         return globals()[df_name]
     path = resolve_dataset_path(filename, dataset_id)
     if file_type == "json":
@@ -124,7 +136,7 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     else:
         frame = pd.read_csv(path)
     globals()[df_name] = frame
-    globals()[cache_key] = frame
+    globals()[cache_key] = frame.copy()
     globals()["dataset_path"] = path
     globals()["active_dataset_id"] = dataset_id
     return frame
@@ -144,7 +156,51 @@ def save_preprocessing_dataset(filename, dataset_id, file_type, df_name):
         frame.to_excel(path, index=False)
     else:
         frame.to_csv(path, index=False)
-    globals()["_automl_ds_" + df_name] = frame
+    # Invalidate cache after save — the data on disk is now transformed,
+    # so a fresh load (e.g. from another workbook) must re-read from disk.
+    cache_key = "_automl_ds_" + df_name + "_" + str(dataset_id or "")
+    globals().pop(cache_key, None)
+
+# Standalone-notebook export helper. Writes the dataframe to an internal
+# _exports directory and appends to a manifest the backend reads after the
+# cell finishes. The backend atomically persists each manifest entry as a
+# new project dataset, so users can promote exploration results without
+# leaving the notebook.
+def save_to_project(df, name):
+    """Save a DataFrame as a project dataset."""
+    import os, json, re, time, uuid
+    if not isinstance(df, __import__('pandas').DataFrame):
+        raise TypeError("save_to_project expects a pandas DataFrame")
+    name = str(name).strip()
+    if not re.match(r'^[\\w\\- ]+$', name):
+        raise ValueError("Dataset name can only contain letters, numbers, spaces, dashes, underscores")
+    if not name.endswith('.csv'):
+        name = name + '.csv'
+    export_dir = '/workspace/_exports'
+    os.makedirs(export_dir, exist_ok=True)
+    path = os.path.join(export_dir, name)
+    df.to_csv(path, index=False)
+    rows, cols = df.shape
+    manifest_path = os.path.join(export_dir, '.manifest.json')
+    entries = []
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path) as f:
+                entries = json.load(f)
+        except Exception:
+            entries = []
+    entries.append({
+        'name': name,
+        'rows': rows,
+        'cols': cols,
+        'timestamp': time.time(),
+        'exportId': str(uuid.uuid4()),
+    })
+    tmp = manifest_path + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(entries, f)
+    os.replace(tmp, manifest_path)
+    print(f"Saved '{name.rsplit('.csv', 1)[0]}' to project ({rows:,} rows x {cols} columns)")
 
 print("Kernel initialized")
 `.trim();

@@ -26,6 +26,8 @@ export type ReasonCode =
   | 'STEP_RECONCILE_REQUIRES_BOUND_CELL'
   | 'REPLAY_TARGET_DATASET_REQUIRED'
   | 'REPLAY_INCOMPATIBLE_DATASET'
+  | 'PROCESSED_DATASET_PERSIST_FAILED'
+  | 'PROCESSED_DATASET_NOT_FOUND'
   | 'INVALID_OPERATION'
   | 'INTERNAL_ERROR';
 
@@ -60,7 +62,12 @@ export interface PreprocessingCellMetadataStore {
 }
 
 export interface PreprocessingCellInspector {
-  read(cellId: string): Promise<{ cellId: string; content: string; metadata: Record<string, unknown> } | undefined>;
+  read(cellId: string): Promise<{
+    cellId: string;
+    notebookId?: string;
+    content: string;
+    metadata: Record<string, unknown>;
+  } | undefined>;
 }
 
 export interface ToolContext {

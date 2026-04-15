@@ -1,7 +1,9 @@
 import type { ComponentType } from 'react';
 import { File } from 'lucide-react';
 import { CsvIcon, XlsIcon, PdfIcon, DocIcon, MarkdownIcon, JsnIcon, TxtIcon } from '@/components/data/CsvIcon';
-import type { FileType } from '@/types/file';
+import type { FileType, UploadedFile } from '@/types/file';
+import { downloadDataset } from '@/lib/api/datasets';
+import { downloadDocument } from '@/lib/api/documents';
 
 /** Icon component for each file type. */
 export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
@@ -79,29 +81,58 @@ export const formatFileSize = (bytes: number): string => {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 };
 
-/** Determine file type from File object. */
-export const getFileType = (file: File): FileType => {
-  const extension = file.name.split('.').pop()?.toLowerCase();
+/** Download a single file (dataset or document) via the appropriate API. */
+export async function downloadFile(file: UploadedFile): Promise<void> {
+  const { datasetId, documentId } = file.metadata ?? {};
+  let blob: Blob;
+  if (datasetId) {
+    blob = new Blob([await downloadDataset(datasetId)]);
+  } else if (documentId) {
+    blob = await downloadDocument(documentId);
+  } else return;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
-  if (extension === 'csv') return 'csv';
-  if (extension === 'json') return 'json';
-  if (extension === 'xlsx' || extension === 'xls') return 'excel';
-  if (extension === 'pdf') return 'pdf';
-  if (extension === 'md') return 'markdown';
-  if (extension === 'docx' || extension === 'doc') return 'word';
-  if (
-    extension === 'txt'
-    || extension === 'text'
-    || extension === 'log'
-    || extension === 'html'
-    || extension === 'htm'
-    || extension === 'xml'
-    || extension === 'yml'
-    || extension === 'yaml'
-    || extension === 'rtf'
-  ) {
-    return 'text';
-  }
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'text', 'log', 'html', 'htm', 'xml', 'yml', 'yaml', 'rtf',
+]);
 
+/**
+ * Derive a FileType from a plain filename string (no DOM File object).
+ * Shared by upload flows, renderers, and tool-result cards so the
+ * `.split('.').pop()` extension check lives in one place.
+ */
+export function fileTypeFromFilename(filename: string | undefined | null): FileType {
+  if (!filename) return 'other';
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'csv') return 'csv';
+  if (ext === 'json') return 'json';
+  if (ext === 'xlsx' || ext === 'xls') return 'excel';
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'md' || ext === 'markdown') return 'markdown';
+  if (ext === 'docx' || ext === 'doc') return 'word';
+  if (TEXT_EXTENSIONS.has(ext)) return 'text';
   return 'other';
-};
+}
+
+/**
+ * Resolve {Icon, colorClass} from a filename string, with an optional
+ * explicit type override (for cases where the filename extension lies).
+ */
+export function resolveFileIconByFilename(
+  filename?: string | null,
+  explicitType?: FileType | string,
+): { Icon: ComponentType<{ className?: string }>; colorClass: string } {
+  const ft = explicitType ?? fileTypeFromFilename(filename);
+  return resolveFileIcon(ft);
+}
+
+/** Determine file type from File object. */
+export const getFileType = (file: File): FileType => fileTypeFromFilename(file.name);

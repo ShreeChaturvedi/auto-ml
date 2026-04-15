@@ -1,18 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
-import { useWorkflowSessionStore, buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
-import { fetchFeatureRun } from '@/lib/api/featureEngineering';
+import { fetchFeatureRun, fetchFeatureRuns } from '@/lib/api/featureEngineering';
 import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import type { FeatureSpec, PipelineVersion, ReadinessReport } from '@/types/feature';
+import type { FeatureLifecycleStep } from '@/stores/featureStore';
 import { useFeatureReadiness } from './useFeatureReadiness';
-import { useFeatureCodeGen } from './useFeatureCodeGen';
 import { useFeatureVersioning } from './useFeatureVersioning';
 import { useFeatureApply } from './useFeatureApply';
 import { useSuggestionDrafts } from './useSuggestionDrafts';
 import type { FeatureSuggestionItem } from '../featureEngineeringUtils';
+import { isDemoMode } from '@/lib/demoMode';
 
 export type { SuggestionDraft } from './useSuggestionDrafts';
+
+const EMPTY_PIPELINE_VERSIONS: PipelineVersion[] = [];
+
+function isFeaturePipelineRunId(runId: string): boolean {
+  return runId.startsWith('feat-') || runId.startsWith('feature-run-');
+}
+
+function belongsToCurrentVersion(versionId: string | undefined, featureVersionId: string | undefined): boolean {
+  if (!versionId) return true;
+  return featureVersionId === versionId;
+}
 
 interface UseFeaturePipelineStateReturn {
   // Dataset state
@@ -29,6 +40,7 @@ interface UseFeaturePipelineStateReturn {
   versions: PipelineVersion[];
   currentVersionId: string | undefined;
   currentVersion: PipelineVersion | undefined;
+  chatSessionVersion: number;
   isApproved: boolean;
   isCurrentVersionDraft: boolean;
 
@@ -36,6 +48,8 @@ interface UseFeaturePipelineStateReturn {
   projectFeatures: FeatureSpec[];
   activeFeatures: FeatureSpec[];
   featureById: Map<string, FeatureSpec>;
+  featureSteps: Record<string, FeatureLifecycleStep>;
+  currentStage: string | null;
 
   // Readiness
   readinessReport: ReadinessReport;
@@ -102,7 +116,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
 
   // --- Feature store selectors ---
   const features = useFeatureStore((state) => state.features);
+  const versionEntries = useFeatureStore((state) => state.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS);
+  const selectedVersionId = useFeatureStore((state) => state.currentVersionId[projectId]);
   const hydrateFeatures = useFeatureStore((state) => state.hydrateFromProject);
+  const featureSteps = useFeatureStore((state) => state.featureSteps);
+  const currentStage = useFeatureStore((state) => state.currentStage);
 
   // --- Local state ---
   const [selectedDataset, setSelectedDataset] = useState<string | null>(null);
@@ -130,6 +148,19 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
           code: step.code,
           metrics: step.validation as Record<string, unknown> | undefined
         });
+
+        // Back-fill LLM-authored code into the existing FeatureSpec for
+        // registered features. Without this, features loaded from the
+        // backend run state (e.g., after a page reload) wouldn't have
+        // their `code` field populated — and the apply pipeline would
+        // fall back to the method-based codegen template, producing
+        // wrong data for complex features like groupby shares.
+        if (step.status === 'registered' && step.code) {
+          const existing = featureStore.features.find((f) => f.id === featureId);
+          if (existing && existing.code !== step.code) {
+            featureStore.upsertFeature({ ...existing, code: step.code });
+          }
+        }
       }
     };
 
@@ -140,13 +171,19 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
           return;
         }
 
+        if (isDemoMode()) {
+          hydrateFeatures(projectId, { force: true });
+          setPanelError(null);
+          return;
+        }
+
         const hydrationError = useDataStore.getState().hydrationError;
         if (hydrationError) {
           setPanelError(hydrationError);
           return;
         }
 
-        hydrateFeatures(projectId, { force: true });
+        hydrateFeatures(projectId);
 
         // Hydrate feature lifecycle state from backend runs endpoint
         const store = useFeatureStore.getState();
@@ -156,20 +193,41 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
           return;
         }
 
-        const currentVersionId = store.currentVersionId[projectId];
-        const storageKey = `feature-engineering-messages-v3-${currentVersionId ?? 'default'}`;
-        const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
-        const session = useWorkflowSessionStore.getState().getSession(sessionKey);
+        // Resolve the feature pipeline run ID.  Prefer the store value (set by
+        // tool results during this session).  Fall back to the latest run for
+        // the project so we never accidentally use the workflow session runId
+        // (which comes from a different data store and causes 404s).
+        let featureRunId: string | undefined = store.featureRunId ?? undefined;
+        let runData: import('@/lib/api/featureEngineering').FeaturePipelineRunState | undefined;
 
-        if (session?.runId) {
-          const { run } = await fetchFeatureRun(session.runId);
-          if (cancelled) {
-            return;
+        if (featureRunId && !isFeaturePipelineRunId(featureRunId)) {
+          useFeatureStore.getState().setFeatureRunId(null);
+          featureRunId = undefined;
+        }
+
+        if (featureRunId) {
+          try {
+            const { run } = await fetchFeatureRun(featureRunId);
+            if (cancelled) return;
+            runData = run;
+          } catch {
+            // Stale or conflated ID — clear it and fall through to project-level lookup
+            useFeatureStore.getState().setFeatureRunId(null);
+            featureRunId = undefined;
           }
-          hydrateRunIntoStore(run);
+        }
+
+        if (!featureRunId) {
+          const { runs } = await fetchFeatureRuns(projectId, 1);
+          if (cancelled) return;
+          runData = runs[0];
+        }
+
+        if (runData) {
+          hydrateRunIntoStore(runData);
 
           // Derive currentStage from the last step's status
-          const steps = Object.values(run.features ?? {});
+          const steps = Object.values(runData.features ?? {});
           if (steps.length > 0) {
             const lastStep = steps[steps.length - 1];
             const derivedStage =
@@ -229,8 +287,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
 
   // --- Derived feature data ---
   const projectFeatures = useMemo(
-    () => features.filter((feature) => feature.projectId === projectId),
-    [features, projectId]
+    () => features.filter((feature) =>
+      feature.projectId === projectId
+      && belongsToCurrentVersion(selectedVersionId, feature.versionId)
+    ),
+    [features, projectId, selectedVersionId]
   );
 
   const activeFeatures = useMemo(
@@ -242,6 +303,26 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     () => new Map(projectFeatures.map((feature) => [feature.id, feature])),
     [projectFeatures]
   );
+
+  const currentVersionNotebookId = useMemo(() => {
+    const fallbackVersion = versionEntries[0];
+    const resolvedVersion = selectedVersionId
+      ? versionEntries.find((version) => version.id === selectedVersionId) ?? fallbackVersion
+      : fallbackVersion;
+    return resolvedVersion?.notebookId;
+  }, [selectedVersionId, versionEntries]);
+
+  // --- Suggestion drafts (extracted hook) ---
+  const {
+    suggestionDrafts,
+    toggleSuggestion,
+    updateSuggestionControl,
+  } = useSuggestionDrafts({
+    projectId,
+    currentVersionId: selectedVersionId,
+    featureById,
+    setPanelError,
+  });
 
   // --- Apply (extracted hook) ---
   const {
@@ -256,21 +337,11 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleApplyFeatures,
   } = useFeatureApply({
     projectId,
+    currentVersionId: selectedVersionId,
+    notebookId: currentVersionNotebookId,
     projectFeatures,
     selectedDatasetFile,
     setSelectedDataset,
-  });
-
-  // --- Suggestion drafts (extracted hook) ---
-  const {
-    suggestionDrafts,
-    setSuggestionDrafts,
-    toggleSuggestion,
-    updateSuggestionControl,
-  } = useSuggestionDrafts({
-    projectId,
-    featureById,
-    setPanelError,
   });
 
   // --- Versioning (extracted hook) ---
@@ -278,6 +349,7 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     versions,
     currentVersionId,
     currentVersion,
+    chatSessionVersion,
     isApproved,
     isCurrentVersionDraft,
     approveVersion,
@@ -297,7 +369,6 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     handleDeleteConfirm,
   } = useFeatureVersioning({
     projectId,
-    setSuggestionDrafts,
     setPanelError,
     setApplyStatus,
     setApplyMessage,
@@ -312,15 +383,25 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     setIsReadinessExpanded
   } = useFeatureReadiness(projectId, activeFeatures, datasetColumns, currentVersion);
 
-  // --- Code preview sync (extracted hook) ---
-  useFeatureCodeGen(activeFeatures, selectedDatasetFile);
-
-  // --- Default dataset selection effect (prefer previous phase's dataset) ---
+  // --- Default dataset selection effect ---
+  // Precedence order when the local state is empty (fresh mount, tab switch,
+  // page reload):
+  //   1. This phase's own persisted dataset (so user selections survive
+  //      remounts and tab switches within the FE phase).
+  //   2. The previous phase's dataset (cross-phase continuity from
+  //      preprocessing → FE).
+  //   3. pickBestDataset fallback (heuristic: first processed or first file).
+  //
+  // The previous code only checked the 'preprocessing' phase, which meant
+  // any user dataset change within FE was overwritten on the next remount
+  // with the preprocessing phase's dataset. Reported by user: "everytime a
+  // go away from the draft pipeline of FE, to some other tab or the page
+  // is refreshed, it switches to a single datafile again and again."
   useEffect(() => {
     if (!selectedDataset && datasetFiles.length > 0) {
-      const previousId = getPreviousPhaseDataset(projectId, 'preprocessing');
-      const match = previousId
-        ? datasetFiles.find(f => f.id === previousId || f.metadata?.datasetId === previousId)
+      const persistedId = getPreviousPhaseDataset(projectId, 'feature-engineering', 'preprocessing');
+      const match = persistedId
+        ? datasetFiles.find(f => f.id === persistedId || f.metadata?.datasetId === persistedId)
         : undefined;
       setSelectedDataset(match?.id ?? pickBestDataset(datasetFiles).id);
     }
@@ -337,8 +418,8 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     const columns = selectedDatasetFile.metadata?.columns ?? [];
     if (columns.length === 0) return;
 
-    if (!targetColumn || !columns.includes(targetColumn)) {
-      setTargetColumn(columns[0]);
+    if (targetColumn && !columns.includes(targetColumn)) {
+      setTargetColumn(undefined);
     }
   }, [selectedDatasetFile, targetColumn]);
 
@@ -354,11 +435,14 @@ export function useFeaturePipelineState(projectId: string): UseFeaturePipelineSt
     versions,
     currentVersionId,
     currentVersion,
+    chatSessionVersion,
     isApproved,
     isCurrentVersionDraft,
     projectFeatures,
     activeFeatures,
     featureById,
+    featureSteps,
+    currentStage,
     readinessReport,
     isReadyForApproval,
     readinessReportUnlocked,

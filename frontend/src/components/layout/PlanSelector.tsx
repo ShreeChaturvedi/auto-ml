@@ -13,7 +13,7 @@ import {
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
 import { usePlanChatStore, selectInProgressChats } from '@/stores/planChatStore';
-import { useProjectPlans } from '@/hooks/useProjectPlans';
+import { useProjectPlans, selectActivePlanChatId } from '@/hooks/useProjectPlans';
 import { cn } from '@/lib/utils';
 
 interface PlanSelectorProps {
@@ -41,13 +41,23 @@ export function PlanSelector({
     effectiveProjectId ?? ''
   );
 
+  const isInitialized = usePlanChatStore((s) => s.isInitialized);
   const inProgressChats = usePlanChatStore(useShallow((s) => selectInProgressChats(s, effectiveProjectId)));
 
-  if (!effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
+  const activePlanChatId = useProjectStore(selectActivePlanChatId(effectiveProjectId));
+
+  if (!isInitialized || !effectiveProjectId || (plans.length === 0 && inProgressChats.length === 0)) {
     return null;
   }
 
+  const activeChat = activePlanChatId ? inProgressChats.find((c) => c.id === activePlanChatId) : null;
   const activePlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
+
+  // Show active chat name if a chat is selected, otherwise show plan name
+  const triggerLabel = activeChat?.name ?? activePlan?.name ?? 'Plans';
+  const triggerIcon = activeChat
+    ? <MessageSquare className="h-4 w-4 text-muted-foreground" />
+    : <ClipboardList className="h-4 w-4 text-muted-foreground" />;
 
   return (
     <DropdownMenu>
@@ -60,9 +70,9 @@ export function PlanSelector({
             className
           )}
         >
-          {iconSlot ?? <ClipboardList className="h-4 w-4 text-primary" />}
+          {iconSlot ?? triggerIcon}
           <span className={cn('truncate text-left', nameMaxWidthClass ?? 'max-w-[150px]')}>
-            {activePlan?.name ?? inProgressChats[0]?.name ?? 'Plans'}
+            {triggerLabel}
           </span>
         </Button>
       </DropdownMenuTrigger>
@@ -76,11 +86,14 @@ export function PlanSelector({
               <DropdownMenuItem
                 key={chat.id}
                 onClick={() => navigate(`/project/${effectiveProjectId}/upload?chatId=${chat.id}`)}
-                className="cursor-pointer"
+                className={cn(
+                  "cursor-pointer",
+                  activePlanChatId === chat.id && "bg-accent text-accent-foreground font-medium"
+                )}
               >
-                <MessageSquare className="h-4 w-4 mr-2 text-amber-500" />
+                <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />
                 <span className="truncate flex-1">{chat.name}</span>
-                <span className="ml-auto text-[10px] text-amber-500 shrink-0">Draft</span>
+                <span className="ml-auto text-[10px] text-muted-foreground shrink-0">Draft</span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
@@ -92,7 +105,7 @@ export function PlanSelector({
             onClick={() => handleOpenPlan(plan.id)}
             className={cn(
               "cursor-pointer",
-              plan.id === selectedPlanId ? "bg-accent text-accent-foreground font-medium" : ""
+              !activePlanChatId && plan.id === selectedPlanId && "bg-accent text-accent-foreground font-medium"
             )}
           >
             <ClipboardList className="h-4 w-4 mr-2 opacity-70" />
@@ -102,7 +115,7 @@ export function PlanSelector({
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleCreateNewPlan} className="cursor-pointer text-primary">
           <Plus className="h-4 w-4 mr-2" />
-          New plan file
+          New Plan
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

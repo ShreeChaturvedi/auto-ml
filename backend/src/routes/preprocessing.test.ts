@@ -6,13 +6,15 @@ import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 
 import { createPreprocessingRouter } from './preprocessing.js';
 
-const { listMock } = vi.hoisted(() => ({
-  listMock: vi.fn()
+const { listMock, listByProjectMock } = vi.hoisted(() => ({
+  listMock: vi.fn(),
+  listByProjectMock: vi.fn()
 }));
 
 vi.mock('../repositories/datasetRepository.js', () => ({
   createDatasetRepository: vi.fn(() => ({
-    list: listMock
+    list: listMock,
+    listByProject: listByProjectMock
   }))
 }));
 
@@ -27,6 +29,7 @@ describeRouteSuite('preprocessing routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listMock.mockResolvedValue([]);
+    listByProjectMock.mockResolvedValue([]);
   });
 
   it('returns 404 for removed legacy analyze endpoint', async () => {
@@ -57,7 +60,7 @@ describeRouteSuite('preprocessing routes', () => {
   });
 
   it('keeps preprocessing tables endpoint available', async () => {
-    listMock.mockResolvedValue([
+    listByProjectMock.mockResolvedValue([
       {
         datasetId: 'dataset-1',
         projectId: 'project-1',

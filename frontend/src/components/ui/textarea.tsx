@@ -5,11 +5,15 @@ import { cn } from "@/lib/utils"
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.ComponentProps<"textarea">
->(({ className, ...props }, ref) => {
+>(({ className, id, name, ...props }, ref) => {
+  const generatedId = React.useId()
+
   return (
     <textarea
+      id={id ?? (name ? undefined : generatedId)}
+      name={name}
       className={cn(
-        "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neutral-500 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        "flex min-h-[80px] w-full rounded-md border border-input bg-background dark:bg-white/[0.03] px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground hover:border-ring focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
         className
       )}
       ref={ref}

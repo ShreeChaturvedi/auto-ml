@@ -63,7 +63,7 @@ export function GoogleOAuthCallback() {
               </div>
             </div>
             <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Authentication Failed</h1>
+              <h1 className="text-2xl font-semibold tracking-tight font-display">Authentication Failed</h1>
               <p className="text-sm text-muted-foreground">{error}</p>
             </div>
             <Button
@@ -85,7 +85,7 @@ export function GoogleOAuthCallback() {
         <div className="space-y-6 text-center py-8">
           <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
           <div className="space-y-2">
-            <h1 className="text-xl font-semibold tracking-tight">Completing sign in...</h1>
+            <h1 className="text-xl font-semibold tracking-tight font-display">Completing sign in...</h1>
             <p className="text-sm text-muted-foreground">
               Please wait while we complete your Google authentication.
             </p>

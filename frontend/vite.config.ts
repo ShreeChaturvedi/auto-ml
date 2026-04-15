@@ -6,7 +6,7 @@ const INTENTIONAL_LAZY_CHUNK_WARNING_LIMIT_KB = 5000
 
 const VENDOR_CHUNK_RULES = [
   { name: 'monaco', patterns: ['@monaco-editor', 'monaco-editor'] },
-  { name: 'plotly', patterns: ['plotly.js-dist-min', 'react-plotly.js'] },
+  { name: 'plotly', patterns: ['plotly.js', 'react-plotly.js'] },
   { name: 'pdf', patterns: ['react-pdf', 'pdfjs-dist'] },
   { name: 'duckdb', patterns: ['@duckdb/duckdb-wasm'] },
   { name: 'cytoscape', patterns: ['cytoscape'] },
@@ -35,12 +35,22 @@ function getVendorChunkName(id: string): string | undefined {
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      'plotly.js/dist/plotly': 'plotly.js-dist-min',
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      // Exact-match: swap Shiki's full bundle (~300+ grammars) for the web bundle (~57).
+      // Uses regex with $ anchor so subpath imports like shiki/engine/javascript pass through.
+      { find: /^shiki$/, replacement: 'shiki/bundle/web' },
+    ],
     // Ensure React is deduplicated to prevent multiple instances
     dedupe: ['react', 'react-dom'],
+  },
+  optimizeDeps: {
+    // Keep CSP-sensitive packages out of Vite's prebundle cache so dev mode
+    // always executes the patched sources instead of stale optimized chunks.
+    // NOTE: plotly.js / react-plotly.js MUST remain prebundled — they ship
+    // CommonJS and rely on Vite's CJS→ESM transform; excluding them causes
+    // "exports is not defined" at runtime.
+    exclude: ['zod', '@hookform/resolvers', '@hookform/resolvers/zod', 'pdfjs-dist'],
   },
   server: {},
   build: {

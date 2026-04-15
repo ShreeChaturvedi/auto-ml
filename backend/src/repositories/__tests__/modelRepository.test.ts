@@ -66,6 +66,13 @@ describe('PgModelRepository', () => {
 
     it('serializes featureColumns as JSON string, not PG array', async () => {
       mockQuery.mockResolvedValueOnce({
+        rows: [
+          { column_name: 'feature_types' },
+          { column_name: 'sample_request' },
+          { column_name: 'version' },
+        ],
+      });
+      mockQuery.mockResolvedValueOnce({
         rows: [{
           model_id: 'test-id',
           project_id: 'proj-1',
@@ -87,7 +94,7 @@ describe('PgModelRepository', () => {
 
       await repo.create(baseInput);
 
-      const params = mockQuery.mock.calls[0][1];
+      const params = mockQuery.mock.calls[1][1];
       // $15 is featureColumns — must be a JSON string, NOT a JS array
       const featureColumnsParam = params[14];
       expect(typeof featureColumnsParam).toBe('string');
@@ -97,6 +104,13 @@ describe('PgModelRepository', () => {
     it('passes null for undefined featureColumns', async () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { featureColumns: _fc, ...inputWithout } = baseInput;
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { column_name: 'feature_types' },
+          { column_name: 'sample_request' },
+          { column_name: 'version' },
+        ],
+      });
       mockQuery.mockResolvedValueOnce({
         rows: [{
           model_id: 'test-id',
@@ -117,8 +131,39 @@ describe('PgModelRepository', () => {
 
       await repo.create(inputWithout);
 
-      const params = mockQuery.mock.calls[0][1];
+      const params = mockQuery.mock.calls[1][1];
       expect(params[14]).toBeNull();
+    });
+
+    it('omits optional feature_types/sample_request columns when the database schema lacks them', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { column_name: 'version' },
+        ],
+      });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          model_id: 'test-id',
+          project_id: 'proj-1',
+          dataset_id: 'ds-1',
+          name: 'Test Model',
+          template_id: 'random_forest_classifier',
+          task_type: 'classification',
+          library: 'sklearn',
+          algorithm: 'RandomForestClassifier',
+          parameters: { n_estimators: 100 },
+          metrics: { accuracy: 0.95 },
+          status: 'completed',
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      await repo.create(baseInput);
+
+      const sql = mockQuery.mock.calls[1][0] as string;
+      expect(sql).not.toContain('feature_types');
+      expect(sql).not.toContain('sample_request');
     });
   });
 
@@ -162,7 +207,16 @@ describe('PgModelRepository', () => {
         }],
       });
 
-      // Second query: the UPDATE
+      // Second query: discover available columns
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { column_name: 'feature_types' },
+          { column_name: 'sample_request' },
+          { column_name: 'version' },
+        ],
+      });
+
+      // Third query: the UPDATE
       mockQuery.mockResolvedValueOnce({
         rowCount: 1,
         rows: [{
@@ -189,8 +243,8 @@ describe('PgModelRepository', () => {
         featureColumns: ['age', 'income', 'score'],
       }));
 
-      // The UPDATE query is the second call
-      const updateParams = mockQuery.mock.calls[1][1];
+      // The UPDATE query is the third call
+      const updateParams = mockQuery.mock.calls[2][1];
       // $15 is featureColumns in the UPDATE
       const featureColumnsParam = updateParams[14];
       expect(typeof featureColumnsParam).toBe('string');

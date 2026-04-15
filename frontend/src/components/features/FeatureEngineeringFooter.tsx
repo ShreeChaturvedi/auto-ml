@@ -3,9 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
 import type { ReadinessReport } from '@/types/feature';
-import { ChevronDown, ChevronUp, FileOutput, Loader2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, FileOutput, Loader2, XCircle } from 'lucide-react';
 
 interface FeatureEngineeringFooterProps {
   readinessReportUnlocked: boolean;
@@ -19,8 +19,52 @@ interface FeatureEngineeringFooterProps {
   onApplyFeatures: () => void;
   applyStatus: 'idle' | 'loading' | 'success' | 'error';
   applyMessage: string | null;
-  isApproved: boolean;
   activeFeaturesCount: number;
+}
+
+function ApplyStatusCard({
+  status,
+  message
+}: {
+  status: 'success' | 'error';
+  message: string;
+}) {
+  const noNewColumns = /produced no new columns|output schema matches/i.test(message);
+
+  if (status === 'success') {
+    return (
+      <ToolCardShell
+        icon={CheckCircle2}
+        iconClassName="text-emerald-500"
+        title="Feature pipeline applied"
+        subtitle={message}
+        status="success"
+      />
+    );
+  }
+
+  return (
+    <ToolCardShell
+      icon={XCircle}
+      iconClassName="text-destructive"
+      title={noNewColumns ? 'No new feature columns were created' : 'Feature pipeline apply failed'}
+      subtitle={noNewColumns ? 'The selected features already exist or did not change the schema.' : 'Review the details before retrying.'}
+      status="failed"
+      variant="error"
+      expandable
+      defaultExpanded
+    >
+      <div className="space-y-2 px-3 py-2 text-xs leading-relaxed text-destructive">
+        <p className="whitespace-pre-wrap">{message}</p>
+        {noNewColumns ? (
+          <p className="text-muted-foreground">
+            Choose a different output name only after changing the enabled features, or disable features that have
+            already been applied to this dataset.
+          </p>
+        ) : null}
+      </div>
+    </ToolCardShell>
+  );
 }
 
 export function FeatureEngineeringFooter({
@@ -35,7 +79,6 @@ export function FeatureEngineeringFooter({
   onApplyFeatures,
   applyStatus,
   applyMessage,
-  isApproved,
   activeFeaturesCount
 }: FeatureEngineeringFooterProps) {
   return (
@@ -45,7 +88,7 @@ export function FeatureEngineeringFooter({
           <p className="text-sm font-medium">Unified Readiness Report</p>
           <p className="text-xs text-muted-foreground">
             {readinessReportUnlocked
-              ? 'Review enabled transformations and quality checks before approval.'
+              ? 'Review enabled transformations and quality checks before applying the derived dataset.'
               : 'Enable at least one feature to unlock the readiness report.'}
           </p>
         </div>
@@ -145,12 +188,11 @@ export function FeatureEngineeringFooter({
                 onChange={(event) => onOutputNameChange(event.currentTarget.value)}
                 placeholder="e.g. features_v1"
                 className="h-8 text-xs"
-                disabled={isApproved}
               />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Format</Label>
-              <Select value={outputFormat} onValueChange={onOutputFormatChange} disabled={isApproved}>
+              <Select value={outputFormat} onValueChange={onOutputFormatChange}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -164,7 +206,7 @@ export function FeatureEngineeringFooter({
             <Button
               className="h-8 text-xs"
               onClick={onApplyFeatures}
-              disabled={applyStatus === 'loading' || isApproved || activeFeaturesCount === 0}
+              disabled={applyStatus === 'loading' || activeFeaturesCount === 0}
             >
               {applyStatus === 'loading' ? (
                 <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
@@ -175,10 +217,8 @@ export function FeatureEngineeringFooter({
             </Button>
           </div>
 
-          {applyMessage ? (
-            <p className={cn('text-xs', applyStatus === 'error' ? 'text-destructive' : 'text-emerald-600')}>
-              {applyMessage}
-            </p>
+          {applyMessage && (applyStatus === 'success' || applyStatus === 'error') ? (
+            <ApplyStatusCard status={applyStatus} message={applyMessage} />
           ) : null}
         </CardContent>
       </Card>

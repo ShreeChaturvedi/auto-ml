@@ -5,11 +5,11 @@ import { cn } from '@/lib/utils';
 
 interface SliderProps
   extends React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root> {
-  /** Tailwind bg class for the filled range (e.g. from projectColorClasses.fill). Falls back to bg-primary. */
+  /** Tailwind bg class for the filled range (e.g. bg-accent-fill). Falls back to bg-primary. */
   rangeClassName?: string;
-  /** Tailwind bg class for the unfilled track background (e.g. from projectColorClasses.fillMuted). Falls back to bg-secondary. */
+  /** Tailwind bg class for the unfilled track background (e.g. bg-accent-bg). Falls back to bg-secondary. */
   trackClassName?: string;
-  /** Tailwind border class for the thumb (e.g. from projectColorClasses.borderAccent). Falls back to border-primary. */
+  /** Tailwind border class for the thumb (e.g. border-accent-fill). Falls back to border-primary. */
   thumbClassName?: string;
 }
 

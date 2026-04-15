@@ -1,0 +1,38 @@
+# Cursor Agent workspace ignore rules (gitignore-style)
+# Reduces @file indexing cost and prevents runaway CPU during interactive startup.
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs / caches
+.dist/
+dist/
+build/
+out/
+coverage/
+**/.next/
+**/.cache/
+**/.vite/
+**/.turbo/
+**/.ruff_cache/
+
+# Tooling artifacts
+.venv/
+venv/
+**/.venv/
+
+# Agent / tooling metadata that shouldn't be indexed
+.cursor/
+.claude/
+.agents/
+
+# Media / large binaries
+*.mp4
+*.mov
+*.zip
+*.tar
+*.gz
+
+# Logs
+*.log

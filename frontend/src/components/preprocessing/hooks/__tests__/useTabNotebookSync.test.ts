@@ -21,12 +21,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import type { MutableRefObject } from 'react';
 
 // ── Mocks ─────────────────────────────────────────────────────
 
 const listNotebooksMock = vi.fn();
+const listCellsMock = vi.fn();
 const createNotebookApiMock = vi.fn();
 const updateNotebookApiMock = vi.fn();
 const deleteNotebookApiMock = vi.fn();
@@ -36,8 +37,7 @@ vi.mock('@/lib/api/notebooks', () => ({
   createNotebook: (...args: unknown[]) => createNotebookApiMock(...args),
   updateNotebook: (...args: unknown[]) => updateNotebookApiMock(...args),
   deleteNotebook: (...args: unknown[]) => deleteNotebookApiMock(...args),
-  getNotebook: vi.fn(),
-  listCells: vi.fn().mockResolvedValue([]),
+  listCells: (...args: unknown[]) => listCellsMock(...args),
   getCell: vi.fn(),
   createCell: vi.fn(),
   updateCell: vi.fn(),
@@ -91,6 +91,7 @@ function makeNotebook(overrides: Partial<Notebook> = {}): Notebook {
     notebookId: 'nb-1',
     projectId: 'proj-1',
     name: 'Notebook 1',
+    kind: 'phase',
     metadata: {},
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -100,6 +101,16 @@ function makeNotebook(overrides: Partial<Notebook> = {}): Notebook {
 
 function makeRef<T>(value: T): MutableRefObject<T> {
   return { current: value };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -161,6 +172,7 @@ describe('useTabNotebookSync', () => {
     vi.clearAllMocks();
     useNotebookStore.getState().reset();
     listNotebooksMock.mockResolvedValue([]);
+    listCellsMock.mockResolvedValue([]);
     createNotebookApiMock.mockImplementation(
       async (_pid: string, req: { name?: string; metadata?: unknown }) =>
         makeNotebook({
@@ -183,6 +195,41 @@ describe('useTabNotebookSync', () => {
   // ── ensureNotebookForTab ────────────────────────────────────
 
   describe('ensureNotebookForTab', () => {
+    it('auto-resolves only the active workbook notebook on mount instead of reconciling every workbook', async () => {
+      const activeTab = makeTab({ id: 'tab-active', name: 'Workbook 1', notebookId: null });
+      const backgroundTab = makeTab({ id: 'tab-bg', name: 'Workbook 2', notebookId: null });
+      const tabsRef = makeRef([activeTab, backgroundTab]);
+      const activeTabIdRef = makeRef('tab-active');
+      const setTabNotebookIdMock = vi.fn();
+
+      useNotebookStore.setState({
+        currentProjectId: 'proj-1',
+        notebooks: [],
+        activeNotebookId: null,
+        notebook: null
+      });
+
+      renderHook(() =>
+        useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady: true,
+          tabsRef,
+          activeTabIdRef,
+          tabs: [activeTab, backgroundTab],
+          activeTab,
+          setTabNotebookId: setTabNotebookIdMock
+        })
+      );
+
+      await waitFor(() => {
+        expect(createNotebookApiMock).toHaveBeenCalledTimes(1);
+      });
+
+      expect(setTabNotebookIdMock).toHaveBeenCalledWith('tab-active', expect.any(String));
+      expect(setTabNotebookIdMock).not.toHaveBeenCalledWith('tab-bg', expect.anything());
+      expect(deleteNotebookApiMock).not.toHaveBeenCalled();
+    });
+
     it('creates a notebook WITH preprocessing metadata when forceCreate is true', async () => {
       const tab = makeTab({ id: 'tab-x', name: 'Processing X', notebookId: null });
       const { result } = renderSyncHook({ tabs: [tab], activeTabId: 'tab-x' });
@@ -237,9 +284,35 @@ describe('useTabNotebookSync', () => {
       });
     });
 
+    it('re-adopts the existing preprocessing notebook for a remounted tab before creating a new one', async () => {
+      const remountedNotebook = makeNotebook({
+        notebookId: 'nb-remount',
+        name: 'Workbook 1',
+        metadata: { phase: 'preprocessing', tabId: 'tab-remount', tabName: 'Workbook 1' }
+      });
+      const tab = makeTab({ id: 'tab-remount', name: 'Workbook 1', notebookId: null });
+      const { result, setTabNotebookIdMock } = renderSyncHook({
+        tabs: [tab],
+        activeTabId: 'tab-remount'
+      });
+
+      enableStoreForProject('proj-1', [remountedNotebook]);
+      listNotebooksMock.mockResolvedValue([remountedNotebook]);
+
+      let notebookId = null;
+      await act(async () => {
+        notebookId = await result.current.ensureNotebookForTab(tab);
+      });
+
+      expect(notebookId).toBe('nb-remount');
+      expect(setTabNotebookIdMock).toHaveBeenCalledWith('tab-remount', 'nb-remount');
+      expect(createNotebookApiMock).not.toHaveBeenCalled();
+    });
+
     it('returns existing notebookId when tab already has a valid binding', async () => {
       const nb = makeNotebook({
         notebookId: 'nb-existing',
+        kind: 'phase',
         metadata: { phase: 'preprocessing', tabId: 'tab-bound', tabName: 'P1' }
       });
       const tab = makeTab({ id: 'tab-bound', name: 'P1', notebookId: 'nb-existing' });
@@ -260,6 +333,68 @@ describe('useTabNotebookSync', () => {
 
       expect(notebookId).toBe('nb-existing');
       expect(createNotebookApiMock).not.toHaveBeenCalled();
+    });
+
+    it('does not clear or recreate a valid notebook binding for an inactive tab', async () => {
+      const visibleNotebook = makeNotebook({
+        notebookId: 'nb-visible',
+        kind: 'phase',
+        metadata: { phase: 'preprocessing', tabId: 'tab-visible', tabName: 'Visible' }
+      });
+      const backgroundNotebook = makeNotebook({
+        notebookId: 'nb-background',
+        kind: 'phase',
+        metadata: { phase: 'preprocessing', tabId: 'tab-background', tabName: 'Background' }
+      });
+      const visibleTab = makeTab({ id: 'tab-visible', name: 'Visible', notebookId: 'nb-visible' });
+      const backgroundTab = makeTab({ id: 'tab-background', name: 'Background', notebookId: 'nb-background' });
+      const { result, setTabNotebookIdMock, tabsRef, activeTabIdRef } = renderSyncHook({
+        tabs: [visibleTab, backgroundTab],
+        activeTabId: 'tab-visible'
+      });
+      tabsRef.current = [visibleTab, backgroundTab];
+      activeTabIdRef.current = 'tab-visible';
+
+      enableStoreForProject('proj-1', [visibleNotebook, backgroundNotebook]);
+      listNotebooksMock.mockResolvedValue([visibleNotebook, backgroundNotebook]);
+
+      let notebookId: string | null = null;
+      await act(async () => {
+        notebookId = await result.current.ensureNotebookForTab(backgroundTab);
+      });
+
+      expect(notebookId).toBe('nb-background');
+      expect(setTabNotebookIdMock).not.toHaveBeenCalledWith('tab-background', null);
+      expect(createNotebookApiMock).not.toHaveBeenCalled();
+      expect(useNotebookStore.getState().activeNotebookId).toBe('nb-visible');
+    });
+
+    it('restores the visible notebook after creating one for an inactive tab', async () => {
+      const visibleNotebook = makeNotebook({
+        notebookId: 'nb-visible',
+        kind: 'phase',
+        metadata: { phase: 'preprocessing', tabId: 'tab-visible', tabName: 'Visible' }
+      });
+      const visibleTab = makeTab({ id: 'tab-visible', name: 'Visible', notebookId: 'nb-visible' });
+      const backgroundTab = makeTab({ id: 'tab-background', name: 'Background', notebookId: null });
+      const { result, tabsRef, activeTabIdRef } = renderSyncHook({
+        tabs: [visibleTab, backgroundTab],
+        activeTabId: 'tab-visible'
+      });
+      tabsRef.current = [visibleTab, backgroundTab];
+      activeTabIdRef.current = 'tab-visible';
+
+      enableStoreForProject('proj-1', [visibleNotebook]);
+      listNotebooksMock.mockResolvedValue([visibleNotebook]);
+
+      let notebookId: string | null = null;
+      await act(async () => {
+        notebookId = await result.current.ensureNotebookForTab(backgroundTab, { forceCreate: true });
+      });
+
+      expect(notebookId).toBeTruthy();
+      expect(createNotebookApiMock).toHaveBeenCalled();
+      expect(useNotebookStore.getState().activeNotebookId).toBe('nb-visible');
     });
 
     it('clears stale binding and creates new notebook when bound notebook is gone', async () => {
@@ -294,6 +429,197 @@ describe('useTabNotebookSync', () => {
   // ── reconcileTabNotebookMappings ────────────────────────────
 
   describe('reconcileTabNotebookMappings', () => {
+    it('does not create or delete duplicate notebooks when auto ensure and auto reconcile fire together', async () => {
+      const tab = makeTab({ id: 'tab-auto-race', name: 'Workbook Auto Race', notebookId: null });
+      const tabsRef = makeRef<PreprocessingWorkbook[]>([tab]);
+      const activeTabIdRef = makeRef('tab-auto-race');
+      const setTabNotebookIdMock = vi.fn((tabId: string, notebookId: string | null) => {
+        tabsRef.current = tabsRef.current.map((entry) => (
+          entry.id === tabId ? { ...entry, notebookId } : entry
+        ));
+      });
+
+      const deferredNotebook = createDeferred<Notebook>();
+      let createdNotebook: Notebook | null = null;
+
+      createNotebookApiMock.mockImplementation(async (_pid: string, req: { name?: string; metadata?: unknown }) => {
+        const notebook = makeNotebook({
+          notebookId: 'nb-auto-race',
+          name: req.name ?? 'Notebook',
+          metadata: (req.metadata as Record<string, unknown>) ?? {}
+        });
+        createdNotebook = notebook;
+        return deferredNotebook.promise;
+      });
+
+      listNotebooksMock.mockImplementation(async () => (
+        createdNotebook ? [createdNotebook] : []
+      ));
+
+      enableStoreForProject('proj-1', []);
+
+      renderHook(() =>
+        useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady: true,
+          tabsRef,
+          activeTabIdRef,
+          tabs: tabsRef.current,
+          activeTab: tabsRef.current[0],
+          setTabNotebookId: setTabNotebookIdMock
+        })
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        deferredNotebook.resolve(createdNotebook ?? makeNotebook({ notebookId: 'nb-auto-race' }));
+        await Promise.resolve();
+      });
+
+      await vi.waitFor(() => {
+        expect(createNotebookApiMock).toHaveBeenCalledTimes(1);
+      });
+      expect(deleteNotebookApiMock).not.toHaveBeenCalled();
+    });
+
+    it('does not duplicate notebook creation when reconcile runs during an in-flight ensure', async () => {
+      const tab = makeTab({ id: 'tab-race', name: 'Workbook Race', notebookId: null });
+      const tabsRef = makeRef<PreprocessingWorkbook[]>([tab]);
+      const activeTabIdRef = makeRef('tab-race');
+      const setTabNotebookIdMock = vi.fn((tabId: string, notebookId: string | null) => {
+        tabsRef.current = tabsRef.current.map((entry) => (
+          entry.id === tabId ? { ...entry, notebookId } : entry
+        ));
+      });
+
+      const deferredNotebook = createDeferred<Notebook>();
+      let createdNotebook: Notebook | null = null;
+
+      createNotebookApiMock.mockImplementation(async (_pid: string, req: { name?: string; metadata?: unknown }) => {
+        const notebook = makeNotebook({
+          notebookId: 'nb-race',
+          name: req.name ?? 'Notebook',
+          metadata: (req.metadata as Record<string, unknown>) ?? {}
+        });
+        createdNotebook = notebook;
+        return deferredNotebook.promise;
+      });
+
+      listNotebooksMock.mockImplementation(async () => (
+        createdNotebook ? [createdNotebook] : []
+      ));
+
+      enableStoreForProject('proj-1', []);
+
+      const { result, rerender } = renderHook(
+        ({ tabsReady }: { tabsReady: boolean }) => useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady,
+          tabsRef,
+          activeTabIdRef,
+          tabs: tabsRef.current,
+          activeTab: undefined,
+          setTabNotebookId: setTabNotebookIdMock
+        }),
+        { initialProps: { tabsReady: false } }
+      );
+
+      let ensurePromise!: Promise<string | null>;
+      await act(async () => {
+        ensurePromise = result.current.ensureNotebookForTab(tab);
+      });
+
+      rerender({ tabsReady: true });
+
+      let reconcilePromise!: Promise<void>;
+      await act(async () => {
+        reconcilePromise = result.current.reconcileTabNotebookMappings();
+      });
+
+      await act(async () => {
+        deferredNotebook.resolve(createdNotebook ?? makeNotebook({ notebookId: 'nb-race' }));
+        await ensurePromise;
+        await reconcilePromise;
+      });
+
+      await vi.waitFor(() => {
+        expect(createNotebookApiMock).toHaveBeenCalledTimes(1);
+      });
+      expect(deleteNotebookApiMock).not.toHaveBeenCalled();
+      expect(setTabNotebookIdMock).toHaveBeenCalledWith('tab-race', 'nb-race');
+      expect(tabsRef.current[0]?.notebookId).toBe('nb-race');
+    });
+
+    it('does not orphan-delete a notebook produced by an in-flight ensure', async () => {
+      const tab = makeTab({ id: 'tab-race-delete', name: 'Workbook Delete Guard', notebookId: null });
+      const tabsRef = makeRef<PreprocessingWorkbook[]>([tab]);
+      const activeTabIdRef = makeRef('tab-race-delete');
+      const setTabNotebookIdMock = vi.fn((tabId: string, notebookId: string | null) => {
+        tabsRef.current = tabsRef.current.map((entry) => (
+          entry.id === tabId ? { ...entry, notebookId } : entry
+        ));
+      });
+
+      const deferredNotebook = createDeferred<Notebook>();
+      let createdNotebook: Notebook | null = null;
+
+      createNotebookApiMock.mockImplementation(async (_pid: string, req: { name?: string; metadata?: unknown }) => {
+        const notebook = makeNotebook({
+          notebookId: 'nb-race-delete',
+          name: req.name ?? 'Notebook',
+          metadata: (req.metadata as Record<string, unknown>) ?? {}
+        });
+        createdNotebook = notebook;
+        return deferredNotebook.promise;
+      });
+
+      listNotebooksMock.mockImplementation(async () => (
+        createdNotebook ? [createdNotebook] : []
+      ));
+
+      enableStoreForProject('proj-1', []);
+
+      const { result, rerender } = renderHook(
+        ({ tabsReady }: { tabsReady: boolean }) => useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady,
+          tabsRef,
+          activeTabIdRef,
+          tabs: tabsRef.current,
+          activeTab: undefined,
+          setTabNotebookId: setTabNotebookIdMock
+        }),
+        { initialProps: { tabsReady: false } }
+      );
+
+      let ensurePromise!: Promise<string | null>;
+      await act(async () => {
+        ensurePromise = result.current.ensureNotebookForTab(tab);
+      });
+
+      rerender({ tabsReady: true });
+
+      let reconcilePromise!: Promise<void>;
+      await act(async () => {
+        reconcilePromise = result.current.reconcileTabNotebookMappings();
+      });
+
+      await act(async () => {
+        deferredNotebook.resolve(createdNotebook ?? makeNotebook({ notebookId: 'nb-race-delete' }));
+        await ensurePromise;
+        await reconcilePromise;
+      });
+
+      await vi.waitFor(() => {
+        expect(tabsRef.current[0]?.notebookId).toBe('nb-race-delete');
+      });
+      expect(deleteNotebookApiMock).not.toHaveBeenCalledWith('nb-race-delete');
+      expect(deleteNotebookApiMock).not.toHaveBeenCalled();
+    });
+
     it('creates notebooks with metadata for tabs that have no notebook', async () => {
       const tab1 = makeTab({ id: 'tab-1', name: 'Processing 1', notebookId: null });
       const tab2 = makeTab({ id: 'tab-2', name: 'Processing 2', notebookId: null });
@@ -550,6 +876,81 @@ describe('useTabNotebookSync', () => {
       expect(listNotebooksMock).not.toHaveBeenCalled();
     });
 
+    it('does NOT delete a standalone notebook during preprocessing reconcile', async () => {
+      // Regression guard: a standalone (exploration) notebook from the data
+      // viewer must never be deleted by the preprocessing reconcile loop, even
+      // when it has no binding to any preprocessing tab.
+      const boundNb = makeNotebook({
+        notebookId: 'nb-bound',
+        name: 'Processing 1',
+        kind: 'phase',
+        metadata: { phase: 'preprocessing', tabId: 'tab-1' }
+      });
+      const standaloneNb = makeNotebook({
+        notebookId: 'nb-standalone',
+        name: 'Scratch Notebook',
+        kind: 'standalone',
+        metadata: {}
+      });
+      const tab = makeTab({ id: 'tab-1', name: 'Processing 1', notebookId: 'nb-bound' });
+      const { result, tabsRef } = renderSyncHook({
+        tabs: [tab],
+        activeTabId: 'tab-1'
+      });
+      tabsRef.current = [tab];
+
+      enableStoreForProject('proj-1', [boundNb, standaloneNb]);
+      listNotebooksMock.mockResolvedValue([boundNb, standaloneNb]);
+
+      await act(async () => {
+        await result.current.reconcileTabNotebookMappings();
+      });
+
+      // Standalone notebook must never be deleted.
+      expect(deleteNotebookApiMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'nb-standalone'
+      );
+      // And it must still be present in the store.
+      const notebooks = useNotebookStore.getState().notebooks;
+      expect(notebooks.some((n) => n.notebookId === 'nb-standalone')).toBe(true);
+    });
+
+    it('does NOT adopt a standalone notebook for an unbound tab', async () => {
+      // An unassigned tab must create a fresh phase notebook instead of
+      // adopting a standalone one, even if the standalone has no binding.
+      const standaloneNb = makeNotebook({
+        notebookId: 'nb-standalone',
+        name: 'Scratch',
+        kind: 'standalone',
+        metadata: {}
+      });
+      const tab = makeTab({ id: 'tab-1', name: 'Processing 1', notebookId: null });
+      const { result, setTabNotebookIdMock, tabsRef } = renderSyncHook({
+        tabs: [tab],
+        activeTabId: 'tab-1'
+      });
+      tabsRef.current = [tab];
+
+      enableStoreForProject('proj-1', [standaloneNb]);
+      listNotebooksMock.mockResolvedValue([standaloneNb]);
+
+      await act(async () => {
+        await result.current.reconcileTabNotebookMappings();
+      });
+
+      // The standalone's id must never be assigned to the tab.
+      expect(setTabNotebookIdMock).not.toHaveBeenCalledWith('tab-1', 'nb-standalone');
+      // A new phase notebook should have been created instead.
+      expect(createNotebookApiMock).toHaveBeenCalled();
+      const createCall = createNotebookApiMock.mock.calls[0];
+      expect(createCall[1].metadata).toEqual({
+        phase: 'preprocessing',
+        tabId: 'tab-1',
+        tabName: 'Processing 1'
+      });
+    });
+
     it('deletes orphan notebooks not bound to any tab', async () => {
       const boundNb = makeNotebook({
         notebookId: 'nb-bound',
@@ -581,6 +982,53 @@ describe('useTabNotebookSync', () => {
 
       // The orphan should have been deleted
       expect(deleteNotebookApiMock).toHaveBeenCalled();
+    });
+  });
+
+  describe('reconcileTabNotebookMappings', () => {
+    it('does not delete orphan preprocessing notebooks that still have persisted cells', async () => {
+      const orphanNotebook = makeNotebook({
+        notebookId: 'nb-with-cells',
+        metadata: { phase: 'preprocessing', tabId: 'old-tab', tabName: 'Workbook 1' }
+      });
+      const activeNotebook = makeNotebook({
+        notebookId: 'nb-active',
+        metadata: { phase: 'preprocessing', tabId: 'tab-1', tabName: 'Workbook 1' }
+      });
+      const tab = makeTab({ id: 'tab-1', name: 'Workbook 1', notebookId: 'nb-active' });
+      const tabsRef = makeRef([tab]);
+      const activeTabIdRef = makeRef('tab-1');
+      const setTabNotebookIdMock = vi.fn();
+
+      useNotebookStore.setState({
+        currentProjectId: 'proj-1',
+        notebooks: [activeNotebook, orphanNotebook],
+        activeNotebookId: 'nb-active',
+        notebook: activeNotebook
+      });
+
+      listNotebooksMock.mockResolvedValue([activeNotebook, orphanNotebook]);
+      listCellsMock.mockImplementation(async (notebookId: string) =>
+        notebookId === 'nb-with-cells' ? [{ cellId: 'cell-1', position: 0, cellType: 'code' }] : []
+      );
+
+      const { result } = renderHook(() =>
+        useTabNotebookSync({
+          projectId: 'proj-1',
+          tabsReady: true,
+          tabsRef,
+          activeTabIdRef,
+          tabs: [tab],
+          activeTab: undefined,
+          setTabNotebookId: setTabNotebookIdMock
+        })
+      );
+
+      await act(async () => {
+        await result.current.reconcileTabNotebookMappings();
+      });
+
+      expect(deleteNotebookApiMock).not.toHaveBeenCalledWith('nb-with-cells');
     });
   });
 });

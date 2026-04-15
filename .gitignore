@@ -19,6 +19,7 @@ node_modules/
 index_check.txt
 routes_check.txt
 backend/frontend_dump.json
+tmp/
 
 # Empty shadcn alias structure
 frontend/@/
@@ -35,7 +36,9 @@ NOTEBOOK_IMPLEMENTATION_HANDOFF.md
 TRAINING_TAB_HANDOFF.md
 
 # GWS CLI skills (installed via `npx skills add`)
-.agents/
+# .agents/skills is a committed symlink to .claude/skills for Codex/Cursor/Windsurf compatibility.
+.agents/*
+!.agents/skills
 .claude/skills/gws-*
 .claude/skills/persona-*
 .claude/skills/recipe-*
@@ -53,8 +56,10 @@ Senior Design Project Proposal.pdf
 .opencode/
 
 # Local agent/debug logs
-.cursor/*.log
+.cursor/
+.playwright-cli/
 .superpowers/
+.vercel/
 
 # Git worktrees
 .worktrees/

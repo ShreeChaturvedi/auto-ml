@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useProjectStore } from '@/stores/projectStore';
 
@@ -18,6 +18,10 @@ describe('NlQueryWorkflow core behavior', () => {
     useProjectStore.setState({
       activeProjectId: null
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the english textarea in idle state', () => {
@@ -180,21 +184,20 @@ describe('NlQueryWorkflow core behavior', () => {
     expect(onPhaseChange).toHaveBeenCalledWith('idle');
   });
 
-  it('renders the model work panel during review', async () => {
-    vi.useFakeTimers();
+  it('renders the stream panel during generation', async () => {
+    const pending = new Promise<NlGenerationResult>(() => undefined);
     const handleRef = { current: null as NlQueryWorkflowHandle | null };
 
     render(
       <NlQueryWorkflow
-        {...buildProps()}
+        {...buildProps({ onGenerate: () => pending })}
         ref={handleRef}
       />
     );
 
     await triggerGenerate(handleRef);
-    await fastForwardReveal();
 
-    expect(screen.getByTestId('nl-work-plan-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('nl-stream-panel')).toBeInTheDocument();
   });
 
   it('reports revealing and reviewing phases through onPhaseChange', async () => {

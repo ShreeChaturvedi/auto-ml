@@ -1,17 +1,24 @@
-import { useMemo, useCallback } from 'react';
-import { CircleStar, ChevronRight, GitCompareArrows } from 'lucide-react';
+import { useMemo, useCallback, useEffect } from 'react';
+import { CircleStar, ChevronRight, Type, Hash } from 'lucide-react';
+import Papa from 'papaparse';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useModelStore } from '@/stores/modelStore';
 import { useExperimentsStore } from '@/stores/experimentsStore';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
-import { cn } from '@/lib/utils';
+import { cn, downloadBlob } from '@/lib/utils';
 import { SortHeader } from '@/components/ui/SortHeader';
-import { LOWER_IS_BETTER } from './modelIcons';
-import { formatMetric, filterByPredicates, PRIMARY_METRIC, detectTaskTypes } from './utils';
+import { LOWER_IS_BETTER, METRIC_ICONS } from './modelIcons';
+import {
+  filterModels,
+  formatMetric,
+  PRIMARY_METRIC,
+  detectTaskTypes,
+  findChampionModelId,
+  sortModels,
+} from './utils';
+import type { ExperimentSortField } from '@/types/experiments';
 
 /* ── Metric helpers ─────────────────────────────────────── */
 
@@ -58,25 +65,6 @@ function buildSmartColumns(taskTypes: ModelTaskType[], models: ModelRecord[]): [
   return cols;
 }
 
-/** Champion is the model with the best primary metric among completed models. */
-function findChampionId(models: ModelRecord[]): string | null {
-  let best: ModelRecord | null = null;
-  let bestVal = NaN;
-  for (const m of models) {
-    if (m.status !== 'completed') continue;
-    const primary = PRIMARY_METRIC[m.taskType];
-    const val = m.metrics[primary];
-    if (val == null || !Number.isFinite(val)) continue;
-    const lower = LOWER_IS_BETTER.has(primary);
-    if (Number.isNaN(bestVal) || (lower ? val < bestVal : val > bestVal)) {
-      bestVal = val;
-      best = m;
-    }
-  }
-  return best?.modelId ?? null;
-}
-
-
 /* ── Skeleton ghost rows ───────────────────────────────── */
 
 function GhostRows() {
@@ -95,9 +83,17 @@ function GhostRows() {
   );
 }
 
+/* ── Layout constants ──────────────────────────────────── */
+
+const TD = 'py-2.5 px-4';
+
 /* ── Leaderboard component ─────────────────────────────── */
 
-export function Leaderboard() {
+interface LeaderboardProps {
+  onExportReady?: (handler: (selectedOnly?: string[]) => void) => void;
+}
+
+export function Leaderboard({ onExportReady }: LeaderboardProps) {
   const models = useModelStore((s) => s.models);
   const isLoadingModels = useModelStore((s) => s.isLoadingModels);
 
@@ -105,53 +101,32 @@ export function Leaderboard() {
   const comparisonModelIds = useExperimentsStore((s) => s.comparisonModelIds);
   const selectModel = useExperimentsStore((s) => s.selectModel);
   const toggleComparison = useExperimentsStore((s) => s.toggleComparison);
-  const clearComparison = useExperimentsStore((s) => s.clearComparison);
   const activePredicates = useExperimentsStore((s) => s.activePredicates);
   const sortField = useExperimentsStore((s) => s.sortField);
   const sortDirection = useExperimentsStore((s) => s.sortDirection);
   const setSort = useExperimentsStore((s) => s.setSort);
+  const manualPredicates = useExperimentsStore((s) => s.manualPredicates);
+  const nameFilter = useExperimentsStore((s) => s.nameFilter);
 
-  const { themeColorClass: trophyColorClass, colorClasses } = useProjectThemeColor();
+  const trophyColorClass = 'text-accent-text';
   const taskTypes = useMemo(() => detectTaskTypes(models), [models]);
   const metricCols = useMemo(() => buildSmartColumns(taskTypes, models), [taskTypes, models]);
-  const championId = useMemo(() => findChampionId(models), [models]);
+  const championId = useMemo(() => findChampionModelId(models), [models]);
 
   const filteredModels = useMemo(
-    () => filterByPredicates(models, activePredicates),
-    [models, activePredicates]
+    () => filterModels(models, activePredicates, manualPredicates, nameFilter),
+    [models, activePredicates, manualPredicates, nameFilter]
   );
 
-  const sortedModels = useMemo(() => {
-    const sorted = [...filteredModels];
-    sorted.sort((a, b) => {
-      let aVal: number | string;
-      let bVal: number | string;
-
-      if (sortField === 'name') {
-        aVal = a.name.toLowerCase();
-        bVal = b.name.toLowerCase();
-      } else if (sortField === 'algorithm') {
-        aVal = a.algorithm.toLowerCase();
-        bVal = b.algorithm.toLowerCase();
-      } else if (sortField === 'createdAt') {
-        aVal = a.createdAt;
-        bVal = b.createdAt;
-      } else {
-        aVal = a.metrics[sortField] ?? -Infinity;
-        bVal = b.metrics[sortField] ?? -Infinity;
-      }
-
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [filteredModels, sortField, sortDirection]);
+  const sortedModels = useMemo(
+    () => sortModels(filteredModels, sortField, sortDirection),
+    [filteredModels, sortField, sortDirection]
+  );
 
   const metricExtremes = useMemo(() => {
     const result: Record<string, { best: number; worst: number }> = {};
     for (const [, key] of metricCols) {
-      const values = sortedModels
+      const values = filteredModels
         .map((m) => m.metrics[key])
         .filter((v): v is number => v != null && Number.isFinite(v));
       if (values.length < 2) continue;
@@ -162,10 +137,10 @@ export function Leaderboard() {
       };
     }
     return result;
-  }, [sortedModels, metricCols]);
+  }, [filteredModels, metricCols]);
 
   const handleSort = useCallback(
-    (field: string) => {
+    (field: ExperimentSortField) => {
       if (sortField === field) {
         setSort(field, sortDirection === 'asc' ? 'desc' : 'asc');
       } else {
@@ -175,18 +150,45 @@ export function Leaderboard() {
     [sortField, sortDirection, setSort]
   );
 
+  const handleExport = useCallback(
+    (selectedOnly?: string[]) => {
+      const data = selectedOnly
+        ? sortedModels.filter((m) => selectedOnly.includes(m.modelId))
+        : sortedModels;
+      if (data.length === 0) return;
+      const metricKeys = metricCols.map(([, key]) => key);
+      const rows = data.map((m) => ({
+        name: m.name,
+        algorithm: m.algorithm,
+        taskType: m.taskType,
+        status: m.status,
+        ...Object.fromEntries(metricKeys.map((k) => [k, m.metrics[k] ?? ''])),
+        createdAt: m.createdAt,
+      }));
+      const csv = Papa.unparse(rows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      downloadBlob(blob, `leaderboard-${timestamp}.csv`);
+    },
+    [sortedModels, metricCols],
+  );
+
+  useEffect(() => { onExportReady?.(handleExport); }, [onExportReady, handleExport]);
+
+  const sortProps = { sortField, sortDir: sortDirection, onToggle: handleSort, className: 'h-12' } as const;
+
   return (
     <div className="flex flex-col h-full">
       {/* Table */}
       <ScrollArea className="flex-1">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-10 border-b border-border/20">
+          <thead className="sticky top-0 bg-card/80 backdrop-blur-md z-20 border-b border-border/20">
             <tr>
               <th scope="col" className="w-8" />
-              <SortHeader field="name" label="Name" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
-              <SortHeader field="algorithm" label="Algorithm" sortField={sortField} sortDir={sortDirection} onToggle={handleSort} />
+              <SortHeader field="name" label="Name" {...sortProps} icon={Type} />
+              <SortHeader field="algorithm" label="Algorithm" {...sortProps} icon={Type} />
               {metricCols.map(([label, key]) => (
-                <SortHeader key={key} field={key} label={label} sortField={sortField} sortDir={sortDirection} onToggle={handleSort} align="right" />
+                <SortHeader key={key} field={key} label={label} {...sortProps} align="right" icon={METRIC_ICONS[key] ?? Hash} />
               ))}
               <th scope="col" className="w-8" />
             </tr>
@@ -202,10 +204,10 @@ export function Leaderboard() {
                 <tr
                   key={model.modelId}
                   className={cn(
-                    'transition-colors cursor-pointer border-b border-border/10 hover:bg-muted/20 group',
+                    'transition-colors cursor-pointer border-b border-border/10 hover:bg-muted/50 group',
                     isSelected && [
                       'bg-muted/40 border-l-2',
-                      colorClasses?.borderAccent ?? 'border-primary',
+                      'border-accent-fill',
                     ],
                     isChampion && !isSelected && 'bg-muted/10',
                     isCompared && 'ring-1 ring-inset ring-primary/20'
@@ -223,10 +225,10 @@ export function Leaderboard() {
                     <Checkbox
                       checked={isCompared}
                       onCheckedChange={() => toggleComparison(model.modelId)}
-                      className="h-3.5 w-3.5 group-hover:ring-1 group-hover:ring-muted-foreground/20 transition-shadow"
+                      className="h-3.5 w-3.5 group-hover:ring-1 group-hover:ring-muted-foreground/20 group-focus-within:ring-1 group-focus-within:ring-muted-foreground/20 transition-shadow"
                     />
                   </td>
-                  <td className="py-2.5 px-3 text-left font-semibold truncate max-w-[180px]">
+                  <td className={cn(TD, 'text-left font-semibold truncate max-w-[180px]')}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="truncate block">
@@ -243,7 +245,7 @@ export function Leaderboard() {
                       </TooltipContent>
                     </Tooltip>
                   </td>
-                  <td className="py-2.5 px-3 text-left text-muted-foreground truncate max-w-[130px]">
+                  <td className={cn(TD, 'text-left text-muted-foreground truncate max-w-[130px]')}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="truncate block">{model.algorithm}</span>
@@ -262,9 +264,9 @@ export function Leaderboard() {
                       <td
                         key={key}
                         className={cn(
-                          'py-2.5 px-3 text-right tabular-nums font-medium text-foreground/80',
-                          isBest && 'text-emerald-400 font-semibold',
-                          isWorst && 'text-red-400/50',
+                          TD, 'text-right font-mono tabular-nums font-medium text-foreground/80',
+                          isBest && 'text-metric-positive bg-metric-positive/8 dark:bg-metric-positive/12 font-semibold',
+                          isWorst && 'text-metric-negative dark:bg-metric-negative/10',
                         )}
                       >
                         {formatMetric(val)}
@@ -272,7 +274,7 @@ export function Leaderboard() {
                     );
                   })}
                   <td className="py-2.5 px-1 text-right">
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 transition-opacity inline-block" />
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 group-focus-within:opacity-60 transition-opacity inline-block" />
                   </td>
                 </tr>
               );
@@ -281,23 +283,9 @@ export function Leaderboard() {
         </table>
       </ScrollArea>
 
-      {comparisonModelIds.length > 0 && (
-        <div className="flex h-11 items-center justify-between border-t border-border/20 px-3 shrink-0 bg-card bulk-action-enter">
-          <div className="flex items-center gap-2.5">
-            <GitCompareArrows className="h-3 w-3 text-muted-foreground" />
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-muted/60 rounded-full px-2.5 py-0.5">
-              <span className="tabular-nums">{comparisonModelIds.length}</span> selected
-            </span>
-            {comparisonModelIds.length === 1 && (
-              <span className="text-[11px] text-muted-foreground">— select 1 more to compare</span>
-            )}
-            {comparisonModelIds.length >= 2 && (
-              <span className="text-[11px] text-muted-foreground">— viewing comparison</span>
-            )}
-          </div>
-          <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2" onClick={clearComparison}>
-            Clear
-          </Button>
+      {sortedModels.length === 0 && (activePredicates.length > 0 || manualPredicates.length > 0 || nameFilter.trim()) && (
+        <div className="flex items-center justify-center py-8">
+          <p className="text-[11px] text-muted-foreground">No models match all active filters</p>
         </div>
       )}
     </div>

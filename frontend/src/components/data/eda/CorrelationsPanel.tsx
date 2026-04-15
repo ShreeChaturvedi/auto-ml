@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Waypoints, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import { ChartEmptyIllustration } from '@/components/ui/illustrations';
 import { cn } from '@/lib/utils';
 import type { EdaSummary } from '@/types/file';
 import { PlotlyHeatmap } from './PlotlyHeatmap';
@@ -79,8 +80,8 @@ export function CorrelationsPanel({
   // Empty state: fewer than 2 numeric columns
   if (numericColumnNames.length < 2 || correlations.length === 0) {
     return (
-      <div className={cn('flex flex-col items-center justify-center py-16 text-muted-foreground', className)}>
-        <Waypoints className="h-10 w-10 mb-3 opacity-40" />
+      <div className={cn('flex flex-col items-center justify-center py-16 text-muted-foreground empty-state-enter', className)}>
+        <ChartEmptyIllustration className="mb-3 text-muted-foreground" />
         <p className="text-sm">Need at least 2 numeric columns for correlation analysis</p>
       </div>
     );
@@ -103,7 +104,7 @@ export function CorrelationsPanel({
           {/* Scatter reveal (animated expand / collapse) */}
           <div
             className={cn(
-              'overflow-hidden transition-all duration-300',
+              'overflow-hidden transition-[max-height,opacity] duration-300',
               selectedCell ? 'max-h-[500px] opacity-100 mt-4' : 'max-h-0 opacity-0',
             )}
           >

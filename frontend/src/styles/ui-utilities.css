@@ -1,0 +1,200 @@
+@layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Instrument Serif display heading utility */
+  .font-display {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: 0em;
+  }
+
+  /* Scroll shadow indicators */
+  .scroll-shadow-y {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent, black 16px,
+      black calc(100% - 16px), transparent
+    );
+  }
+
+  .scroll-shadow-x {
+    mask-image: linear-gradient(
+      to right,
+      transparent, black 16px,
+      black calc(100% - 16px), transparent
+    );
+  }
+
+  /* Skeleton shimmer gradient */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--muted-foreground) / 0.08) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: timeline-skeleton-sweep 1.5s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer { animation: none; }
+  }
+
+  /* Suppress transitions/animations during instant navigation (e.g. sidebar home).
+     !important overrides component-level transition declarations (e.g. shadcn/ui). */
+  [data-instant-nav],
+  [data-instant-nav] * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* MentionInput overlays */
+.mention-input-placeholder {
+  line-height: 1.5rem;
+  white-space: pre-wrap;
+}
+
+.mention-input-voice-caret {
+  width: 2px;
+  height: 1.15em;
+  border-radius: 999px;
+  background: var(--voice-theme-color, hsl(var(--primary)));
+  box-shadow: 0 0 0 1px hsl(var(--background)), 0 0 5px 1px hsl(var(--primary) / 0.35);
+  animation: voice-caret-pulse 900ms ease-in-out infinite;
+}
+
+/* Mention chip inside contentEditable */
+.mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 4px;
+  padding: 6px;
+  font-size: 0.85em;
+  font-weight: 500;
+  vertical-align: 0.2em;
+  user-select: none;
+  line-height: 1;
+  background: hsl(var(--muted) / 0.3);
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border) / 0.6);
+  margin: 0 2px;
+}
+.dark .mention-chip {
+  background: hsl(var(--border));
+  border-color: hsl(var(--border) / 0.8);
+}
+.mention-chip-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  order: -1;
+}
+
+/* ── Shared entrance animations ──────────────────────────── */
+
+/* KPI / card staggered entrance */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card-enter {
+  opacity: 0;
+  animation: card-enter 250ms ease-out both;
+}
+
+/* Empty state fade-in */
+@keyframes empty-state-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.empty-state-enter {
+  animation: empty-state-fade-in 400ms ease-out both;
+}
+
+/* Sparkline draw-on stroke animation */
+@keyframes sparkline-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.sparkline-draw {
+  animation: sparkline-draw 800ms ease-out forwards;
+}
+
+/* Normalized stroke draw-on (for pathLength="1" SVGs) */
+.stroke-draw-on {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: sparkline-draw 600ms var(--ease-out) forwards;
+}
+
+/* Draw on, hold, then draw off from the trailing end */
+@keyframes stroke-on-off {
+  0% {
+    stroke-dashoffset: 1;
+    animation-timing-function: ease-out;
+  }
+  15% {
+    stroke-dashoffset: 0;
+    animation-timing-function: linear;
+  }
+  70% {
+    stroke-dashoffset: 0;
+    animation-timing-function: ease-in;
+  }
+  99.9% {
+    stroke-dashoffset: -1;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+
+.stroke-draw-on-off {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: stroke-on-off 4.5s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-enter,
+  .empty-state-enter,
+  .sparkline-draw,
+  .stroke-draw-on,
+  .stroke-draw-on-off {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Dialog focus states */
+@layer components {
+  [role="dialog"] input:focus:not(:focus-visible),
+  [role="dialog"] textarea:focus:not(:focus-visible),
+  [role="dialog"] select:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Override Radix ScrollArea's inline display: table on children */
+  [data-radix-scroll-area-viewport]>* {
+    display: block !important;
+  }
+}
+

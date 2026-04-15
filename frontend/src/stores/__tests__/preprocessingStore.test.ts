@@ -113,6 +113,28 @@ describe('preprocessingStore hydration', () => {
     expect(state.controllerSummary).toBeNull();
   });
 
+  it('preserves tab-persisted dataset selection over backend activeDatasetId', () => {
+    // Simulate a derived (processed) dataset being selected before hydration,
+    // e.g. from a tab snapshot restore.  The backend snapshot still references
+    // the original source dataset as activeDatasetId.
+    usePreprocessingStore.setState({ selectedDatasetId: 'derived-dataset-42' });
+
+    const snapshot = buildSnapshot(); // activeDatasetId: 'dataset-1'
+    usePreprocessingStore.getState().hydrateRunSnapshot(snapshot);
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('derived-dataset-42');
+    expect(state.runId).toBe('prep-run-1');
+  });
+
+  it('falls back to backend activeDatasetId when no dataset is selected', () => {
+    // selectedDatasetId starts as null from resetPreprocessingStore
+    const snapshot = buildSnapshot(); // activeDatasetId: 'dataset-1'
+    usePreprocessingStore.getState().hydrateRunSnapshot(snapshot);
+
+    expect(usePreprocessingStore.getState().selectedDatasetId).toBe('dataset-1');
+  });
+
   it('clears stale controller state when hydrating an authoritative run snapshot', () => {
     usePreprocessingStore.setState({
       controllerSummary: {
@@ -254,6 +276,66 @@ describe('preprocessingStore hydration', () => {
     expect(state.latestCheckpointId).toBeNull();
     expect(state.timeline).toEqual([]);
     expect(state.controllerSummary).toBeNull();
+  });
+
+  it('preserves the active run when selecting a committed processed dataset within the same workbook', () => {
+    usePreprocessingStore.setState({
+      tables: [
+        {
+          datasetId: 'dataset-1',
+          name: 'dataset_1',
+          filename: 'dataset.csv',
+          sizeBytes: 123
+        },
+        {
+          datasetId: 'dataset-derived-1',
+          name: 'dataset_1_processed',
+          filename: 'dataset_processed.csv',
+          sizeBytes: 140
+        }
+      ],
+      selectedDatasetId: 'dataset-1',
+      runId: 'prep-run-1',
+      nextRunCellMode: 'continue',
+      latestCheckpointId: 'ckpt-1',
+      timeline: [
+        {
+          id: 'evt-1',
+          runId: 'prep-run-1',
+          stepId: 'step-1',
+          toolName: 'commit_transformation_step',
+          title: 'Commit transformation',
+          status: 'applied',
+          requiresApproval: false,
+          cellIds: ['cell-1'],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }
+      ],
+      controllerSummary: {
+        threadId: 'prep-thread:test',
+        turnMode: 'action_required',
+        currentNode: 'plan_step',
+        allowedTools: ['propose_transformation_step'],
+        allowTextResponse: false,
+        requireToolCall: true,
+        pendingApproval: false,
+        updatedAt: '2026-03-13T00:00:00.000Z'
+      }
+    });
+
+    usePreprocessingStore.getState().selectDataset('dataset-derived-1', {
+      preserveRunState: true
+    });
+
+    const state = usePreprocessingStore.getState();
+    expect(state.selectedDatasetId).toBe('dataset-derived-1');
+    expect(state.runId).toBe('prep-run-1');
+    expect(state.latestCheckpointId).toBe('ckpt-1');
+    expect(state.timeline).toHaveLength(1);
+    expect(state.controllerSummary).toMatchObject({
+      threadId: 'prep-thread:test'
+    });
   });
 
   it('clears controller summary when the active run is cleared', () => {

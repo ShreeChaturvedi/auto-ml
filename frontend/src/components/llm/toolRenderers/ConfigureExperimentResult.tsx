@@ -1,5 +1,8 @@
 import { Settings2 } from 'lucide-react';
 import { asRecord, asString } from '@/lib/typeCoercion';
+import { StatusPill } from '@/components/llm/shared/StatusPill';
+import { normalizeStatus } from './shared';
+import { DetailGrid, type DetailField } from './sharedComponents';
 
 export interface ConfigureExperimentOutput {
   experimentId: string;
@@ -17,32 +20,20 @@ export function ConfigureExperimentResult({ output }: { output: unknown }) {
   const experimentId = asString(out.experimentId);
   const status = asString(out.status);
 
-  const fields: [string, string | undefined][] = [
-    ['Name', name],
-    ['Model', modelType],
-    ['Split', splitStrategy],
-    ['ID', experimentId ? experimentId.slice(0, 12) : undefined],
+  const fields: DetailField[] = [
+    { label: 'Model', value: modelType },
+    { label: 'Split', value: splitStrategy },
+    { label: 'ID', value: experimentId ? experimentId.slice(0, 12) : undefined, mono: true },
   ];
 
   return (
     <div className="space-y-1.5 text-xs">
-      <div className="flex items-center gap-1.5 text-foreground font-medium">
+      <div className="flex items-center gap-1.5">
         <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
-        Experiment configured
-        {status && (
-          <span className="text-muted-foreground font-normal capitalize">· {status.replaceAll('_', ' ')}</span>
-        )}
+        <span className="font-medium text-foreground">{name}</span>
+        {status && <StatusPill status={normalizeStatus(status)} label={status} className="ml-auto" />}
       </div>
-      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
-        {fields.map(([label, value]) =>
-          value ? (
-            <div key={label} className="contents">
-              <span>{label}</span>
-              <span className={label === 'ID' ? 'font-mono' : ''}>{value}</span>
-            </div>
-          ) : null,
-        )}
-      </div>
+      <DetailGrid fields={fields} />
     </div>
   );
 }

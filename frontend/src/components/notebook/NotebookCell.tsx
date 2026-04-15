@@ -5,8 +5,10 @@
  * behavior is rendered by NotebookMarkdownCell + NotebookEditor section logic.
  */
 
-import { useState, useCallback, Suspense, useMemo } from 'react';
-import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useCallback, Suspense, useMemo } from 'react';
+import { useMonacoAutoHeight } from '@/hooks/useMonacoAutoHeight';
+import type { Monaco } from '@monaco-editor/react';
+import type { editor as MonacoEditor } from 'monaco-editor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -20,22 +22,21 @@ import {
   Square,
   Trash2,
   Loader2,
-  Copy,
-  ChevronDown,
-  ChevronUp,
   Bot,
   Lock,
   Check,
   X,
   AlertCircle
 } from 'lucide-react';
-import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
-import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
+import { CellMoveButtons } from './CellMoveButtons';
+import { NotebookCellOutput } from './NotebookCellOutput';
 import type { NotebookCell, LockOwner } from '@/types/notebook';
 import { cn } from '@/lib/utils';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useHighlightStore } from '@/stores/highlightStore';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
+import { formatDuration } from '@/components/experiments/utils';
 
 interface NotebookCellComponentProps {
   cell: NotebookCell;
@@ -52,13 +53,10 @@ interface NotebookCellComponentProps {
   onAccept?: () => void;
   onReject?: () => void;
   onCancel?: () => void;
-}
-
-function formatExecutionTime(ms: number): string {
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.round((ms % 60000) / 1000);
-  return `${minutes}m ${seconds}s`;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 export function NotebookCellComponent({
@@ -75,11 +73,14 @@ export function NotebookCellComponent({
   streamError,
   onAccept,
   onReject,
-  onCancel
+  onCancel,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown
 }: NotebookCellComponentProps) {
   const isHighlighted = useHighlightStore(s => s.highlightedCellIds.has(cell.cellId));
-  const [showOutput, setShowOutput] = useState(true);
-  const [outputCopied, copyOutput] = useCopyToClipboard();
+  const globalEditorOpts = useEditorMonacoOptions();
 
   const completionOptions = useMemo(
     () => ({ projectId, cellId: cell.cellId }),
@@ -89,6 +90,7 @@ export function NotebookCellComponent({
   const {
     localContent,
     resolvedTheme,
+    syntaxThemeId,
     handleContentChange,
     handleEditorMount,
     handleBeforeMount
@@ -101,6 +103,16 @@ export function NotebookCellComponent({
     completionOptions,
     preloadMonaco: true
   });
+
+  const { editorHeight, attachAutoHeight } = useMonacoAutoHeight();
+
+  const handleMountWithAutoHeight = useCallback(
+    (editor: MonacoEditor.IStandaloneCodeEditor, monaco: Monaco) => {
+      handleEditorMount(editor, monaco);
+      attachAutoHeight(editor);
+    },
+    [handleEditorMount, attachAutoHeight]
+  );
 
   const isRunning = cell.executionStatus === 'running';
 
@@ -137,19 +149,14 @@ export function NotebookCellComponent({
     return [...baseOutputs, ...legacyImageRefs];
   }, [cell.output, cell.outputRefs]);
 
-  const handleCopyOutput = useCallback(async () => {
-    const text = buildOutputCopyText(richOutputs);
-    if (text) await copyOutput(text);
-  }, [richOutputs, copyOutput]);
-
   return (
     <div
       className={cn(
-        'group overflow-hidden rounded-lg border bg-card transition-all duration-150',
+        'group overflow-hidden rounded-lg border border-border bg-card transition-colors duration-150',
         isRunning && 'border-l-2 border-l-primary',
         cell.executionStatus === 'error' && 'border-l-2 border-l-destructive',
         isLocked && lockOwner === 'ai' && 'border-purple-500/50 bg-purple-50/50 dark:bg-purple-950/20',
-        isHighlighted && 'ring-2 ring-emerald-400/60 transition-shadow duration-200',
+        isHighlighted && 'ring-2 ring-emerald-400/60',
         isSuggested && 'border-dashed border-primary/30',
         isSuggested && isStreaming && 'suggested-cell-shimmer'
       )}
@@ -220,7 +227,7 @@ export function NotebookCellComponent({
                 {/* Execution time — subtle, formatted */}
                 {!isRunning && cell.executionDurationMs != null && cell.executionDurationMs > 0 && (
                   <span className="text-xs text-muted-foreground/60">
-                    · {formatExecutionTime(cell.executionDurationMs)}
+                    · {formatDuration(cell.executionDurationMs)}
                   </span>
                 )}
 
@@ -299,8 +306,15 @@ export function NotebookCellComponent({
               )}
             </div>
           ) : (
-            /* Delete — hover-reveal, neutral at rest */
-            <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
+            /* Actions — hover-reveal */
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <CellMoveButtons
+                onMoveUp={onMoveUp}
+                onMoveDown={onMoveDown}
+                canMoveUp={canMoveUp}
+                canMoveDown={canMoveDown}
+                disabled={isLocked || isRunning}
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -319,30 +333,26 @@ export function NotebookCellComponent({
             </div>
           )}
         </div>
-      </TooltipProvider>
 
       <Suspense
         fallback={
           <div
             className="h-[60px]"
-            style={{ backgroundColor: resolvedTheme === 'dark' ? '#000000' : '#ffffff' }}
+            style={{ backgroundColor: resolvedTheme === 'dark' ? '#0a0a0a' : '#ffffff' }}
           />
         }
       >
               <LazyMonacoEditor
           path={`cell-${cell.cellId}.py`}
-          height={Math.max(60, localContent.split('\n').length * 20 + 20)}
+          height={editorHeight}
           language="python"
           value={localContent}
           onChange={handleContentChange}
-          onMount={handleEditorMount}
+          onMount={handleMountWithAutoHeight}
           options={{
+            ...globalEditorOpts,
             fixedOverflowWidgets: true,
-            minimap: { enabled: false },
             scrollBeyondLastLine: false,
-            fontSize: 13,
-            fontFamily: 'JetBrains Mono, Menlo, Monaco, monospace',
-            lineNumbers: 'on',
             lineNumbersMinChars: 3,
             glyphMargin: false,
             folding: false,
@@ -361,7 +371,7 @@ export function NotebookCellComponent({
             quickSuggestions: true,
             suggestOnTriggerCharacters: true
           }}
-          theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+          theme={syntaxThemeId}
           beforeMount={handleBeforeMount}
         />
       </Suspense>
@@ -373,49 +383,8 @@ export function NotebookCellComponent({
         </div>
       )}
 
-      {richOutputs.length > 0 && (
-        <div className="border-t bg-muted/30">
-          <div className="flex min-h-[32px] items-center justify-between border-b px-3 py-1.5">
-            <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground">OUTPUT</span>
-
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-6 w-6"
-                onClick={handleCopyOutput}
-                title={outputCopied ? 'Copied!' : 'Copy output'}
-                aria-label={outputCopied ? 'Copied!' : 'Copy output'}
-                type="button"
-              >
-                {outputCopied ? (
-                  <Check className="h-3 w-3 text-green-500" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-6 w-6"
-                onClick={() => setShowOutput((previous) => !previous)}
-                title={showOutput ? 'Collapse output' : 'Expand output'}
-                aria-label={showOutput ? 'Collapse output' : 'Expand output'}
-                type="button"
-              >
-                {showOutput ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-          </div>
-
-          {showOutput && (
-            <div className="p-3">
-              <CellOutputRenderer outputs={richOutputs} />
-            </div>
-          )}
-        </div>
-      )}
+      <NotebookCellOutput outputs={richOutputs} />
+      </TooltipProvider>
     </div>
   );
 }

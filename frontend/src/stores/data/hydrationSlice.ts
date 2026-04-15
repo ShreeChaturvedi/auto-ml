@@ -14,28 +14,11 @@ export interface HydrationSlice {
   hydratedProjects: Set<string>;
   isHydrating: boolean;
   hydrationError: string | null;
+  recentlyDeletedIds: Set<string>;
 
   // Actions
   hydrateFromBackend: (projectId: string, options?: { force?: boolean }) => Promise<void>;
-}
-
-function sanitizeTableName(filename: string, datasetId: string): string {
-  const baseName = filename.replace(/\.[^/.]+$/, '');
-  let safe = baseName
-    .replace(/[^a-zA-Z0-9_]/g, '_')
-    .replace(/^[^a-zA-Z]/, 'table_')
-    .toLowerCase();
-
-  if (!safe) {
-    safe = 'table_data';
-  }
-
-  const suffix = datasetId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
-  const separator = suffix ? `_${suffix}` : '';
-  const maxBaseLength = 63 - separator.length;
-  const trimmed = safe.slice(0, maxBaseLength);
-
-  return `${trimmed || 'table_data'}${separator}`;
+  markDeleted: (datasetId: string) => void;
 }
 
 function buildFileIdentity(file: UploadedFile): string {
@@ -46,13 +29,30 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
   hydratedProjects: new Set<string>(),
   isHydrating: false,
   hydrationError: null,
+  recentlyDeletedIds: new Set<string>(),
+
+  markDeleted(datasetId: string) {
+    set((state) => {
+      const next = new Set(state.recentlyDeletedIds);
+      next.add(datasetId);
+      return { recentlyDeletedIds: next };
+    });
+    // Auto-clear after 30 seconds — this is only a race-condition guard
+    setTimeout(() => {
+      set((state) => {
+        const next = new Set(state.recentlyDeletedIds);
+        next.delete(datasetId);
+        return { recentlyDeletedIds: next };
+      });
+    }, 30_000);
+  },
 
   async hydrateFromBackend(projectId: string, options) {
     const state = get();
     const force = options?.force ?? false;
 
     // Skip if already hydrated for this project or currently hydrating
-    if ((!force && state.hydratedProjects.has(projectId)) || state.isHydrating) {
+    if (!force && (state.hydratedProjects.has(projectId) || state.isHydrating)) {
       return;
     }
 
@@ -77,7 +77,12 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
           .map((file) => file.id)
       );
 
+      // Filter out datasets that were recently deleted locally to prevent
+      // race conditions where the backend hasn't processed the DELETE yet.
+      const { recentlyDeletedIds } = get();
+
       for (const dataset of datasets) {
+        if (recentlyDeletedIds.has(dataset.datasetId)) continue;
         const fileId = dataset.datasetId;
 
         const file: UploadedFile = {
@@ -92,7 +97,10 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
             rowCount: dataset.nRows,
             columnCount: dataset.nCols,
             columns: dataset.columns.map(c => c.name),
-            tableName: dataset.tableName ?? dataset.metadata?.tableName ?? sanitizeTableName(dataset.filename, dataset.datasetId),
+            tableName: dataset.tableName,
+            queryable: dataset.queryable ?? (dataset.tableName != null && !dataset.queryError),
+            queryError: dataset.queryError
+              ?? (typeof dataset.metadata?.loadWarning === 'string' ? dataset.metadata.loadWarning : undefined),
             derivedFrom: typeof dataset.metadata?.derivedFrom === 'string' ? dataset.metadata.derivedFrom : undefined,
             datasetProfile: {
               nRows: dataset.nRows,
@@ -117,6 +125,7 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
       }
 
       for (const document of documents) {
+        if (recentlyDeletedIds.has(document.documentId)) continue;
         hydratedDocuments.push({
           id: document.documentId,
           name: document.filename,
@@ -159,25 +168,31 @@ export const createHydrationSlice: StateCreator<DataState, [], [], HydrationSlic
 
         const hydratedIds = new Set([...hydratedFiles, ...hydratedDocuments].map((file) => file.id));
         const retainedProjectIds = new Set([...hydratedIds, ...retainedPendingFiles.map((file) => file.id)]);
-        const nextOpenFileTabs = state.openFileTabs.filter((tabId) => {
-          if (!previousProjectFileIds.has(tabId)) return true;
-          return retainedProjectIds.has(tabId);
-        });
-        const nextOpenSet = new Set(nextOpenFileTabs);
-        hydratedFiles.forEach((file) => {
-          if (!existingDatasetIds.has(file.id)) {
-            nextOpenSet.add(file.id);
-          }
+
+        // Drop file tabs whose underlying file is gone after hydration.
+        // Leave artifact/notebook tabs untouched — they aren't tied to dataset hydration.
+        const prunedOpenTabs = state.openFileTabs.filter((tab) => {
+          if (tab.type !== 'file') return true;
+          if (!previousProjectFileIds.has(tab.id)) return true;
+          return retainedProjectIds.has(tab.id);
         });
 
-        // Auto-select the first data file tab when no tab is currently active.
-        // Only act when activeFileTabId is null — if it points to another
-        // project's file, the DataViewerTab effect handles project-scoped selection.
-        const finalOpenTabs = Array.from(nextOpenSet);
+        const existingFileTabIds = new Set(
+          prunedOpenTabs.filter((tab) => tab.type === 'file').map((tab) => tab.id)
+        );
+        const appendedFileTabs = hydratedFiles
+          .filter((file) => !existingDatasetIds.has(file.id) && !existingFileTabIds.has(file.id))
+          .map((file) => ({ id: file.id, type: 'file' as const }));
+
+        const finalOpenTabs = [...prunedOpenTabs, ...appendedFileTabs];
+
+        // Auto-select the first tab when no tab is currently active. Preserve
+        // whichever type the first tab record carries (file vs. notebook).
         const activeTabUpdate: Partial<DataState> = {};
         if (state.activeFileTabId == null && finalOpenTabs.length > 0) {
-          activeTabUpdate.activeFileTabId = finalOpenTabs[0];
-          activeTabUpdate.fileTabType = 'file';
+          const firstTab = finalOpenTabs[0];
+          activeTabUpdate.activeFileTabId = firstTab.id;
+          activeTabUpdate.fileTabType = firstTab.type;
         }
 
         return {

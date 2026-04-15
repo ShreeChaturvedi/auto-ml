@@ -7,8 +7,6 @@ import { ShapBarChart } from '../charts/ShapBarChart';
 import { ShapBeeswarmChart } from '../charts/ShapBeeswarmChart';
 import { ShapDependenceChart } from '../charts/ShapDependenceChart';
 import { AlertTriangle } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 
 interface InterpretabilityTabProps {
   modelId: string;
@@ -18,15 +16,13 @@ interface InterpretabilityTabProps {
 export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTabProps) {
   const fetchShap = useExperimentsStore((s) => s.fetchShap);
   const shapData = useExperimentsStore((s) => s.shapData[modelId]);
-  const { colorClasses } = useProjectThemeColor();
-
   useEffect(() => {
     fetchShap(modelId);
   }, [modelId, fetchShap]);
 
   // Determine fallback feature importance data
-  const fallbackImportance = evaluation.feature_importance.model_based
-    ?? evaluation.feature_importance.permutation;
+  const fallbackImportance = evaluation.feature_importance?.model_based
+    ?? evaluation.feature_importance?.permutation;
 
   // Loading state: fetchShap was called but data not yet in cache
   // We treat undefined as "still loading" and null-ish as "not available"
@@ -34,7 +30,7 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
 
   const shapHeading = (
     <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 px-1">
-      <span className={cn('inline-block w-1.5 h-1.5 rounded-full mr-2', colorClasses?.fill ?? 'bg-primary/60')} />
+      <span className="inline-block w-1.5 h-1.5 rounded-full mr-2 bg-accent-fill" />
       SHAP Analysis
     </h3>
   );
@@ -97,8 +93,9 @@ export function InterpretabilityTab({ modelId, evaluation }: InterpretabilityTab
       <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
         <p className="text-sm text-yellow-700 dark:text-yellow-300">
-          SHAP computation timed out or model type is unsupported. Feature
-          importance from model shown instead.
+          {fallbackImportance
+            ? 'SHAP computation timed out or model type is unsupported. Feature importance from the evaluation is shown instead.'
+            : 'Interpretability artifacts are unavailable for this evaluation. The model still trained successfully, but no feature importance output was produced.'}
         </p>
       </div>
 

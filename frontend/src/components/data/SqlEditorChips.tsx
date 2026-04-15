@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo } from 'react';
-import { Play, Keyboard, Quote } from 'lucide-react';
+import { Play, Keyboard, Quote, CornerDownRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useInsightTicker } from '@/components/ui/useInsightTicker';
@@ -15,13 +15,7 @@ interface SqlEditorChipsProps {
   modKey: string;
 }
 
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded border border-border/60 bg-background/80 text-[10px] font-mono font-medium text-muted-foreground leading-none">
-      {children}
-    </kbd>
-  );
-}
+import { Kbd } from '@/components/ui/contextual-tip-bar';
 
 function ChipRow({ chip }: { chip: SqlChip }) {
   const Icon = chip.icon;
@@ -40,6 +34,15 @@ export function SqlEditorChips({
   const prefersReducedMotion = usePrefersReducedMotion();
 
   const chips: SqlChip[] = useMemo(() => [
+    {
+      icon: CornerDownRight,
+      content: (
+        <span className="inline-flex items-center gap-1">
+          <Kbd>Tab</Kbd>
+          <span className="ml-0.5">to accept suggested query</span>
+        </span>
+      ),
+    },
     {
       icon: Play,
       content: (

@@ -45,7 +45,7 @@ export function PasswordStrength({ password }: PasswordStrengthProps) {
         <div
           key={i}
           className={cn(
-            'h-1 flex-1 rounded-full transition-all',
+            'h-1 flex-1 rounded-full transition-colors',
             i <= strength.score ? strength.color : 'bg-neutral-700'
           )}
         />

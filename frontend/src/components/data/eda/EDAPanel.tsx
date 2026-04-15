@@ -5,7 +5,7 @@
  */
 
 import { useMemo } from 'react';
-import { BarChart3 } from 'lucide-react';
+import { ChartEmptyIllustration } from '@/components/ui/illustrations';
 import { cn } from '@/lib/utils';
 import type { EdaSummary, ColumnDataType } from '@/types/file';
 import type { DistributionMode, CorrViewMode } from './edaConstants';
@@ -123,8 +123,8 @@ export function EDAPanel({
             </div>
           )}
           {!hasNumeric && !hasCategorical && (
-            <div className="text-center py-12 text-muted-foreground">
-              <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <div className="text-center py-12 text-muted-foreground empty-state-enter">
+              <ChartEmptyIllustration className="mx-auto mb-4 text-muted-foreground" />
               <p className="text-sm font-medium">No analyzable columns found</p>
             </div>
           )}

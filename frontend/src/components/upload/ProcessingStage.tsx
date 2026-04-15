@@ -18,8 +18,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 import { useDataStore } from '@/stores/dataStore';
-import { useProjectStore } from '@/stores/projectStore';
-import { projectColorClasses } from '@/types/project';
 import { ComputeAnimation } from './ComputeAnimation';
 import { gatherProcessingResults } from './processingUtils';
 import type { ProcessingResult, ProcessingStageProps } from '@/types/processing';
@@ -37,16 +35,11 @@ export function ProcessingStage({ projectId, onComplete }: Omit<ProcessingStageP
 
   // Pull files for this project from the data store
   const allFiles = useDataStore((state) => state.files);
-  const projects = useProjectStore((state) => state.projects);
   const projectFiles = useMemo(
     () => allFiles.filter((f) => f.projectId === projectId),
     [allFiles, projectId],
   );
-  const projectColorClass = useMemo(() => {
-    const project = projects.find((entry) => entry.id === projectId);
-    const color = project?.color ?? 'blue';
-    return projectColorClasses[color].text;
-  }, [projectId, projects]);
+  const projectColorClass = 'text-accent-text';
 
   // Simplified file descriptors for the animation (name + type)
   const fileDescriptors = useMemo(

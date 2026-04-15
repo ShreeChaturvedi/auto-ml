@@ -58,6 +58,10 @@ export function generateModelTrainingCode({
 
   if (template.taskType !== 'clustering') {
     lines.push('from sklearn.model_selection import train_test_split');
+    lines.push('from sklearn.pipeline import Pipeline');
+    lines.push('from sklearn.compose import ColumnTransformer');
+    lines.push('from sklearn.preprocessing import StandardScaler, OneHotEncoder');
+    lines.push('from sklearn.impute import SimpleImputer');
   }
 
   if (template.taskType === 'classification') {
@@ -87,17 +91,24 @@ export function generateModelTrainingCode({
     lines.push('X = df.copy()');
   }
 
-  lines.push('numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()');
-  lines.push('categorical_cols = [col for col in X.columns if col not in numeric_cols]');
-  lines.push('if numeric_cols:');
-  lines.push('    X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].median())');
-  lines.push('if categorical_cols:');
-  lines.push("    X[categorical_cols] = X[categorical_cols].fillna('missing')");
-  lines.push('if categorical_cols:');
-  lines.push('    X = pd.get_dummies(X, columns=categorical_cols, drop_first=False)');
-  lines.push('X = X.fillna(0)');
+  const paramEntries = Object.entries(parameters)
+    .map(([key, value]) => `${key}=${pyLiteral(value)}`);
+  const paramArgs = paramEntries.join(', ');
 
-  if (template.taskType !== 'clustering') {
+  if (template.taskType === 'clustering') {
+    lines.push('numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()');
+    lines.push('categorical_cols = [col for col in X.columns if col not in numeric_cols]');
+    lines.push('if numeric_cols:');
+    lines.push('    X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].median())');
+    lines.push('if categorical_cols:');
+    lines.push("    X[categorical_cols] = X[categorical_cols].fillna('missing')");
+    lines.push('if categorical_cols:');
+    lines.push('    X = pd.get_dummies(X, columns=categorical_cols, drop_first=False)');
+    lines.push('X = X.fillna(0)');
+    lines.push('');
+    lines.push(`model = ${template.modelClass}(${paramArgs})`);
+    lines.push('labels = model.fit_predict(X)');
+  } else {
     lines.push(`test_size = ${normalizedTest}`);
     lines.push('stratify = None');
     lines.push('if len(y.unique()) > 1 and len(y) >= 10:');
@@ -105,20 +116,22 @@ export function generateModelTrainingCode({
     lines.push('X_train, X_test, y_train, y_test = train_test_split(');
     lines.push('    X, y, test_size=test_size, random_state=42, stratify=stratify');
     lines.push(')');
-  }
-
-  const paramEntries = Object.entries(parameters)
-    .map(([key, value]) => `${key}=${pyLiteral(value)}`);
-  const paramArgs = paramEntries.join(', ');
-
-  lines.push('');
-  lines.push(`model = ${template.modelClass}(${paramArgs})`);
-
-  if (template.taskType === 'clustering') {
-    lines.push('labels = model.fit_predict(X)');
-  } else {
-    lines.push('model.fit(X_train, y_train)');
-    lines.push('y_pred = model.predict(X_test)');
+    lines.push('');
+    lines.push('# Identify column types');
+    lines.push('numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()');
+    lines.push('categorical_cols = [col for col in X.columns if col not in numeric_cols]');
+    lines.push('');
+    lines.push('# Build preprocessing pipeline');
+    lines.push("numeric_pipeline = Pipeline([('imputer', SimpleImputer(strategy='median')), ('scaler', StandardScaler())])");
+    lines.push("categorical_pipeline = Pipeline([('imputer', SimpleImputer(strategy='constant', fill_value='missing')), ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))])");
+    lines.push('transformers = []');
+    lines.push("if numeric_cols: transformers.append(('num', numeric_pipeline, numeric_cols))");
+    lines.push("if categorical_cols: transformers.append(('cat', categorical_pipeline, categorical_cols))");
+    lines.push("preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')");
+    lines.push('');
+    lines.push(`pipeline = Pipeline([('preprocessor', preprocessor), ('model', ${template.modelClass}(${paramArgs}))])`);
+    lines.push('pipeline.fit(X_train, y_train)');
+    lines.push('y_pred = pipeline.predict(X_test)');
   }
 
   lines.push('metrics = {}');
@@ -129,7 +142,7 @@ export function generateModelTrainingCode({
     lines.push('metrics["recall"] = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))');
     lines.push('metrics["f1"] = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))');
   } else if (template.taskType === 'regression') {
-    lines.push('metrics["rmse"] = float(mean_squared_error(y_test, y_pred, squared=False))');
+    lines.push('metrics["rmse"] = float(np.sqrt(mean_squared_error(y_test, y_pred)))');
     lines.push('metrics["mae"] = float(mean_absolute_error(y_test, y_pred))');
     lines.push('metrics["r2"] = float(r2_score(y_test, y_pred))');
   } else {

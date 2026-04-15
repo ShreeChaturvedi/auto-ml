@@ -1,8 +1,18 @@
-import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 
 import type { DomainAdapter } from '@/types/agentic';
+
+const loopMocks = vi.hoisted(() => ({
+  runLoop: vi.fn(),
+  editAndResend: vi.fn()
+}));
+
+const notebookStoreMocks = vi.hoisted(() => ({
+  initializeNotebook: vi.fn(),
+  disconnect: vi.fn()
+}));
 
 // Mock the entire child component tree to isolate hook-level re-render behavior
 vi.mock('../AgenticStepDisplay', () => ({
@@ -38,12 +48,12 @@ vi.mock('@/hooks/useAgenticLoop', () => ({
     activeTextMessageId: null,
     activeThinkingMessageId: null,
     hydratedMessageIds: new Set(),
-    runLoop: vi.fn(),
+    runLoop: loopMocks.runLoop,
     handleStop: vi.fn(),
     clearMessages: vi.fn(),
     editMessage: vi.fn(),
     revertToTurn: vi.fn(),
-    editAndResend: vi.fn(),
+    editAndResend: loopMocks.editAndResend,
     editingMessageId: null,
     setEditingMessageId: vi.fn(),
     registerSavepoint: vi.fn()
@@ -57,7 +67,8 @@ vi.mock('@/hooks/useSavepoints', () => ({
     loadingSavepointId: null,
     activeSavepointId: null,
     handleLoadSavepoint: vi.fn(),
-    handleDismissSavepoint: vi.fn()
+    handleDismissSavepoint: vi.fn(),
+    resetLocal: vi.fn()
   })
 }));
 
@@ -103,16 +114,14 @@ vi.mock('@/hooks/useModelSelection', () => ({
 }));
 
 vi.mock('@/hooks/useProjectThemeColor', () => ({
-  useProjectThemeColor: () => ({
-    themeColor: { text: '', bg: '', hover: '', border: '', borderAccent: '', fill: '', fillMuted: '' }
-  })
+  useProjectThemeColor: () => ({ themeColor: '#1d4ed8' })
 }));
 
 vi.mock('@/stores/notebookStore', () => ({
   useNotebookStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
-      initializeNotebook: vi.fn(),
-      disconnect: vi.fn(),
+      initializeNotebook: notebookStoreMocks.initializeNotebook,
+      disconnect: notebookStoreMocks.disconnect,
       activeNotebookId: null
     })
 }));
@@ -125,12 +134,19 @@ vi.mock('@/stores/dataStore', () => ({
 import { AgenticShell } from '../AgenticShell';
 
 describe('AgenticShell smoke test', () => {
+  beforeEach(() => {
+    loopMocks.runLoop.mockReset();
+    loopMocks.editAndResend.mockReset();
+    notebookStoreMocks.initializeNotebook.mockReset();
+    notebookStoreMocks.disconnect.mockReset();
+  });
+
   it('mounts without "Maximum update depth exceeded" error', () => {
     const domainAdapter: DomainAdapter = {
       buildRequest: vi.fn(async () => undefined),
       toolRegistry: {},
       toolUiRegistry: {},
-      suggestionProvider: () => [],
+      tipsProvider: () => [],
       preserveToolHistoryBetweenPrompts: true
     };
 
@@ -143,5 +159,102 @@ describe('AgenticShell smoke test', () => {
         />
       );
     }).not.toThrow();
+  });
+
+  it('mounts with legacy tips-only adapters', () => {
+    const domainAdapter: DomainAdapter = {
+      buildRequest: vi.fn(async () => undefined),
+      toolRegistry: {},
+      toolUiRegistry: {},
+      tipsProvider: () => [],
+      preserveToolHistoryBetweenPrompts: true
+    };
+
+    expect(() => {
+      render(
+        <AgenticShell
+          projectId="test-project"
+          domainAdapter={domainAdapter}
+          storageKey="legacy-tips-adapter"
+        />
+      );
+    }).not.toThrow();
+  });
+
+  it('passes submitPrompt to the left pane render props', async () => {
+    const domainAdapter: DomainAdapter = {
+      buildRequest: vi.fn(async () => undefined),
+      toolRegistry: {},
+      toolUiRegistry: {},
+      tipsProvider: () => [],
+      preserveToolHistoryBetweenPrompts: true
+    };
+
+    render(
+      <AgenticShell
+        projectId="test-project"
+        domainAdapter={domainAdapter}
+        storageKey="left-pane-submit"
+        renderLeftPane={({ submitPrompt }) => (
+          <button type="button" onClick={() => submitPrompt?.('Generate notebook steps')}>
+            Trigger Submit
+          </button>
+        )}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger Submit' }));
+
+    await waitFor(() => {
+      expect(loopMocks.runLoop).toHaveBeenCalledWith(
+        'Generate notebook steps',
+        expect.objectContaining({
+          model: 'gpt-5.4',
+          reasoningEffort: 'medium'
+        }),
+        undefined,
+        undefined,
+        expect.stringMatching(/^user-/),
+        'Generate notebook steps'
+      );
+    });
+  });
+
+  it('does not disconnect the notebook store when notebook ownership props change or the shell unmounts', () => {
+    const domainAdapter: DomainAdapter = {
+      buildRequest: vi.fn(async () => undefined),
+      toolRegistry: {},
+      toolUiRegistry: {},
+      tipsProvider: () => [],
+      preserveToolHistoryBetweenPrompts: true
+    };
+
+    const { rerender, unmount } = render(
+      <AgenticShell
+        projectId="test-project"
+        domainAdapter={domainAdapter}
+        storageKey="ownership-no-disconnect"
+        notebookId="nb-1"
+      />
+    );
+
+    expect(notebookStoreMocks.initializeNotebook).toHaveBeenCalledWith('test-project', 'nb-1');
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
+
+    rerender(
+      <AgenticShell
+        projectId="test-project"
+        domainAdapter={domainAdapter}
+        storageKey="ownership-no-disconnect"
+        notebookId="nb-2"
+      />
+    );
+
+    expect(notebookStoreMocks.initializeNotebook).toHaveBeenLastCalledWith('test-project', 'nb-2');
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(notebookStoreMocks.disconnect).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,75 @@
+/* Shimmer text base: metallic sweep gradient */
+.shimmer-text,
+.shimmer-text-once {
+  background: linear-gradient(
+    90deg,
+    currentColor 0%,
+    currentColor 35%,
+    rgba(180, 180, 190, 0.85) 50%,
+    currentColor 65%,
+    currentColor 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shimmer-text {
+  animation: shimmer-sweep 2s ease-in-out infinite;
+}
+
+.shimmer-text-once {
+  animation: shimmer-sweep 1.5s ease-in-out 1 forwards;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* Low-saturation rainbow cycle — muted hues drift through text.
+   Uses only background-* longhands to avoid the `background` shorthand
+   resetting background-clip back to border-box. */
+.text-gradient-cycle {
+  background-image: linear-gradient(
+    90deg in oklch longer hue,
+    oklch(0.52 0.09 0),
+    oklch(0.52 0.09 120),
+    oklch(0.52 0.09 240),
+    oklch(0.52 0.09 360)
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-drift 8s linear infinite;
+}
+
+.dark .text-gradient-cycle {
+  background-image: linear-gradient(
+    90deg in oklch longer hue,
+    oklch(0.75 0.06 0),
+    oklch(0.75 0.06 120),
+    oklch(0.75 0.06 240),
+    oklch(0.75 0.06 360)
+  );
+}
+
+@keyframes gradient-drift {
+  from { background-position: 0% 0; }
+  to { background-position: 300% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text,
+  .shimmer-text-once,
+  .text-gradient-cycle {
+    animation: none;
+  }
+}

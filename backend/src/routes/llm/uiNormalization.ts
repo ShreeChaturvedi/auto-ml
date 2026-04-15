@@ -1,9 +1,28 @@
 import { appLogger } from '../../logging/logger.js';
+import { FEATURE_METHODS } from '../../services/featureEngineering.js';
 import type { LlmEnvelope } from '../../types/llm.js';
 import { UiSchema } from '../../types/llmUi.js';
 
+const FEATURE_METHODS_SET = new Set<string>(FEATURE_METHODS);
+
 const FEATURE_ENGINEERING_FALLBACK_MESSAGE =
   'The model response was incomplete, so I generated a safe fallback feature-engineering summary.';
+const FEATURE_PROPOSAL_PLACEHOLDER = 'feature proposed — awaiting user review';
+
+function resolveFeatureDescription(description: unknown, rationale: unknown): string {
+  if (typeof description === 'string') {
+    const normalized = description.trim().toLowerCase();
+    if (normalized.length > 0 && normalized !== FEATURE_PROPOSAL_PLACEHOLDER) {
+      return description;
+    }
+  }
+
+  if (typeof rationale === 'string' && rationale.trim().length > 0) {
+    return rationale;
+  }
+
+  return '';
+}
 
 export function buildFeatureEngineeringFallbackEnvelope(
   reason: 'empty_render_ui' | 'empty_response' | 'blank_text'
@@ -102,7 +121,6 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
       const featureName = typeof candidate.feature === 'string'
         ? candidate.feature
         : (typeof candidate.title === 'string' ? candidate.title : '');
-      const method = typeof candidate.method === 'string' ? candidate.method : 'custom';
       const rationale = typeof candidate.rationale === 'string'
         ? candidate.rationale
         : 'Suggested transformation from model response.';
@@ -110,6 +128,17 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
       const featureObject = candidate.feature && typeof candidate.feature === 'object'
         ? candidate.feature as Record<string, unknown>
         : null;
+
+      // Resolve the method by preferring the nested feature.method over the
+      // outer candidate.method. Validate against FEATURE_METHODS so we don't
+      // emit suggestions with a bogus 'custom' method that the frontend's
+      // template lookup and backend apply-payload schema both reject.
+      const nestedMethod = featureObject && typeof featureObject.method === 'string'
+        ? featureObject.method
+        : undefined;
+      const outerMethod = typeof candidate.method === 'string' ? candidate.method : undefined;
+      const rawMethod = nestedMethod ?? outerMethod;
+      const validMethod = rawMethod && FEATURE_METHODS_SET.has(rawMethod) ? rawMethod : undefined;
 
       const sourceColumn = featureObject && typeof featureObject.sourceColumn === 'string'
         ? featureObject.sourceColumn
@@ -119,7 +148,7 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
         ? featureObject.featureName
         : featureName;
 
-      if (featureObject && sourceColumn && featureTitle) {
+      if (featureObject && sourceColumn && featureTitle && validMethod) {
         const featureObjectRecord = featureObject;
         coerced.push({
           type: 'feature_suggestion',
@@ -130,10 +159,8 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
               ? featureObjectRecord.secondaryColumn
               : undefined,
             featureName: featureTitle,
-            description: typeof featureObjectRecord.description === 'string'
-              ? featureObjectRecord.description
-              : rationale,
-            method: typeof featureObjectRecord.method === 'string' ? featureObjectRecord.method : method,
+            description: resolveFeatureDescription(featureObjectRecord.description, rationale),
+            method: validMethod,
             params: featureObjectRecord.params && typeof featureObjectRecord.params === 'object'
               ? featureObjectRecord.params as Record<string, unknown>
               : {}
@@ -144,6 +171,19 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
         continue;
       }
 
+      // Suggestion missing a valid method, source column, or title. Downgrade
+      // to a report item so the rationale is still surfaced to the user, and
+      // log the reason so we can trace LLM output quality. The previous code
+      // silently defaulted method to 'custom', which triggered an
+      // "Unsupported feature method" error in the frontend when the user
+      // clicked Enable.
+      if (featureObject && sourceColumn && featureTitle && !validMethod) {
+        appLogger.warn(
+          '[uiNormalization] Dropping feature_suggestion with invalid/missing method (%s)',
+          rawMethod ?? '<unset>'
+        );
+      }
+
       if (!featureTitle && !rationale.trim()) {
         continue;
       }
@@ -152,7 +192,7 @@ export function coerceLegacyUiItems(items: unknown[]): unknown[] {
         type: 'report',
         id: `legacy-feature-${index + 1}`,
         title: featureTitle ? `Suggested feature: ${featureTitle}` : 'Suggested feature',
-        content: `Method: ${method}\n\n${rationale}`,
+        content: `Method: ${validMethod ?? rawMethod ?? 'unspecified'}\n\n${rationale}`,
         format: 'markdown'
       });
       continue;

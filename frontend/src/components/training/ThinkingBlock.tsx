@@ -92,7 +92,7 @@ export function ThinkingBlock({
                 onClick={() => content && setExpanded(!expanded)}
                 disabled={!content}
                 className={cn(
-                    'flex items-center gap-2 text-sm transition-all',
+                    'flex items-center gap-2 text-sm transition-[color,background-color] duration-150',
                     'py-1.5 px-2.5 rounded-md w-fit text-left',
                     content && 'hover:bg-muted/50 cursor-pointer',
                     !content && 'cursor-default',

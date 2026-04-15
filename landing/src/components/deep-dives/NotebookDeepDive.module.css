@@ -1,0 +1,149 @@
+/*
+ * Deep-dive 3 — NOTEBOOK visual container. Hosts the real frontend
+ * `<NotebookDeepDivePreview>` and layers a scripted cursor sprite + a
+ * per-cell reveal mechanism on top. The surrounding chrome (eyebrow,
+ * headline, body, kbd hint) and `.cursor-outline` framing are applied
+ * upstream by `DeepDive.astro` / `FeaturesSection.astro`.
+ */
+.root {
+  position: relative;
+  padding: 0;
+  height: 560px;
+  max-height: 560px;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 60% 50% at 25% 20%, rgba(10, 70, 60, 0.85) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 75% 85%, rgba(5, 55, 45, 0.7) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 45% at 50% 50%, rgba(15, 80, 65, 0.6) 0%, transparent 60%),
+    #040f0b;
+  background-size: 200% 200%, 200% 200%, 200% 200%, 100% 100%;
+  animation: notebook-fluid 22s ease-in-out infinite;
+}
+
+@keyframes notebook-fluid {
+  0%   { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
+  33%  { background-position: 70% 60%, 20% 10%, 80% 90%, 0% 0%; }
+  66%  { background-position: 10% 80%, 90% 40%, 30% 20%, 0% 0%; }
+  100% { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
+}
+
+.host {
+  position: absolute;
+  inset: 0;
+  width: 95%;
+  height: 95%;
+  margin: auto;
+}
+
+/* Force dark border color on all descendant elements — the frontend
+ * component's Tailwind classes (border-b, border-t, border) inherit the
+ * browser default border-color instead of hsl(var(--border)) in the
+ * landing island context. */
+.root :global(*) {
+  border-color: hsl(var(--border));
+}
+
+/* ---------------------------------------------------------------------------
+ * Per-cell reveal.
+ * ------------------------------------------------------------------------- */
+:global([data-notebook-cell-wrapper]) {
+  transition:
+    box-shadow 260ms var(--ease-out-quart),
+    transform 260ms var(--ease-out-quart);
+}
+
+:global([data-notebook-cell-wrapper][data-output-visible='false']) :global(.border-t.bg-muted\/30) {
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 320ms var(--ease-out-quart),
+    transform 320ms var(--ease-out-quart);
+  pointer-events: none;
+}
+
+:global([data-notebook-cell-wrapper][data-output-visible='true']) :global(.border-t.bg-muted\/30) {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 520ms var(--ease-out-quart) 80ms,
+    transform 520ms var(--ease-out-quart) 80ms;
+}
+
+:global([data-notebook-cell-wrapper][data-cell-active='true']) {
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.55),
+    0 6px 20px -8px hsl(var(--primary) / 0.35);
+  transform: translateY(-1px);
+}
+
+.rootReduced :global([data-notebook-cell-wrapper]) :global(.border-t.bg-muted\/30) {
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    animation: none;
+  }
+  :global([data-notebook-cell-wrapper]) :global(.border-t.bg-muted\/30) {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  :global([data-notebook-cell-wrapper][data-cell-active='true']) {
+    box-shadow: none;
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Cursor sprite
+ * ------------------------------------------------------------------------- */
+.cursorWrap {
+  position: absolute;
+  left: 16px;
+  top: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: #000;
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center;
+  will-change: left, top, transform, opacity;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  transition:
+    left 750ms var(--ease-out-expo),
+    top 750ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-quart),
+    opacity 260ms var(--ease-out-quart);
+}
+
+.cursorIcon {
+  display: block;
+  color: var(--text);
+}
+
+.cursorWrapGlided {
+  opacity: 1;
+}
+
+.cursorWrapClick {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(0.82);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursorWrap,
+  .cursorWrapGlided,
+  .cursorWrapClick {
+    transition: none;
+    animation: none;
+    opacity: 0;
+  }
+}

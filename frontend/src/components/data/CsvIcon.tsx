@@ -23,7 +23,7 @@ export function FileTypeBadgeIcon({ label, className, ...props }: FileTypeBadgeI
         y="12"
         fontSize="15"
         fontWeight="bold"
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fontFamily="'Plus Jakarta Sans', system-ui, sans-serif"
         textAnchor="middle"
         dominantBaseline="central"
         fill="currentColor"

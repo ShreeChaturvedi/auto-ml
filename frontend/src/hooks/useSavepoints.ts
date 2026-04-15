@@ -71,9 +71,20 @@ export function useSavepoints() {
     }
   }, []);
 
+  /**
+   * Clear the local savepoint map and diff cache without making any API
+   * calls. Use when switching between notebooks so savepoint ids from one
+   * notebook can't be reused against another.
+   */
+  const resetLocal = useCallback(() => {
+    setSavepointMap(new Map());
+    diffCacheRef.current = new Map();
+  }, []);
+
   return useMemo(() => ({
     createSavepoint,
     getDiff,
-    clearAfter
-  }), [createSavepoint, getDiff, clearAfter]);
+    clearAfter,
+    resetLocal
+  }), [createSavepoint, getDiff, clearAfter, resetLocal]);
 }

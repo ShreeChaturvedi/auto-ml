@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
-import { loadDatasetIntoPostgres } from '../services/datasetLoader.js';
+import { rebuildDatasetTableFromSource } from '../services/datasetTableManager.js';
 
 async function migrateExistingDatasets() {
   appLogger.info('[migration] Starting dataset migration');
@@ -38,24 +38,13 @@ async function migrateExistingDatasets() {
         continue;
       }
 
-      const buffer = readFileSync(filePath);
-      const { tableName, rowsLoaded } = await loadDatasetIntoPostgres({
-        datasetId: dataset.datasetId,
-        filename: dataset.filename,
-        fileType: dataset.fileType,
-        buffer,
-        columns: dataset.columns
-      });
-
-      await repository.update(dataset.datasetId, (current) => ({
-        ...current,
-        nRows: rowsLoaded,
-        metadata: {
-          ...(current.metadata ?? {}),
-          tableName,
-          rowsLoaded
-        }
-      }));
+      readFileSync(filePath);
+      const rebuiltDataset = await rebuildDatasetTableFromSource(dataset, repository);
+      const tableName =
+        typeof rebuiltDataset.metadata?.tableName === 'string'
+          ? rebuiltDataset.metadata.tableName
+          : dataset.filename;
+      const rowsLoaded = rebuiltDataset.nRows;
 
       appLogger.info(`[migration] Created table "${tableName}" (${rowsLoaded} rows)`);
       migrated++;

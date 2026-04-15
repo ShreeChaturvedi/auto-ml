@@ -4,7 +4,9 @@
  * Extracted from ToolIndicator.tsx to keep that file focused on layout/state.
  */
 
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { resolveFileIconByFilename } from '@/lib/fileUtils';
 import type { ToolCall, ToolResult } from '@/types/llmUi';
 import type { ToolStatus } from './ToolIndicator';
 import {
@@ -80,10 +82,32 @@ export function getToolIcon(tool: ToolCall['tool'], status: ToolStatus, projectC
     }
 }
 
+/**
+ * Renders a dataset-tool label with the file icon + filename inlined after
+ * the base text ("Read dataset profile for <icon> <name>"). Falls back to a
+ * plain string if `filename` is missing.
+ */
+function datasetLabelWithFile(baseLabel: string, filename: string | undefined): ReactNode {
+    if (!filename) return baseLabel;
+    const { Icon, colorClass } = resolveFileIconByFilename(filename);
+    return (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="flex-shrink-0">{baseLabel} for</span>
+            <Icon className={cn('h-3.5 w-3.5 flex-shrink-0', colorClass)} />
+            <span className="truncate font-medium">{filename}</span>
+        </span>
+    );
+}
+
 /** Get proper tense labels */
-export function getToolLabel(call: ToolCall, status: ToolStatus): string {
+export function getToolLabel(call: ToolCall, status: ToolStatus, result?: ToolResult): ReactNode {
     const args = call.args ?? {};
     const isDone = status === 'done' || status === 'error';
+    const outputRecord = (result?.output ?? null) as Record<string, unknown> | null;
+    const outputFilename =
+        outputRecord && typeof outputRecord === 'object' && typeof outputRecord.filename === 'string'
+            ? (outputRecord.filename as string)
+            : undefined;
 
     switch (call.tool) {
         case 'search_documents': {
@@ -102,9 +126,13 @@ export function getToolLabel(call: ToolCall, status: ToolStatus): string {
         case 'register_derived_dataset':
             return isDone ? 'Registered derived dataset' : 'Registering derived dataset';
         case 'get_dataset_profile':
-            return isDone ? 'Read dataset profile' : 'Reading dataset profile';
+            return isDone
+                ? datasetLabelWithFile('Read dataset profile', outputFilename)
+                : 'Reading dataset profile';
         case 'get_dataset_sample':
-            return isDone ? 'Read dataset sample' : 'Reading dataset sample';
+            return isDone
+                ? datasetLabelWithFile('Read dataset sample', outputFilename)
+                : 'Reading dataset sample';
         case 'propose_transformation_step': {
             const title = typeof args.title === 'string'
                 ? args.title

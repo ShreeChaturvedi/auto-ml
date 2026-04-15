@@ -2,6 +2,7 @@ import { env } from '../../config.js';
 import { appLogger } from '../../logging/logger.js';
 import { createDatasetRepository } from '../../repositories/datasetRepository.js';
 import { createNlSuggestionRepository } from '../../repositories/nlSuggestionRepository.js';
+import { ensureProjectDatasetSqlNames } from '../datasetSqlNames.js';
 import { createLlmClient, type LlmClient, type LlmMessage } from '../llm/llmClient.js';
 import { extractJson } from '../nlToSql/jsonNormalization.js';
 
@@ -172,7 +173,7 @@ export function createNlSuggestionsService(overrides: Partial<NlSuggestionServic
   const getClient = overrides.getClient ?? ((model: string) => createLlmClient(model, env.nl2sqlTimeoutMs || env.llmTimeoutMs));
 
   async function getProjectTables(projectId: string) {
-    const datasets = await datasetRepository.listByProject(projectId);
+    const datasets = await ensureProjectDatasetSqlNames(projectId, datasetRepository);
     return buildSchemaSummary(datasets, projectId);
   }
 

@@ -1,9 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { env } from '../../config.js';
 import { FileDatasetRepository } from '../../repositories/datasetRepository.js';
 import {
   createFilePreprocessingRunRepository,
@@ -19,12 +20,18 @@ import {
 
 describe('preprocessingGraph', () => {
   let tempDir = '';
+  const originalExecutionWorkspaceDir = env.executionWorkspaceDir;
+  const originalDatasetStorageDir = env.datasetStorageDir;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'preprocessing-graph-'));
+    env.executionWorkspaceDir = join(tempDir, 'workspaces');
+    env.datasetStorageDir = join(tempDir, 'dataset-files');
   });
 
   afterEach(async () => {
+    env.executionWorkspaceDir = originalExecutionWorkspaceDir;
+    env.datasetStorageDir = originalDatasetStorageDir;
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -35,7 +42,12 @@ describe('preprocessingGraph', () => {
     options?: {
       cellMetadataStore?: { apply: (cellIds: string[], binding: PreprocessingCellBinding) => Promise<void> };
       cellInspector?: {
-        read: (cellId: string) => Promise<{ cellId: string; content: string; metadata: Record<string, unknown> } | undefined>;
+        read: (cellId: string) => Promise<{
+          cellId: string;
+          notebookId?: string;
+          content: string;
+          metadata: Record<string, unknown>;
+        } | undefined>;
       };
     }
   ) {
@@ -71,6 +83,14 @@ describe('preprocessingGraph', () => {
         sample: [{ age: '31', income: 9.5 }]
       }
     });
+
+    const workspaceProjectDir = join(env.executionWorkspaceDir, projectId, 'datasets');
+    const sourceWorkspaceDir = join(workspaceProjectDir, sourceDataset.datasetId);
+    const incompatibleWorkspaceDir = join(workspaceProjectDir, incompatibleDataset.datasetId);
+    await mkdir(sourceWorkspaceDir, { recursive: true });
+    await mkdir(incompatibleWorkspaceDir, { recursive: true });
+    await writeFile(join(sourceWorkspaceDir, sourceDataset.filename), 'age,income\n31,9.5\n42,11.2\n');
+    await writeFile(join(incompatibleWorkspaceDir, incompatibleDataset.filename), 'age,income\nthirty-one,9.5\nforty-two,11.2\n');
 
     return {
       execute: createPreprocessingToolExecutor({
@@ -338,6 +358,114 @@ describe('preprocessingGraph', () => {
     });
   });
 
+  it('recovers a stale pending step with no live bound cells before proposing a new step', async () => {
+    const projectId = 'project-1';
+    const { execute, runRepo } = await createExecutor(projectId, {
+      cellInspector: {
+        read: async () => undefined
+      }
+    });
+
+    const first = await execute(projectId, 'propose_transformation_step', {
+      stepId: 'encode_subject_area_and_repository_name',
+      title: 'Encode SUBJECT_AREA_NAME and REPOSITORY_NAME',
+      intentType: 'encoding'
+    });
+    const runId = (first.output as { runId: string }).runId;
+
+    const run = await runRepo.getById(runId);
+    expect(run).toBeDefined();
+    const blockingStep = run?.steps.encode_subject_area_and_repository_name;
+    expect(blockingStep).toBeDefined();
+    blockingStep!.cellIds = ['missing-cell-1', 'missing-cell-2'];
+    blockingStep!.status = 'pending';
+    blockingStep!.approvalDecision = 'pending';
+    await runRepo.save(run!);
+
+    const second = await execute(projectId, 'propose_transformation_step', {
+      runId,
+      stepId: 'impute_total_compile_time_sec',
+      title: 'Impute missing TOTAL_TIME_SEC and COMPILE_TIME_SEC',
+      intentType: 'impute_missing_values'
+    });
+
+    expect(second.output).toMatchObject({
+      isError: false,
+      stepId: 'impute_total_compile_time_sec',
+      step: {
+        stepId: 'impute_total_compile_time_sec',
+        status: 'pending'
+      }
+    });
+
+    const updatedRun = await runRepo.getById(runId);
+    expect(updatedRun?.steps.encode_subject_area_and_repository_name).toMatchObject({
+      status: 'failed',
+      approvalDecision: 'rejected',
+      decisionReason: 'Recovered stale pending preprocessing step with no live notebook cells.'
+    });
+  });
+
+  it('recovers a stale pending step whose bound cells belong to another notebook before proposing a new step', async () => {
+    const projectId = 'project-1';
+    const { execute, runRepo } = await createExecutor(projectId, {
+      cellInspector: {
+        async read(cellId) {
+          if (cellId !== 'foreign-cell-1') {
+            return undefined;
+          }
+          return {
+            cellId,
+            notebookId: 'notebook-other',
+            content: 'df["repo"] = df["repo"]',
+            metadata: {}
+          };
+        }
+      }
+    });
+
+    const first = await execute(projectId, 'propose_transformation_step', {
+      stepId: 'encode_subject_area_and_repository_name',
+      title: 'Encode SUBJECT_AREA_NAME and REPOSITORY_NAME',
+      intentType: 'encoding',
+      notebookId: 'notebook-current'
+    });
+    const runId = (first.output as { runId: string }).runId;
+
+    const run = await runRepo.getById(runId);
+    expect(run).toBeDefined();
+    const blockingStep = run?.steps.encode_subject_area_and_repository_name;
+    expect(blockingStep).toBeDefined();
+    blockingStep!.cellIds = ['foreign-cell-1'];
+    blockingStep!.status = 'pending';
+    blockingStep!.approvalDecision = 'pending';
+    await runRepo.save(run!);
+
+    const second = await execute(projectId, 'propose_transformation_step', {
+      runId,
+      stepId: 'impute_total_compile_time_sec',
+      title: 'Impute missing TOTAL_TIME_SEC and COMPILE_TIME_SEC',
+      intentType: 'impute_missing_values',
+      notebookId: 'notebook-current'
+    });
+
+    expect(second.output).toMatchObject({
+      isError: false,
+      stepId: 'impute_total_compile_time_sec',
+      step: {
+        stepId: 'impute_total_compile_time_sec',
+        status: 'pending'
+      }
+    });
+
+    const updatedRun = await runRepo.getById(runId);
+    expect(updatedRun?.steps.encode_subject_area_and_repository_name).toMatchObject({
+      status: 'failed',
+      approvalDecision: 'rejected',
+      decisionReason: 'Recovered stale pending preprocessing step whose bound notebook cells no longer belong to the active workbook.'
+    });
+  });
+
   it('persists rejection decision and reason when approval is denied', async () => {
     const projectId = 'project-1';
     const { execute, runRepo } = await createExecutor(projectId);
@@ -549,6 +677,42 @@ describe('preprocessingGraph', () => {
       reasonCode: 'STEP_APPLIED_REQUIRES_CELL_BINDINGS',
       stepId
     });
+  });
+
+  it('replaces stale persisted cell ids when execution reports newly written cells', async () => {
+    const projectId = 'project-1';
+    const { execute, runRepo } = await createExecutor(projectId);
+
+    const proposed = await execute(projectId, 'propose_transformation_step', {
+      stepId: 'encode_subject_area_and_repository_name',
+      title: 'Encode SUBJECT_AREA_NAME and REPOSITORY_NAME',
+      intentType: 'encoding'
+    });
+    const runId = (proposed.output as { runId: string }).runId;
+    const stepId = (proposed.output as { step?: { stepId: string } }).step?.stepId;
+
+    const run = await runRepo.getById(runId);
+    if (!run || !stepId) {
+      throw new Error('Failed to initialize preprocessing run for stale-cell test.');
+    }
+    run.steps[stepId].cellIds = ['stale-cell-a', 'stale-cell-b'];
+    await runRepo.save(run);
+
+    await execute(projectId, 'materialize_step_code', {
+      runId,
+      stepId,
+      code: 'print("encode")'
+    });
+
+    await execute(projectId, 'execute_transformation_step', {
+      runId,
+      stepId,
+      succeeded: true,
+      cellIds: ['new-cell-1']
+    });
+
+    const updated = await runRepo.getById(runId);
+    expect(updated?.steps[stepId]?.cellIds).toEqual(['new-cell-1']);
   });
 
   it('persists canonical step-cell bindings in run events and metadata store', async () => {

@@ -1,5 +1,12 @@
-import type { FilterPredicate, EvaluationResult, CrossPhaseRecommendation } from '@/types/experiments';
+import type {
+  CrossPhaseRecommendation,
+  EvaluationResult,
+  ExperimentSortDirection,
+  ExperimentSortField,
+  FilterPredicate,
+} from '@/types/experiments';
 import type { ModelRecord, ModelTaskType } from '@/types/model';
+import { LOWER_IS_BETTER } from './modelIcons';
 
 /* ── Filter predicate formatting ────────────────────────────────── */
 
@@ -30,9 +37,114 @@ export const PRIMARY_METRIC_LABEL: Record<ModelTaskType, string> = {
   clustering: 'Silhouette',
 };
 
+const METRIC_DISPLAY_LABEL: Readonly<Record<string, string>> = {
+  accuracy: 'Accuracy',
+  precision: 'Precision',
+  recall: 'Recall',
+  f1: 'F1',
+  rmse: 'RMSE',
+  mse: 'MSE',
+  mae: 'MAE',
+  r2: 'R\u00B2',
+  silhouette: 'Silhouette',
+};
+
+/** Short display name for a metric key (tooltips, charts). Unknown keys become title case. */
+export function formatMetricDisplayName(key: string): string {
+  const k = key.toLowerCase();
+  return METRIC_DISPLAY_LABEL[k] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Detect whether models span more than one task type. */
 export function detectTaskTypes(models: ModelRecord[]): ModelTaskType[] {
   return Array.from(new Set(models.map((m) => m.taskType)));
+}
+
+export function findChampionModelId(
+  models: ModelRecord[],
+  taskTypeFilter?: ModelTaskType[],
+): string | null {
+  let champion: ModelRecord | null = null;
+  let championValue = NaN;
+
+  for (const model of models) {
+    if (model.status !== 'completed') {
+      continue;
+    }
+    if (taskTypeFilter && !taskTypeFilter.includes(model.taskType)) {
+      continue;
+    }
+
+    const metricKey = PRIMARY_METRIC[model.taskType];
+    const metricValue = model.metrics[metricKey];
+    if (!Number.isFinite(metricValue)) {
+      continue;
+    }
+
+    const lowerIsBetter = LOWER_IS_BETTER.has(metricKey);
+    if (
+      Number.isNaN(championValue) ||
+      (lowerIsBetter ? metricValue < championValue : metricValue > championValue)
+    ) {
+      champion = model;
+      championValue = metricValue;
+    }
+  }
+
+  return champion?.modelId ?? null;
+}
+
+export function sortModels(
+  models: ModelRecord[],
+  sortField: ExperimentSortField,
+  sortDirection: ExperimentSortDirection,
+): ModelRecord[] {
+  return [...models].sort((left, right) => {
+    let leftValue: number | string;
+    let rightValue: number | string;
+
+    if (sortField === 'name') {
+      leftValue = left.name.toLowerCase();
+      rightValue = right.name.toLowerCase();
+    } else if (sortField === 'algorithm') {
+      leftValue = left.algorithm.toLowerCase();
+      rightValue = right.algorithm.toLowerCase();
+    } else if (sortField === 'createdAt') {
+      leftValue = left.createdAt;
+      rightValue = right.createdAt;
+    } else {
+      leftValue = left.metrics[sortField] ?? -Infinity;
+      rightValue = right.metrics[sortField] ?? -Infinity;
+    }
+
+    if (leftValue < rightValue) {
+      return sortDirection === 'asc' ? -1 : 1;
+    }
+    if (leftValue > rightValue) {
+      return sortDirection === 'asc' ? 1 : -1;
+    }
+    return 0;
+  });
+}
+
+export function filterModels(
+  models: ModelRecord[],
+  activePredicates: FilterPredicate[],
+  manualPredicates: FilterPredicate[],
+  nameFilter: string,
+): ModelRecord[] {
+  let result = models;
+  if (activePredicates.length > 0) {
+    result = filterByPredicates(result, activePredicates);
+  }
+  if (manualPredicates.length > 0) {
+    result = filterByGroupedPredicates(result, manualPredicates);
+  }
+  if (nameFilter.trim()) {
+    const query = nameFilter.trim().toLowerCase();
+    result = result.filter((model) => model.name.toLowerCase().includes(query));
+  }
+  return result;
 }
 
 /* ── Metric formatting ───────────────────────────────────────────── */
@@ -57,6 +169,42 @@ export function formatMetric(value: number | undefined): string {
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * Format milliseconds as a compact duration string for pill display.
+ * < 1s → "123ms", < 60s → "42s", < 60m → "3m 12s", >= 60m → "1h 5m"
+ */
+export function formatDurationCompact(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return remainMinutes > 0 ? `${hours}h ${remainMinutes}m` : `${hours}h`;
+}
+
+/**
+ * Format milliseconds as a long human-readable duration string for tooltips.
+ * e.g., "3 minutes 12 seconds", "1 hour 5 minutes"
+ */
+export function formatDurationLong(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} milliseconds`;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds} second${totalSeconds !== 1 ? 's' : ''}`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    const minStr = `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    return seconds > 0 ? `${minStr} ${seconds} second${seconds !== 1 ? 's' : ''}` : minStr;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  const hrStr = `${hours} hour${hours !== 1 ? 's' : ''}`;
+  return remainMinutes > 0 ? `${hrStr} ${remainMinutes} minute${remainMinutes !== 1 ? 's' : ''}` : hrStr;
 }
 
 /* ── NL filter predicate logic ───────────────────────────────────── */
@@ -104,6 +252,26 @@ export function filterByPredicates(
   return models.filter((m) => predicates.every((p) => applyPredicate(m, p)));
 }
 
+/** Filter models by grouped predicates: OR within same field, AND across fields. */
+export function filterByGroupedPredicates(
+  models: ModelRecord[],
+  predicates: FilterPredicate[],
+): ModelRecord[] {
+  if (predicates.length === 0) return models;
+  const groups = new Map<string, FilterPredicate[]>();
+  for (const p of predicates) {
+    const existing = groups.get(p.field) ?? [];
+    existing.push(p);
+    groups.set(p.field, existing);
+  }
+  const groupList = Array.from(groups.values());
+  return models.filter((m) =>
+    groupList.every((group) =>
+      group.some((p) => applyPredicate(m, p))
+    )
+  );
+}
+
 /* ── Tuning metric options ─────────────────────────────────────────── */
 
 export const CLASSIFICATION_METRICS = [
@@ -119,8 +287,16 @@ export const REGRESSION_METRICS = [
   { value: 'neg_mean_absolute_error', label: 'Neg MAE' },
 ];
 
+export const CLUSTERING_METRICS = [
+  { value: 'silhouette_score', label: 'Silhouette Score' },
+  { value: 'calinski_harabasz_score', label: 'Calinski-Harabasz' },
+  { value: 'davies_bouldin_score', label: 'Davies-Bouldin' },
+];
+
 export function getAvailableMetrics(taskType: string) {
-  return taskType === 'regression' ? REGRESSION_METRICS : CLASSIFICATION_METRICS;
+  if (taskType === 'regression') return REGRESSION_METRICS;
+  if (taskType === 'clustering') return CLUSTERING_METRICS;
+  return CLASSIFICATION_METRICS;
 }
 
 /* ── Cross-phase recommendation generator ──────────────────────────── */

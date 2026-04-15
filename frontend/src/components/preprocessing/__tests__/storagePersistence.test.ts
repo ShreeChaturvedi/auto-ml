@@ -113,6 +113,7 @@ describe('preprocessing storage persistence helpers', () => {
 
     expect(parsed).toEqual({
       activeTabId: 'proc-2',
+      nextDefaultWorkbookIndex: 3,
       tabs: [
         { id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null, selectedDatasetId: null },
         { id: 'proc-2', name: 'Processing 2', storageVersion: 3, notebookId: 'nb-2', selectedDatasetId: null }
@@ -128,7 +129,28 @@ describe('preprocessing storage persistence helpers', () => {
 
     expect(parsed).toEqual({
       activeTabId: 'proc-1',
+      nextDefaultWorkbookIndex: 2,
       tabs: [{ id: 'proc-1', name: 'Processing 1', storageVersion: 0, notebookId: null, selectedDatasetId: null }]
+    });
+  });
+
+  it('preserves an explicit next workbook index when present', () => {
+    const parsed = parseStoredPreprocessingTabsState(JSON.stringify({
+      activeTabId: 'proc-2',
+      nextDefaultWorkbookIndex: 7,
+      tabs: [
+        { id: 'proc-1', name: 'Workbook 1', storageVersion: 0 },
+        { id: 'proc-2', name: 'Workbook 3', storageVersion: 0 }
+      ]
+    }));
+
+    expect(parsed).toEqual({
+      activeTabId: 'proc-2',
+      nextDefaultWorkbookIndex: 7,
+      tabs: [
+        { id: 'proc-1', name: 'Workbook 1', storageVersion: 0, notebookId: null, selectedDatasetId: null },
+        { id: 'proc-2', name: 'Workbook 3', storageVersion: 0, notebookId: null, selectedDatasetId: null }
+      ]
     });
   });
 

@@ -1,3 +1,4 @@
+import { CodeBlock } from '@/components/llm/shared/CodeBlock';
 import { truncate } from './shared';
 
 export interface ReadCellOutput {
@@ -9,20 +10,28 @@ export interface ReadCellOutput {
 }
 
 export function ReadCellResult({ data }: { data: ReadCellOutput }) {
+  const isCode = !data.cellType || data.cellType === 'code';
+
   return (
     <div className="space-y-2">
       {data.title && (
         <p className="text-xs font-medium text-foreground">{data.title}</p>
       )}
       {data.content && (
-        <pre className="text-[11px] font-mono text-muted-foreground bg-muted/40 rounded-md p-2 max-h-[120px] overflow-y-auto whitespace-pre-wrap">
-          {truncate(data.content, 600)}
-        </pre>
+        isCode ? (
+          <CodeBlock code={truncate(data.content, 2000)} language="python" maxHeight={140} />
+        ) : (
+          <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap max-h-[120px] overflow-y-auto">
+            {truncate(data.content, 600)}
+          </pre>
+        )
       )}
       {data.output && (
-        <div className="text-[10px] font-mono text-muted-foreground/80 bg-muted/20 rounded-md p-2 max-h-[80px] overflow-y-auto">
+        <div className="pl-2">
           <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Output</p>
-          <pre className="whitespace-pre-wrap">{truncate(String(data.output), 400)}</pre>
+          <pre className="text-[10px] font-mono text-muted-foreground/80 whitespace-pre-wrap max-h-[80px] overflow-y-auto">
+            {truncate(String(data.output), 400)}
+          </pre>
         </div>
       )}
     </div>

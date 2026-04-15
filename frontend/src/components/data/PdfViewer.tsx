@@ -2,54 +2,39 @@
  * PdfViewer — React-based PDF viewer with custom toolbar, continuous scroll,
  * and IntersectionObserver-based virtualization.
  *
- * Uses react-pdf v10 (pdfjs-dist v5, patched for CVE-2024-34342 / CVE-2024-4367).
- * Default-exported for React.lazy code-splitting.
+ * Uses react-pdf v10 (pdfjs-dist v5). Default-exported for React.lazy code-splitting.
  */
 
 import {
-  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-import {
-  ChevronDown,
-  ChevronUp,
-  Download,
-  ExternalLink,
-  Loader2,
-  Maximize2,
-  ZoomIn,
-  ZoomOut,
-} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
+import { PdfViewerPageSlot } from './PdfViewerPageSlot';
+import { PdfViewerToolbar } from './PdfViewerToolbar';
+import {
+  clampPdfPage,
+  createInitialVisiblePdfPages,
+  DEFAULT_PDF_SCALE,
+  getNextPdfZoom,
+  getPdfDisplayScale,
+  getPreviousPdfZoom,
+  type PageDimension,
+} from './pdfViewerState';
 
-// ---------- pdfjs worker (CDN, version-matched) ----------
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-// ---------- constants ----------
-const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
-const DEFAULT_SCALE = 1;
-const PAGE_GAP = 8;
-
-// ---------- types ----------
 interface PdfViewerProps {
   /** Blob URL or remote URL pointing to the PDF */
   url: string;
@@ -58,287 +43,13 @@ interface PdfViewerProps {
   className?: string;
 }
 
-interface PageDimension {
-  width: number;
-  height: number;
-}
-
-// ---------- helpers ----------
-function clampPage(page: number, max: number) {
-  return Math.max(1, Math.min(page, max));
-}
-
-function nextZoom(current: number): number {
-  for (const z of ZOOM_PRESETS) {
-    if (z > current + 0.01) return z;
-  }
-  return ZOOM_PRESETS[ZOOM_PRESETS.length - 1];
-}
-
-function prevZoom(current: number): number {
-  for (let i = ZOOM_PRESETS.length - 1; i >= 0; i--) {
-    if (ZOOM_PRESETS[i] < current - 0.01) return ZOOM_PRESETS[i];
-  }
-  return ZOOM_PRESETS[0];
-}
-
-// ---------- toolbar ----------
-function Toolbar({
-  currentPage,
-  numPages,
-  scale,
-  fitWidth,
-  url,
-  fileName,
-  onPageChange,
-  onZoomIn,
-  onZoomOut,
-  onToggleFitWidth,
-}: {
-  currentPage: number;
-  numPages: number;
-  scale: number;
-  fitWidth: boolean;
-  url: string;
-  fileName?: string;
-  onPageChange: (page: number) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onToggleFitWidth: () => void;
-}) {
-  const [pageInput, setPageInput] = useState(String(currentPage));
-
-  // Sync input when currentPage changes from scroll
-  useEffect(() => {
-    setPageInput(String(currentPage));
-  }, [currentPage]);
-
-  const commitPage = () => {
-    const parsed = parseInt(pageInput, 10);
-    if (!Number.isNaN(parsed)) {
-      onPageChange(clampPage(parsed, numPages));
-    } else {
-      setPageInput(String(currentPage));
-    }
-  };
-
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div className="flex h-12 shrink-0 items-center justify-between border-b bg-background px-3">
-        {/* Left: page navigation */}
-        <div className="flex items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={currentPage <= 1}
-                onClick={() => onPageChange(currentPage - 1)}
-                aria-label="Previous page"
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Previous page</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={currentPage >= numPages}
-                onClick={() => onPageChange(currentPage + 1)}
-                aria-label="Next page"
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Next page</TooltipContent>
-          </Tooltip>
-
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Input
-              value={pageInput}
-              onChange={(e) => setPageInput(e.target.value)}
-              onBlur={commitPage}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitPage();
-              }}
-              className="h-7 w-12 border-input px-1 text-center text-xs"
-              aria-label="Current page"
-            />
-            <span>of {numPages}</span>
-          </div>
-        </div>
-
-        {/* Center: zoom controls */}
-        <div className="flex items-center gap-1">
-          <Separator orientation="vertical" className="mx-1.5 h-5" />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={onZoomOut}
-                disabled={scale <= ZOOM_PRESETS[0]}
-                aria-label="Zoom out"
-              >
-                <ZoomOut className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Zoom out</TooltipContent>
-          </Tooltip>
-
-          <span className="w-12 text-center text-xs tabular-nums text-muted-foreground">
-            {Math.round(scale * 100)}%
-          </span>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={onZoomIn}
-                disabled={scale >= ZOOM_PRESETS[ZOOM_PRESETS.length - 1]}
-                aria-label="Zoom in"
-              >
-                <ZoomIn className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Zoom in</TooltipContent>
-          </Tooltip>
-        </div>
-
-        {/* Right: actions */}
-        <div className="flex items-center gap-1">
-          <Separator orientation="vertical" className="mx-1.5 h-5" />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={fitWidth ? 'secondary' : 'ghost'}
-                size="icon-sm"
-                onClick={onToggleFitWidth}
-                aria-label="Fit to width"
-              >
-                <Maximize2 className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Fit to width</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => {
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.download = fileName ?? 'document.pdf';
-                  link.rel = 'noopener';
-                  link.click();
-                }}
-                aria-label="Download"
-              >
-                <Download className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Download</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
-                aria-label="Open in new tab"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Open in new tab</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-    </TooltipProvider>
-  );
-}
-
-// ---------- single page wrapper (memo'd to stabilize ref callback) ----------
-const PageSlot = memo(function PageSlot({
-  pageNum,
-  isVisible,
-  fitWidth,
-  fitWidthValue,
-  scale,
-  dim,
-  onPageRef,
-  onPageLoadSuccess,
-}: {
-  pageNum: number;
-  isVisible: boolean;
-  fitWidth: boolean;
-  fitWidthValue: number;
-  scale: number;
-  dim: PageDimension | undefined;
-  onPageRef: (pageNum: number, el: HTMLDivElement | null) => void;
-  onPageLoadSuccess: (page: { pageNumber: number; width: number; height: number }) => void;
-}) {
-  const ref = useCallback(
-    (el: HTMLDivElement | null) => onPageRef(pageNum, el),
-    [pageNum, onPageRef],
-  );
-
-  const placeholderH = dim
-    ? fitWidth
-      ? (fitWidthValue / dim.width) * dim.height
-      : dim.height * scale
-    : fitWidth
-      ? fitWidthValue * 1.414
-      : 792 * scale;
-
-  const placeholderW = fitWidth
-    ? fitWidthValue
-    : dim
-      ? dim.width * scale
-      : 612 * scale;
-
-  return (
-    <div
-      ref={ref}
-      data-page-number={pageNum}
-      style={{ marginBottom: PAGE_GAP }}
-    >
-      {isVisible ? (
-        <Page
-          pageNumber={pageNum}
-          width={fitWidth ? fitWidthValue : undefined}
-          scale={fitWidth ? undefined : scale}
-          onLoadSuccess={onPageLoadSuccess}
-          className="pdf-viewer-page"
-        />
-      ) : (
-        <div
-          className="rounded-sm bg-muted/30"
-          style={{ width: placeholderW, height: placeholderH }}
-        />
-      )}
-    </div>
-  );
-});
-
-// ---------- main component ----------
 export default function PdfViewer({ url, fileName, className }: PdfViewerProps) {
-  const { theme } = useTheme();
-  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
 
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [scale, setScale] = useState(DEFAULT_SCALE);
+  const [scale, setScale] = useState(DEFAULT_PDF_SCALE);
   const [fitWidth, setFitWidth] = useState(true);
   const [containerWidth, setContainerWidth] = useState(0);
   const [visiblePages, setVisiblePages] = useState<Set<number>>(() => new Set([1]));
@@ -351,6 +62,17 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const topVisibleRef = useRef(1);
 
+  // Reset all viewer state when the source PDF changes
+  useEffect(() => {
+    setNumPages(0);
+    setCurrentPage(1);
+    setScale(DEFAULT_PDF_SCALE);
+    setFitWidth(true);
+    setVisiblePages(new Set([1]));
+    setPageDimensions(new Map());
+    topVisibleRef.current = 1;
+  }, [url]);
+
   const documentOptions = useMemo(
     () => ({
       cMapUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
@@ -359,7 +81,6 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
     [],
   );
 
-  // ---------- ResizeObserver (rAF-throttled) ----------
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -375,29 +96,20 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
     return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, []);
 
-  // ---------- IntersectionObserver for page virtualization ----------
   useEffect(() => {
     if (!scrollRef.current) return;
 
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        let nextTop = topVisibleRef.current;
-
-        // Determine topmost intersecting page
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const n = Number((entry.target as HTMLElement).dataset.pageNumber);
-          if (!Number.isNaN(n) && n < nextTop) nextTop = n;
-        }
         const intersecting = entries
           .filter((e) => e.isIntersecting)
           .map((e) => Number((e.target as HTMLElement).dataset.pageNumber))
           .filter((n) => !Number.isNaN(n));
-        if (intersecting.length > 0) {
-          nextTop = Math.min(...intersecting);
-        }
 
-        // Update current page outside the state updater
+        const nextTop = intersecting.length > 0
+          ? Math.min(...intersecting)
+          : topVisibleRef.current;
+
         if (nextTop !== topVisibleRef.current) {
           topVisibleRef.current = nextTop;
           setCurrentPage(nextTop);
@@ -444,7 +156,6 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
     return () => observerRef.current?.disconnect();
   }, [numPages]);
 
-  // Observe/unobserve page elements on mount/unmount
   const handlePageRef = useCallback(
     (pageNum: number, el: HTMLDivElement | null) => {
       const prev = pageRefs.current.get(pageNum);
@@ -461,11 +172,10 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
     [],
   );
 
-  // ---------- handlers ----------
   const handleDocumentLoadSuccess = useCallback(
     ({ numPages: n }: { numPages: number }) => {
       setNumPages(n);
-      setVisiblePages(new Set([1, 2, 3].filter((p) => p <= n)));
+      setVisiblePages(createInitialVisiblePdfPages(n));
     },
     [],
   );
@@ -491,7 +201,7 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
 
   const handlePageChange = useCallback(
     (page: number) => {
-      const clamped = clampPage(page, numPages);
+      const clamped = clampPdfPage(page, numPages);
       setCurrentPage(clamped);
       scrollToPage(clamped);
     },
@@ -500,31 +210,36 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
 
   const handleZoomIn = useCallback(() => {
     setFitWidth(false);
-    setScale((s) => nextZoom(s));
+    setScale((currentScale) => getNextPdfZoom(currentScale));
   }, []);
 
   const handleZoomOut = useCallback(() => {
     setFitWidth(false);
-    setScale((s) => prevZoom(s));
+    setScale((currentScale) => getPreviousPdfZoom(currentScale));
   }, []);
 
   const handleToggleFitWidth = useCallback(() => {
     setFitWidth((f) => !f);
   }, []);
 
-  const fitWidthValue = Math.max(containerWidth - 48, 200);
+  const fitWidthValue = useMemo(
+    () => Math.max(containerWidth - 48, 200),
+    [containerWidth],
+  );
 
   const displayScale = useMemo(() => {
-    if (!fitWidth) return scale;
-    const firstPageDim = pageDimensions.get(1);
-    if (!firstPageDim) return 1;
-    return fitWidthValue / firstPageDim.width;
+    return getPdfDisplayScale({
+      fitWidth,
+      scale,
+      pageDimensions,
+      fitWidthValue,
+    });
   }, [fitWidth, scale, pageDimensions, fitWidthValue]);
 
   return (
     <div className={cn('flex flex-col', className)}>
       {numPages > 0 && (
-        <Toolbar
+        <PdfViewerToolbar
           currentPage={currentPage}
           numPages={numPages}
           scale={displayScale}
@@ -565,7 +280,7 @@ export default function PdfViewer({ url, fileName, className }: PdfViewerProps) 
             {Array.from({ length: numPages }, (_, i) => {
               const pageNum = i + 1;
               return (
-                <PageSlot
+                <PdfViewerPageSlot
                   key={pageNum}
                   pageNum={pageNum}
                   isVisible={visiblePages.has(pageNum)}

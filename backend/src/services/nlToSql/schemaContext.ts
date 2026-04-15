@@ -1,8 +1,9 @@
 import { env } from '../../config.js';
 import type { DatasetRepository } from '../../repositories/datasetRepository.js';
+import { ensureProjectDatasetSqlNames, resolveDatasetSqlName } from '../datasetSqlNames.js';
 
 import { extractJson } from './jsonNormalization.js';
-import { fallbackTableName, normalizeTableName, resolveDefaultTableName } from './tableResolution.js';
+import { resolveDefaultTableName } from './tableResolution.js';
 import type { JoinCandidate, SchemaTableContext } from './types.js';
 
 export function clampConfidence(value: number): number {
@@ -103,18 +104,10 @@ export async function buildSchemaContext(
   defaultTableName: string | null;
   joinCandidates: JoinCandidate[];
 }> {
-  const datasets = await datasetRepository.list();
-  const projectDatasets = datasets.filter((dataset) => dataset.projectId === projectId);
+  const projectDatasets = await ensureProjectDatasetSqlNames(projectId, datasetRepository);
 
   const tables = projectDatasets
     .map((dataset) => {
-      const meta = dataset.metadata && typeof dataset.metadata === 'object'
-        ? dataset.metadata as Record<string, unknown>
-        : {};
-      const metadataTable = typeof meta.tableName === 'string' ? meta.tableName : '';
-      const tableName = normalizeTableName(metadataTable)
-        || fallbackTableName(dataset.filename, dataset.datasetId);
-
       const columns = dataset.columns
         .slice(0, Math.max(1, env.nl2sqlMaxColumnsPerTable))
         .map((column) => ({
@@ -123,7 +116,7 @@ export async function buildSchemaContext(
         }));
 
       return {
-        tableName,
+        tableName: resolveDatasetSqlName(dataset),
         sourceFilename: dataset.filename,
         rowCount: dataset.nRows,
         columns

@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@/types/llmUi';
 import { asRecordOrNull } from '@/lib/typeCoercion';
 import { isWorkflowThreadId } from '@/lib/workflowThread';
+import { inferNextWorkbookIndex } from './preprocessingTabUtils';
 
 export function buildProcessingStorageKey(tabId: string): string {
   return `preprocessing-messages-v5-${tabId}`;
@@ -62,6 +63,7 @@ export interface StoredPreprocessingTabState {
 export interface StoredPreprocessingTabsState {
   activeTabId: string;
   tabs: StoredPreprocessingTabState[];
+  nextDefaultWorkbookIndex?: number;
 }
 
 export function parseStoredPreprocessingTabsState(
@@ -74,6 +76,11 @@ export function parseStoredPreprocessingTabsState(
   try {
     const parsed = JSON.parse(rawState) as Record<string, unknown>;
     const activeTabId = typeof parsed.activeTabId === 'string' ? parsed.activeTabId : '';
+    const nextDefaultWorkbookIndex = typeof parsed.nextDefaultWorkbookIndex === 'number'
+      && Number.isInteger(parsed.nextDefaultWorkbookIndex)
+      && parsed.nextDefaultWorkbookIndex > 1
+      ? parsed.nextDefaultWorkbookIndex
+      : undefined;
     const tabs = Array.isArray(parsed.tabs)
       ? parsed.tabs
           .map((tab) => {
@@ -104,7 +111,14 @@ export function parseStoredPreprocessingTabsState(
       return null;
     }
 
-    return { activeTabId, tabs };
+    return {
+      activeTabId,
+      tabs,
+      nextDefaultWorkbookIndex: Math.max(
+        nextDefaultWorkbookIndex ?? 0,
+        inferNextWorkbookIndex(tabs)
+      )
+    };
   } catch {
     return null;
   }

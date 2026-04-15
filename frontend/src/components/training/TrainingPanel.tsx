@@ -2,25 +2,20 @@
  * TrainingPanel - Jupyter-style training interface with AI assistance
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import type { ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from 'react';
+import { useParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  ArrowRight,
-  Wand2
-} from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { CodeCell } from './CodeCell';
 import { ModelRecommendationCard } from './ModelRecommendationCard';
 import type { Cell } from '@/types/cell';
 import { cn } from '@/lib/utils';
 import { useExecutionStore } from '@/stores/executionStore';
-import { useNotebookStore } from '@/stores/notebookStore';
 import { useDataStore } from '@/stores/dataStore';
 import { useFeatureStore } from '@/stores/featureStore';
-import { useProjectStore } from '@/stores/projectStore';
 import { getPreviousPhaseDataset, persistPhaseDataset } from '@/lib/phaseDatasetPersistence';
 import { generateFeatureEngineeringCode } from '@/lib/features/codeGenerator';
 import type { UiItem, ChatMessage, UiSchema, UiSection } from '@/types/llmUi';
@@ -29,24 +24,253 @@ import { ChatMessageRenderer } from '@/components/agentic/ChatMessageRenderer';
 import { useLifecycleCards } from '@/components/agentic/useLifecycleCards';
 import { useWorkflowPlaceholders } from '@/hooks/useWorkflowPlaceholders';
 import { RenameTabDialog } from '@/components/preprocessing/PreprocessingDialogs';
+import type { SavepointDiff } from '@/types/savepoint';
 import { createTrainingAdapter } from './TrainingAdapter';
-import { TrainingToolbarLeft } from './TrainingToolbar';
+import { TrainingApprovalGate } from './TrainingApprovalGate';
+import { TrainingToolbarLeft, TrainingToolbarRight } from './TrainingToolbar';
 import { useTrainingWorkbooks } from './hooks/useTrainingWorkbooks';
-import { buildWorkflowSessionKey } from '@/stores/workflowSessionStore';
+import { useTrainingNotebookSync } from './hooks/useTrainingNotebookSync';
+import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
+import { useModelStore } from '@/stores/modelStore';
+import { usePhaseNotebookRecovery } from '@/hooks/usePhaseNotebookRecovery';
+import { useTrainingPanelSearchState } from './useTrainingPanelSearchState';
 
 type CodeCellUiItem = Extract<UiItem, { type: 'code_cell' }>;
-const EMPTY_PIPELINE_VERSIONS: Array<{ status: string }> = [];
+type TrainingProposalSelection = { title: string; selected: boolean };
+
+function extractPendingTrainingProposalTitle(message: Extract<ChatMessage, { type: 'tool_call' }>): string {
+  const output = message.result?.output;
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    const experimentName = (output as Record<string, unknown>).experimentName;
+    if (typeof experimentName === 'string' && experimentName.trim().length > 0) {
+      return experimentName;
+    }
+  }
+
+  const args = message.call.args;
+  if (typeof args?.experimentName === 'string' && args.experimentName.trim().length > 0) {
+    return args.experimentName;
+  }
+  if (typeof args?.modelName === 'string' && args.modelName.trim().length > 0) {
+    return args.modelName;
+  }
+
+  return 'Training Plan';
+}
+
+function isPendingTrainingProposal(message: ChatMessage): message is Extract<ChatMessage, { type: 'tool_call' }> {
+  if (message.type !== 'tool_call' || message.call.tool !== 'propose_training_plan') {
+    return false;
+  }
+  if (!message.result) {
+    return true;
+  }
+  const output = message.result.output;
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return false;
+  }
+  return (output as Record<string, unknown>).status === 'awaiting_approval';
+}
+
+function collectActivePendingTrainingProposals(messages: ChatMessage[]): Array<{ id: string; title: string }> {
+  const pendingProposals: Array<{ id: string; title: string }> = [];
+
+  // Only treat a trailing block of pending training proposals as active.
+  // Older proposal cards from prior turns stay in history, but they should
+  // not keep the global approval gate visible after training continues.
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.type !== 'tool_call') {
+      continue;
+    }
+    if (isPendingTrainingProposal(message)) {
+      pendingProposals.push({
+        id: message.call.id,
+        title: extractPendingTrainingProposalTitle(message)
+      });
+      continue;
+    }
+    break;
+  }
+
+  return pendingProposals.reverse();
+}
+
+interface TrainingConversationPaneProps {
+  messages: ChatMessage[];
+  error: string | null;
+  isGenerating: boolean;
+  activeTextMessageId?: string | null;
+  activeThinkingMessageId?: string | null;
+  hydratedMessageIds?: Set<string>;
+  onEditMessage?: (id: string) => void;
+  onRevertToMessage?: (id: string) => void;
+  editingMessageId?: string | null;
+  turnDiffs?: ReadonlyMap<string, SavepointDiff>;
+  onRetryWorkflow?: () => void;
+  renderLifecycleCard: (message: ChatMessage) => ReactNode | null;
+  syncLlmCells: (messages: ChatMessage[]) => void;
+  proposalSelections: Map<string, TrainingProposalSelection>;
+  setProposalSelections: Dispatch<SetStateAction<Map<string, TrainingProposalSelection>>>;
+  proposalsSubmitted: boolean;
+  setProposalsSubmitted: Dispatch<SetStateAction<boolean>>;
+  submitPromptRef: MutableRefObject<((prompt: string) => void) | undefined>;
+}
+
+function TrainingConversationPane({
+  messages,
+  error,
+  isGenerating,
+  activeTextMessageId,
+  activeThinkingMessageId,
+  hydratedMessageIds,
+  onEditMessage,
+  onRevertToMessage,
+  editingMessageId,
+  turnDiffs,
+  onRetryWorkflow,
+  renderLifecycleCard,
+  syncLlmCells,
+  proposalSelections,
+  setProposalSelections,
+  proposalsSubmitted,
+  setProposalsSubmitted,
+  submitPromptRef
+}: TrainingConversationPaneProps) {
+  useEffect(() => {
+    syncLlmCells(messages);
+  }, [messages, syncLlmCells]);
+
+  const pendingProposals = useMemo(
+    () => collectActivePendingTrainingProposals(messages),
+    [messages]
+  );
+  const pendingProposalIds = useMemo(
+    () => pendingProposals.map((proposal) => proposal.id),
+    [pendingProposals]
+  );
+  const pendingProposalCount = pendingProposalIds.length;
+  const pendingProposalSignature = useMemo(
+    () => [...pendingProposalIds].sort().join('|'),
+    [pendingProposalIds]
+  );
+
+  useEffect(() => {
+    setProposalSelections((prev) => {
+      let changed = prev.size !== pendingProposalIds.length;
+      const next = new Map<string, TrainingProposalSelection>();
+      let hasSelectedModel = false;
+      for (const proposal of pendingProposals) {
+        const existing = prev.get(proposal.id);
+        if (existing) {
+          const shouldSelect = existing.selected && !hasSelectedModel;
+          if (existing.selected && hasSelectedModel) {
+            changed = true;
+          }
+          next.set(proposal.id, {
+            title: proposal.title,
+            selected: shouldSelect
+          });
+          if (shouldSelect) {
+            hasSelectedModel = true;
+          }
+        } else {
+          changed = true;
+          next.set(proposal.id, { title: proposal.title, selected: false });
+        }
+      }
+
+      if (!hasSelectedModel && pendingProposalCount > 0) {
+        const firstProposalId = pendingProposals[0].id;
+        const firstProposal = next.get(firstProposalId);
+        next.set(firstProposalId, {
+          title: firstProposal?.title ?? pendingProposals[0].title,
+          selected: true
+        });
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [pendingProposalCount, pendingProposalIds.length, pendingProposals, setProposalSelections]);
+
+  const lastProposalSignatureRef = useRef<string>('');
+  useEffect(() => {
+    if (lastProposalSignatureRef.current === pendingProposalSignature) {
+      return;
+    }
+    lastProposalSignatureRef.current = pendingProposalSignature;
+    setProposalsSubmitted(false);
+  }, [pendingProposalSignature, setProposalsSubmitted]);
+
+  const selectedProposalEntries = useMemo(
+    () => pendingProposalIds
+      .map((proposalId) => {
+        const proposal = proposalSelections.get(proposalId);
+        return proposal?.selected ? proposal : null;
+      })
+      .filter((proposal): proposal is TrainingProposalSelection => proposal !== null),
+    [pendingProposalIds, proposalSelections]
+  );
+
+  return (
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-6 pt-6">
+      {pendingProposalIds.length > 0 ? (
+        <TrainingApprovalGate
+          totalModels={pendingProposalIds.length}
+          selectedModels={selectedProposalEntries.length}
+          isGenerating={isGenerating && proposalsSubmitted}
+          isSubmitted={proposalsSubmitted}
+          onApply={() => {
+            const selectedProposal = selectedProposalEntries[0];
+            const name = selectedProposal?.title;
+            if (!name) {
+              return;
+            }
+            setProposalsSubmitted(true);
+            submitPromptRef.current?.(`Approved. Proceed with training the selected model: ${name}.`);
+          }}
+        />
+      ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1 pb-28">
+        <div className="space-y-4">
+          {error && <div className="text-sm text-red-500">{error}</div>}
+
+          <ChatMessageRenderer
+            messages={messages}
+            renderLifecycleCard={renderLifecycleCard}
+            activeTextMessageId={activeTextMessageId}
+            activeThinkingMessageId={activeThinkingMessageId}
+            hydratedMessageIds={hydratedMessageIds}
+            onEditMessage={onEditMessage}
+            onRevertToMessage={onRevertToMessage}
+            editingMessageId={editingMessageId}
+            turnDiffs={turnDiffs}
+            isGenerating={isGenerating}
+            onRetryWorkflow={onRetryWorkflow}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function TrainingPanel() {
   const { projectId } = useParams<{ projectId: string }>();
   const composerPlaceholders = useWorkflowPlaceholders(projectId, 'training');
-  const [searchParams] = useSearchParams();
-  const initialNotebookIdRef = useRef(searchParams.get('notebook') ?? undefined);
+  const {
+    initialWorkbookId,
+    initialNotebookId,
+    requestedWorkbookId,
+    syncWorkbookParam
+  } = useTrainingPanelSearchState();
+  const initialNotebookIdRef = useRef(initialNotebookId);
 
   const {
     workbooks: trainingWorkbooks,
     activeWorkbookId: activeTrainingWorkbookId,
-    // activeWorkbook not needed here — used by sidebar via registry store
+    activeWorkbook: activeTrainingWorkbook,
+    chatSessionVersion: trainingChatSessionVersion,
     buildStorageKey: buildTrainingStorageKey,
     handleSwitch: handleWorkbookSwitch,
     handleNew: handleNewWorkbook,
@@ -54,37 +278,63 @@ export function TrainingPanel() {
     handleRename: handleRenameWorkbook,
     handleReplay: handleReplayWorkbook,
     handleReset: handleResetWorkbook,
+    setWorkbookNotebookId,
     renameDialogOpen,
     setRenameDialogOpen,
     renameDialogValue,
     setRenameDialogValue,
     openRenameDialog
-  } = useTrainingWorkbooks(projectId);
+  } = useTrainingWorkbooks(projectId, {
+    requestedWorkbookId: requestedWorkbookId ?? initialWorkbookId ?? undefined,
+    syncWorkbookParam
+  });
+
+  // Resolve a training-scoped notebook for the active workbook. The hook
+  // creates/adopts a notebook with metadata { phase: 'training', tabId, tabName }
+  // and never adopts notebooks from other phases — so the FE notebook left
+  // over from a previous tab is not touched, keeping FE cells intact. The
+  // isTrainingNotebookReady flag gates AgenticShell's mount below; without
+  // that gate, AgenticShell's initializeNotebook(undefined) fallback would
+  // activate notebooks[0] (often an FE notebook) during the first render.
+  const { notebookId: resolvedTrainingNotebookId, isReady: isTrainingNotebookReady } = useTrainingNotebookSync({
+    projectId,
+    activeWorkbook: activeTrainingWorkbook,
+    setWorkbookNotebookId,
+    initialNotebookId: initialNotebookIdRef.current
+  });
+
+  // Stable getter for the adapter — reading the ref means the adapter
+  // identity does not change on every notebook resolution update, which
+  // would otherwise cascade into useAgenticLoop state churn mid-session.
+  const resolvedNotebookIdRef = useRef<string | null>(resolvedTrainingNotebookId);
+  useEffect(() => {
+    resolvedNotebookIdRef.current = resolvedTrainingNotebookId;
+  }, [resolvedTrainingNotebookId]);
+  const getTrainingNotebookId = useCallback(
+    () => resolvedNotebookIdRef.current ?? undefined,
+    []
+  );
 
   const [cells, setCells] = useState<Cell[]>([]);
   const cellsRef = useRef<Cell[]>(cells);
   const [trainingDatasetId, setTrainingDatasetId] = useState<string | null>(null);
   const [trainingTargetColumn, setTrainingTargetColumn] = useState<string | undefined>();
-  
+
   const autoRunIdsRef = useRef(new Set<string>());
+  const submitPromptRef = useRef<((prompt: string) => void) | undefined>(undefined);
+
+  // Track proposal selections for multi-model approval flow
+  const [proposalSelections, setProposalSelections] = useState<Map<string, TrainingProposalSelection>>(new Map());
+  const [proposalsSubmitted, setProposalsSubmitted] = useState(false);
 
   const { executeCode: executeWithStore } = useExecutionStore();
 
-  // Apply initial notebook from URL search params
-  useEffect(() => {
-    if (initialNotebookIdRef.current) {
-      void useNotebookStore.getState().setActiveNotebook(initialNotebookIdRef.current);
-    }
-  }, []);
-
-  // Tag notebook with training phase metadata
-  const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
-  const updateNotebookMetadata = useNotebookStore((state) => state.updateNotebookMetadata);
-
-  useEffect(() => {
-    if (!activeNotebookId) return;
-    void updateNotebookMetadata(activeNotebookId, { phase: 'training' });
-  }, [activeNotebookId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: the URL ?notebook=<id> deep link is no longer applied by calling
+  // setActiveNotebook directly — that bypassed phase isolation and would
+  // activate an FE/preprocessing notebook globally. useTrainingNotebookSync
+  // now consumes initialNotebookIdRef.current, adopts the deep-linked
+  // notebook only if its metadata.phase === 'training', and ignores
+  // anything else with a console warning.
 
   // Files
   const files = useDataStore((s) => s.files);
@@ -105,20 +355,14 @@ export function TrainingPanel() {
 
   // Features
   const features = useFeatureStore((s) => s.features);
-  const pipelineVersions = useFeatureStore((s) => (
-    projectId ? s.versions[projectId] ?? EMPTY_PIPELINE_VERSIONS : EMPTY_PIPELINE_VERSIONS
-  ));
   const hydrateFeatures = useFeatureStore((s) => s.hydrateFromProject);
-  const projectMetadata = useProjectStore((state) => projectId ? state.getProjectById(projectId)?.metadata : undefined);
   const projectFeatures = useMemo(() => projectId ? features.filter(f => f.projectId === projectId && f.enabled) : [], [features, projectId]);
-  const feWorkflowVersion = typeof projectMetadata?.feWorkflowVersion === 'number' ? projectMetadata.feWorkflowVersion : undefined;
-  const hasApprovedFePipeline = pipelineVersions.some((version) => version.status === 'approved');
-  const trainingBlockedByFeGate = feWorkflowVersion === 2 && !hasApprovedFePipeline;
 
   useEffect(() => {
     if (!projectId) return;
     hydrateFeatures(projectId);
     hydrateFromBackend(projectId);
+    void useModelStore.getState().refreshModels(projectId);
   }, [projectId, hydrateFeatures, hydrateFromBackend]);
 
   useEffect(() => {
@@ -138,8 +382,8 @@ export function TrainingPanel() {
   useEffect(() => {
     const selected = trainingDatasetOptions.find((dataset) => dataset.datasetId === trainingDatasetId);
     if (!selected) return;
-    if (!trainingTargetColumn || !selected.columns.includes(trainingTargetColumn)) {
-      setTrainingTargetColumn(selected.columns[0]);
+    if (trainingTargetColumn && !selected.columns.includes(trainingTargetColumn)) {
+      setTrainingTargetColumn(undefined);
     }
   }, [trainingDatasetOptions, trainingDatasetId, trainingTargetColumn]);
 
@@ -264,7 +508,26 @@ export function TrainingPanel() {
     }
   };
 
-  const baseRenderLifecycleCard = useLifecycleCards();
+  const baseRenderLifecycleCard = useLifecycleCards({
+    onProposalToggle: (stepId, title, selected) => {
+      setProposalSelections(prev => {
+        const next = new Map(prev);
+        if (selected) {
+          for (const [existingStepId, proposal] of next.entries()) {
+            next.set(existingStepId, {
+              ...proposal,
+              selected: existingStepId === stepId
+            });
+          }
+          next.set(stepId, { title, selected: true });
+          return next;
+        }
+        next.set(stepId, { title, selected: false });
+        return next;
+      });
+    },
+    getProposalSelected: (stepId) => proposalSelections.get(stepId)?.selected ?? null,
+  });
 
   /** Extends lifecycle cards with training-specific ui message rendering */
   const renderLifecycleCard = useCallback(
@@ -330,6 +593,37 @@ export function TrainingPanel() {
   }, [handleRunCell]);
 
   const trainingStorageKey = buildTrainingStorageKey(activeTrainingWorkbookId);
+  const { isRecoveryReady } = usePhaseNotebookRecovery({
+    projectId,
+    phase: 'training',
+    notebookId: resolvedTrainingNotebookId,
+    storageKey: trainingStorageKey,
+    enabled: isTrainingNotebookReady
+  });
+  const trainingSessionKey = useMemo(
+    () => buildWorkflowSessionKey(
+      projectId ?? 'training',
+      [
+        trainingStorageKey,
+        selectedTrainingFile?.metadata?.datasetId ?? 'none',
+        trainingTargetColumn ?? 'no-target'
+      ].join(':')
+    ),
+    [
+      projectId,
+      selectedTrainingFile?.metadata?.datasetId,
+      trainingStorageKey,
+      trainingTargetColumn
+    ]
+  );
+
+  // Wrap handleResetWorkbook to also clear the workflow session store so
+  // the stale runId/threadId (pointing at the old run with the deleted
+  // notebook's activeNotebookId) cannot survive into the next prompt.
+  const handleResetWithSessionClear = useCallback(() => {
+    useWorkflowSessionStore.getState().clearSession(trainingSessionKey);
+    handleResetWorkbook();
+  }, [handleResetWorkbook, trainingSessionKey]);
 
   const trainingAdapter = useMemo(() => createTrainingAdapter({
     projectId: projectId ?? '',
@@ -338,72 +632,59 @@ export function TrainingPanel() {
     featureSummary: buildFeatureSummary(),
     datasetFiles,
     documentFiles,
-    sessionKey: buildWorkflowSessionKey(
-      projectId ?? 'training',
-      `${trainingStorageKey}:${selectedTrainingFile?.metadata?.datasetId ?? 'none'}`
-    )
+    sessionKey: trainingSessionKey,
+    // Ref-backed getter keeps adapter identity stable across notebook
+    // resolution updates — avoids cascading useAgenticLoop resets.
+    getNotebookId: getTrainingNotebookId
   }), [
     buildFeatureSummary,
     datasetFiles,
     documentFiles,
     projectId,
     selectedTrainingFile?.metadata?.datasetId,
-    trainingStorageKey,
-    trainingTargetColumn
+    trainingSessionKey,
+    trainingTargetColumn,
+    getTrainingNotebookId
   ]);
+
+  useEffect(() => {
+    setProposalSelections(new Map());
+    setProposalsSubmitted(false);
+  }, [activeTrainingWorkbookId, trainingChatSessionVersion]);
 
   return (
     <>
+      {isTrainingNotebookReady && isRecoveryReady ? (
       <AgenticShell
-        key={activeTrainingWorkbookId}
         projectId={projectId ?? ''}
         composerPlaceholders={composerPlaceholders}
         storageKey={trainingStorageKey}
-        domainLockReason={trainingBlockedByFeGate ? "Training is locked until an approved feature engineering pipeline is available." : undefined}
+        notebookId={resolvedTrainingNotebookId ?? undefined}
         domainAdapter={trainingAdapter}
+        leftPaneScrollable={false}
         renderLeftPane={(renderProps) => {
-          // Sync LLM code cells whenever messages change
-          syncLlmCells(renderProps.messages);
-
+          submitPromptRef.current = renderProps.submitPrompt;
           return (
-            <div className="p-6 space-y-4 pb-28">
-              {trainingBlockedByFeGate ? (
-                <Card className="border-amber-400/50 bg-amber-50 dark:bg-amber-950/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-                      Feature Pipeline Approval Required
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-xs text-amber-800/90 dark:text-amber-200/90 space-y-2">
-                    <p>Approve a Feature Engineering pipeline before starting model training.</p>
-                    <p>Once approved, this workspace unlocks automatically with a pinned transformation lineage.</p>
-                    <Link
-                      to={`/project/${projectId}/feature-engineering`}
-                      className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200/60 hover:bg-amber-200 dark:bg-amber-800/40 dark:hover:bg-amber-800/60 text-amber-900 dark:text-amber-100 transition-colors"
-                    >
-                      Open Feature Engineering
-                      <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {renderProps.error && <div className="text-sm text-red-500">{renderProps.error}</div>}
-
-              <ChatMessageRenderer
-                messages={renderProps.messages}
-                renderLifecycleCard={renderLifecycleCard}
-                activeTextMessageId={renderProps.activeTextMessageId}
-                activeThinkingMessageId={renderProps.activeThinkingMessageId}
-                hydratedMessageIds={renderProps.hydratedMessageIds}
-                onEditMessage={renderProps.onEditMessage}
-                onRevertToMessage={renderProps.onRevertToMessage}
-                editingMessageId={renderProps.editingMessageId}
-                turnDiffs={renderProps.turnDiffs}
-                isGenerating={renderProps.isGenerating}
-                onRetryWorkflow={renderProps.onRetryWorkflow}
-              />
-            </div>
+            <TrainingConversationPane
+              messages={renderProps.messages}
+              error={renderProps.error}
+              isGenerating={renderProps.isGenerating}
+              activeTextMessageId={renderProps.activeTextMessageId}
+              activeThinkingMessageId={renderProps.activeThinkingMessageId}
+              hydratedMessageIds={renderProps.hydratedMessageIds}
+              onEditMessage={renderProps.onEditMessage}
+              onRevertToMessage={renderProps.onRevertToMessage}
+              editingMessageId={renderProps.editingMessageId}
+              turnDiffs={renderProps.turnDiffs}
+              onRetryWorkflow={renderProps.onRetryWorkflow}
+              renderLifecycleCard={renderLifecycleCard}
+              syncLlmCells={syncLlmCells}
+              proposalSelections={proposalSelections}
+              setProposalSelections={setProposalSelections}
+              proposalsSubmitted={proposalsSubmitted}
+              setProposalsSubmitted={setProposalsSubmitted}
+              submitPromptRef={submitPromptRef}
+            />
           );
         }}
         toolbarLeft={
@@ -414,26 +695,41 @@ export function TrainingPanel() {
             onNew={handleNewWorkbook}
             onRename={openRenameDialog}
             onReplay={handleReplayWorkbook}
-            onReset={handleResetWorkbook}
+            onReset={handleResetWithSessionClear}
             onDelete={handleDeleteWorkbook}
             canDelete={trainingWorkbooks.length > 1}
           />
         }
         toolbarRight={
-          projectFeatures.length > 0 ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode} disabled={trainingBlockedByFeGate}>
-                    <Wand2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <TrainingToolbarRight
+              selectedDatasetId={trainingDatasetId ?? ''}
+              datasetOptions={trainingDatasetOptions}
+              onDatasetSelect={setTrainingDatasetId}
+              selectedTargetColumn={trainingTargetColumn ?? ''}
+              targetColumns={selectedTrainingFile?.metadata?.columns ?? []}
+              onTargetColumnSelect={setTrainingTargetColumn}
+            />
+            {projectFeatures.length > 0 && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" onClick={handleGenerateFeatureCode}>
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p className="text-xs">Generate feature code</p></TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
         }
       />
+      ) : (
+        <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/20 text-sm text-muted-foreground">
+          Preparing training notebook...
+        </div>
+      )}
 
       <RenameTabDialog
         open={renameDialogOpen}

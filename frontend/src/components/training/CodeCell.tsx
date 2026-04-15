@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import type { RichOutput } from '@/lib/api/execution';
 import { usePythonEditor } from '@/hooks/usePythonEditor';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import { CodeCellOutput } from './CodeCellOutput';
 
@@ -53,6 +54,7 @@ export function CodeCell({
   isRunning,
   datasetFiles = []
 }: CodeCellProps) {
+  const globalEditorOpts = useEditorMonacoOptions();
   const [copied, copy] = useCopyToClipboard();
 
   const completionOptions = useMemo(
@@ -64,6 +66,7 @@ export function CodeCell({
   const {
     localContent,
     resolvedTheme,
+    syntaxThemeId,
     handleContentChange,
     handleEditorMount
   } = usePythonEditor({
@@ -101,7 +104,7 @@ export function CodeCell({
 
   return (
     <div className={cn(
-      'border rounded-md overflow-hidden transition-all',
+      'border border-border rounded-md overflow-hidden bg-card shadow-sm dark:shadow-none transition-colors duration-150',
       cell.status === 'running' && 'ring-1 ring-blue-500/50',
       cell.status === 'error' && 'border-red-500/50'
     )}>
@@ -199,7 +202,7 @@ export function CodeCell({
         <Suspense fallback={
           <div
             className="h-full animate-pulse"
-            style={{ backgroundColor: resolvedTheme === 'dark' ? '#000000' : '#ffffff' }}
+            style={{ backgroundColor: resolvedTheme === 'dark' ? '#0a0a0a' : '#ffffff' }}
           />
         }>
           <LazyMonacoEditor
@@ -207,20 +210,16 @@ export function CodeCell({
             defaultLanguage="python"
             value={localContent}
             onChange={handleContentChange}
-            theme={resolvedTheme === 'dark' ? 'python-dark' : 'python-light'}
+            theme={syntaxThemeId}
             onMount={handleEditorMount}
             options={{
+              ...globalEditorOpts,
               fixedOverflowWidgets: true,
-              minimap: { enabled: false },
-              lineNumbers: 'on',
               lineNumbersMinChars: 3,
               glyphMargin: false,
               folding: false,
               lineDecorationsWidth: 8,
               scrollBeyondLastLine: false,
-              fontSize: 12,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              wordWrap: 'on',
               automaticLayout: true,
               padding: { top: 6, bottom: 6 },
               renderLineHighlight: 'none',

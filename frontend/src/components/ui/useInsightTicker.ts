@@ -10,19 +10,8 @@ import { useState, useEffect, useRef } from 'react';
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion';
 import {
   SLIDE_DURATION_MS,
-  CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
+  computeResetTimeout,
 } from './useAnimatedPlaceholder';
-
-const RESET_BUFFER_MS = 20;
-
-function getResetTimeout(textLength: number): number {
-  const charCount = Math.max(1, textLength);
-  return Math.max(
-    SLIDE_DURATION_MS + RESET_BUFFER_MS,
-    (charCount - 1) * CHAR_STAGGER_MS + CHAR_ANIM_DURATION_MS + RESET_BUFFER_MS,
-  );
-}
 
 export interface UseInsightTickerResult {
   currentIndex: number;
@@ -36,6 +25,8 @@ export interface UseInsightTickerResult {
 export function useInsightTicker(
   itemCount: number,
   interval = 3500,
+  /** Per-item text lengths so reset timeout matches the actual reveal duration. */
+  itemTextLengths?: number[],
 ): UseInsightTickerResult {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -46,6 +37,9 @@ export function useInsightTicker(
   const secondRafRef = useRef<number | null>(null);
   const currentIndexRef = useRef(0);
   const isAnimatingRef = useRef(false);
+  const itemTextLengthsRef = useRef(itemTextLengths);
+  itemTextLengthsRef.current = itemTextLengths;
+  const itemSignature = (itemTextLengths ?? []).join('\u0000');
 
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -55,11 +49,23 @@ export function useInsightTicker(
 
   // Reset index if itemCount shrinks
   useEffect(() => {
-    if (itemCount > 0 && currentIndexRef.current >= itemCount) {
+    if (itemCount === 0) {
       currentIndexRef.current = 0;
+      isAnimatingRef.current = false;
       setCurrentIndex(0);
+      setIsAnimating(false);
+      setSkipTransition(false);
+      return;
     }
-  }, [itemCount]);
+
+    if (currentIndexRef.current >= itemCount) {
+      currentIndexRef.current = 0;
+      isAnimatingRef.current = false;
+      setCurrentIndex(0);
+      setIsAnimating(false);
+      setSkipTransition(false);
+    }
+  }, [itemCount, itemSignature]);
 
   useEffect(() => {
     const clearPending = () => {
@@ -90,11 +96,11 @@ export function useInsightTicker(
       isAnimatingRef.current = true;
       setIsAnimating(true);
 
-      // Estimate text length for reset timing (use average ~40 chars)
-      const resetMs = getResetTimeout(40);
+      const nextIdx = (currentIndexRef.current + 1) % itemCount;
+      const textLen = itemTextLengthsRef.current?.[nextIdx] ?? 40;
+      const resetMs = computeResetTimeout(textLen);
 
       resetTimeoutRef.current = window.setTimeout(() => {
-        const nextIdx = (currentIndexRef.current + 1) % itemCount;
         setCurrentIndex(nextIdx);
         currentIndexRef.current = nextIdx;
         setIsAnimating(false);
@@ -120,7 +126,10 @@ export function useInsightTicker(
     };
   }, [itemCount, interval, prefersReducedMotion]);
 
-  const nextIndex = itemCount > 0 ? (currentIndex + 1) % itemCount : 0;
+  const safeCurrentIndex = itemCount > 0
+    ? Math.min(currentIndex, itemCount - 1)
+    : 0;
+  const nextIndex = itemCount > 0 ? (safeCurrentIndex + 1) % itemCount : 0;
 
   const outgoingTransition = skipTransition
     ? 'none'
@@ -130,7 +139,7 @@ export function useInsightTicker(
     : `transform ${SLIDE_DURATION_MS}ms ease-out`;
 
   return {
-    currentIndex,
+    currentIndex: safeCurrentIndex,
     nextIndex,
     isAnimating,
     outgoingTransition,
@@ -138,5 +147,3 @@ export function useInsightTicker(
     prefersReducedMotion,
   };
 }
-
-export { CHAR_ANIM_DURATION_MS, CHAR_STAGGER_MS };

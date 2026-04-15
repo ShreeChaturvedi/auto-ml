@@ -1,7 +1,8 @@
-import { lazy } from 'react'
+import { lazy } from 'react';
+import { initMonaco } from '@/lib/monaco/preloader';
 
 export const LazyMonacoEditor = lazy(() =>
-  import('@monaco-editor/react').then((module) => ({
+  initMonaco().then(() => import('@monaco-editor/react')).then((module) => ({
     default: module.default
   }))
 )

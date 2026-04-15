@@ -42,7 +42,9 @@ export interface FileMetadata {
   columnCount?: number;
   columns?: string[];
   datasetId?: string;
-  tableName?: string; // Postgres table name for querying
+  tableName?: string; // User-facing SQL table name
+  queryable?: boolean;
+  queryError?: string;
   datasetProfile?: {
     nRows: number;
     nCols: number;
@@ -225,4 +227,3 @@ export interface QueryArtifact {
   rationale?: string; // For NL queries
   explanation?: NlQueryExplanation; // Structured explanation (includes confidence mode/tier for NL review UX)
 }
-

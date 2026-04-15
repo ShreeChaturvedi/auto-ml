@@ -12,7 +12,7 @@ import {
   type SortingState
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   TableBody,
   TableCell,
@@ -24,9 +24,12 @@ import {
 import { Eye, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DataPreview } from '@/types/file';
-import { EDAPanel, type EdaTab } from './eda/EDAPanel';
-import { EDAToolbar } from './eda/EDAToolbar';
+import { MAX_PREVIEW_ROWS } from '@/stores/data/fileSlice';
+import type { EdaTab } from './eda/EDAPanel';
 import type { DistributionMode, CorrViewMode } from './eda/edaConstants';
+
+const EDAPanel = lazy(() => import('./eda/EDAPanel').then(m => ({ default: m.EDAPanel })));
+const EDAToolbar = lazy(() => import('./eda/EDAToolbar').then(m => ({ default: m.EDAToolbar })));
 import type { InsightAction } from './eda/edaInsights';
 import { DataTableControls } from './DataTableControls';
 import type { QueryInfo } from './QueryInfoDialog';
@@ -223,11 +226,11 @@ export function DataTable({
         className="flex-1 min-h-0 overflow-auto overscroll-none"
       >
         <table className="w-full caption-bottom text-xs">
-          <TableHeader className="sticky top-0 z-10 bg-background">
+          <TableHeader className="sticky top-0 z-20 bg-card/80 backdrop-blur-md">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="whitespace-nowrap">
+                  <TableHead key={header.id} className="whitespace-nowrap text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     {header.isPlaceholder
                       ? null
                       : flexRender(header.column.columnDef.header, header.getContext())}
@@ -251,6 +254,7 @@ export function DataTable({
                       key={row.id}
                       data-index={virtualRow.index}
                       ref={(node) => rowVirtualizer.measureElement(node)}
+                      className="hover:bg-muted/50 dark:even:bg-white/[0.015]"
                     >
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
@@ -280,7 +284,7 @@ export function DataTable({
         </table>
       </div>
 
-      <div className="border-t bg-muted/30 shrink-0">
+      <div className="border-t bg-muted/30 shrink-0 dark:shadow-none">
         <div className="flex items-center px-4 py-1.5">
           {totalRows > 0 ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
@@ -296,6 +300,14 @@ export function DataTable({
                   <span className="flex items-center gap-1.5 opacity-70" title="Total dataset rows">
                     <Database className="h-3 w-3 shrink-0" />
                     {preview.totalRows.toLocaleString()}
+                  </span>
+                </>
+              )}
+              {preview.previewRows >= MAX_PREVIEW_ROWS && preview.totalRows > MAX_PREVIEW_ROWS && (
+                <>
+                  <span className="opacity-30">·</span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Showing first {MAX_PREVIEW_ROWS.toLocaleString()} of {preview.totalRows.toLocaleString()} rows
                   </span>
                 </>
               )}
@@ -328,6 +340,7 @@ export function DataTable({
         controlsPortalTarget={controlsPortalTarget}
       />
       {hasEda && edaView === 'eda' ? (
+        <Suspense fallback={<div className="flex-1 min-h-0 animate-pulse bg-muted/50" />}>
         <div className="flex-1 min-h-0 overflow-auto">
           <EDAToolbar
             eda={eda!}
@@ -360,6 +373,7 @@ export function DataTable({
             />
           )}
         </div>
+        </Suspense>
       ) : (
         tableView
       )}

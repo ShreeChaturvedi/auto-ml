@@ -56,11 +56,13 @@ export function LoginForm() {
     defaultValues: { rememberMe: false }
   });
 
+  const user = useAuthStore((state) => state.user);
+
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/');
+    if (isAuthenticated && user) {
+      navigate(user.email_verified ? '/' : '/verify-email/pending');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, user, navigate]);
 
   const onSubmit = async (data: LoginFormValues) => {
     setFormError(null);
@@ -71,7 +73,8 @@ export function LoginForm() {
       setUser(response.user);
       setTokens(response.accessToken, response.refreshToken);
       setButtonState('success');
-      setTimeout(() => navigate(from, { replace: true }), 500);
+      const dest = response.user.email_verified ? from : '/verify-email/pending';
+      setTimeout(() => navigate(dest, { replace: true }), 500);
     } catch {
       setFormError('Invalid email or password');
       setButtonState('idle');
@@ -98,7 +101,7 @@ export function LoginForm() {
         <div className="space-y-6">
           {/* Header */}
           <div className="space-y-2 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight text-white">Welcome Back</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Welcome Back</h1>
             <p className="text-sm text-neutral-400">
               Enter your credentials to access your account
             </p>
@@ -120,7 +123,7 @@ export function LoginForm() {
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="bg-neutral-900/50 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="border-border text-white placeholder:text-neutral-500"
                 {...register('email')}
               />
               {errors.email && (
@@ -144,14 +147,14 @@ export function LoginForm() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  className="bg-neutral-900/50 border-neutral-700 pr-10 text-white placeholder:text-neutral-500"
+                  className="border-border pr-10 text-white placeholder:text-neutral-500"
                   {...register('password')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white"
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-400 transition-colors hover:text-white focus-visible:outline-none focus-visible:text-white"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -168,6 +171,7 @@ export function LoginForm() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="rememberMe"
+                    name={field.name}
                     checked={Boolean(field.value)}
                     onCheckedChange={(checked) => field.onChange(Boolean(checked))}
                   />

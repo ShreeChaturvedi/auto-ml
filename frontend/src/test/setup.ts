@@ -79,3 +79,7 @@ Object.defineProperty(globalThis, 'IntersectionObserver', {
   writable: true,
   value: IntersectionObserverMock
 });
+
+// Demo-mode guard flag must be explicitly false for frontend tests so that
+// apiFetch's top-line check does not throw. See frontend/src/lib/api/client.ts.
+(window as unknown as { __AGENTIC_DEMO_MODE__: boolean }).__AGENTIC_DEMO_MODE__ = false;

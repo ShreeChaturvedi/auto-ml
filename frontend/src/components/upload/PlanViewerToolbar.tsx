@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
-import { Check, ChevronDown, ClipboardList, Copy, Download, List, Search, X } from 'lucide-react';
+import { Check, Copy, Download, List, Search, X } from 'lucide-react';
+import { downloadMarkdownFile } from '@/lib/exportMarkdown';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +15,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PlanSelector } from '@/components/layout/PlanSelector';
 import { cn } from '@/lib/utils';
 import {
   COMPACT_TOOLBAR_GROUP_CLASS,
@@ -52,17 +52,7 @@ export function PlanViewerToolbar({
   }, [copy, planContent]);
 
   const handleExport = useCallback(() => {
-    const filename = `${planName.replace(/\.md$/, '').replace(/\s+/g, '_')}.md`;
-    const blob = new Blob([planContent], { type: 'text/markdown;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadMarkdownFile(planName, planContent);
   }, [planContent, planName]);
 
   const matchCount = useMemo(() => {
@@ -72,8 +62,6 @@ export function PlanViewerToolbar({
   }, [searchQuery, planContent]);
 
   return (
-    <div className="flex h-14 items-center justify-between border-b px-3 shrink-0">
-      {/* Left: tools */}
       <TooltipProvider delayDuration={300}>
         <div className="relative flex items-center gap-1.5">
           {/* Default buttons layer */}
@@ -170,7 +158,7 @@ export function PlanViewerToolbar({
           {/* Search overlay layer */}
           <div
             className={cn(
-              'absolute inset-y-0 left-0 w-72 flex items-center transition-opacity duration-150 ease-out',
+              'absolute inset-y-0 right-0 w-72 flex items-center transition-opacity duration-150 ease-out',
               searchExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}
           >
@@ -187,6 +175,8 @@ export function PlanViewerToolbar({
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
               <input
+                id="plan-search-input"
+                name="planSearch"
                 placeholder="Search plan..."
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
@@ -219,18 +209,5 @@ export function PlanViewerToolbar({
           </div>
         </div>
       </TooltipProvider>
-
-      {/* Right: plan selector with hover chevron */}
-      <PlanSelector
-        className="h-7 gap-1.5 border-0 bg-transparent shadow-none hover:bg-accent text-sm px-2 group/plan"
-        nameMaxWidthClass="max-w-[160px]"
-        iconSlot={
-          <span className="relative h-4 w-4 shrink-0">
-            <ClipboardList className="h-4 w-4 text-primary absolute inset-0 transition-opacity group-hover/plan:opacity-0" />
-            <ChevronDown className="h-4 w-4 text-primary absolute inset-0 transition-opacity opacity-0 group-hover/plan:opacity-100" />
-          </span>
-        }
-      />
-    </div>
   );
 }

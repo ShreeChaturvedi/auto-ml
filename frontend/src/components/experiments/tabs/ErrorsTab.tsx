@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useExperimentsStore } from '@/stores/experimentsStore';
 import { useModelStore } from '@/stores/modelStore';
 import type { ErrorAnalysisResult, EvaluationResult } from '@/types/experiments';
-import { AlertTriangle, TreePine } from 'lucide-react';
+import { TreePine } from 'lucide-react';
+import { AlertEmptyIllustration } from '@/components/ui/illustrations';
 import { fetchInsights } from '@/lib/api/experiments';
 import { accumulateTokenStream } from '@/lib/api/streamReader';
 import { ErrorTreeNodeCard } from './ErrorTreeNodeCard';
@@ -134,7 +135,7 @@ export function ErrorsTab({ modelId, evaluation }: ErrorsTabProps) {
     return (
       <div className="flex py-16 items-center justify-center">
         <div className="text-center">
-          <AlertTriangle className="mx-auto mb-2 h-10 w-10 text-muted-foreground/30" />
+          <AlertEmptyIllustration className="mx-auto mb-2 text-muted-foreground" />
           <p className="text-sm text-muted-foreground/70">Prediction data unavailable for this model.</p>
         </div>
       </div>

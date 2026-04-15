@@ -86,7 +86,7 @@ export async function triggerGenerate(handleRef: RefObject<NlQueryWorkflowHandle
 
 export async function fastForwardReveal() {
   await act(async () => {
-    vi.advanceTimersByTime(3_000);
+    vi.advanceTimersByTime(5_000);
     await Promise.resolve();
   });
 }

@@ -1,11 +1,14 @@
 /**
- * DataViewerContent - Renders the active tab's content (data table, document, or plan).
+ * DataViewerContent - Renders the active tab's content (data table, document,
+ * plan, or standalone notebook).
  *
  * Extracted from DataViewerTab to isolate the content rendering logic.
  */
 
+import { lazy, Suspense } from 'react';
 import { toast } from 'sonner';
 import { Markdown } from '@/components/ui/Markdown';
+import { Loader2 } from 'lucide-react';
 import type {
   ColumnDataType,
   DataPreview,
@@ -13,14 +16,24 @@ import type {
   UploadedFile
 } from '@/types/file';
 import type { Project } from '@/types/project';
+import type { TabType } from '@/types/dataViewer';
 
 import { DataTable, type DataTableIncrementalLoad } from './DataTable';
 import { DocumentViewer } from './DocumentViewer';
 import type { InsightAction } from './eda/edaInsights';
 
+// Standalone notebooks are heavy; lazy-load so the viewer chunk stays small
+// for projects that never open a notebook tab.
+const DataViewerNotebookPanel = lazy(() =>
+  import('./DataViewerNotebookPanel').then((module) => ({
+    default: module.DataViewerNotebookPanel
+  }))
+);
+
 export interface DataViewerContentProps {
+  projectId: string;
   activeFileTabId: string | null;
-  fileTabType: 'file' | 'artifact' | 'plan' | null;
+  fileTabType: TabType | 'plan' | null;
   files: UploadedFile[];
   previews: DataPreview[];
   queryArtifacts: QueryArtifact[];
@@ -34,6 +47,7 @@ export interface DataViewerContentProps {
 }
 
 export function DataViewerContent({
+  projectId,
   activeFileTabId,
   fileTabType,
   files,
@@ -118,6 +132,18 @@ export function DataViewerContent({
         />
       );
     }
+  } else if (fileTabType === 'notebook') {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        }
+      >
+        <DataViewerNotebookPanel projectId={projectId} notebookId={activeFileTabId} />
+      </Suspense>
+    );
   } else if (fileTabType === 'plan') {
     const planContent = (activeProject?.metadata as Record<string, unknown> | undefined)
       ?.projectPlan as string | undefined;

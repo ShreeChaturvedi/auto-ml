@@ -179,6 +179,38 @@ export class UserRepository {
   }
 
   /**
+   * Revoke a single session by token_id, scoped to user for security
+   */
+  async revokeSessionById(tokenId: string, userId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'UPDATE refresh_tokens SET revoked = true WHERE token_id = $1 AND user_id = $2 AND revoked = false',
+      [tokenId, userId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * List active (non-revoked, non-expired) sessions for a user
+   * Includes token_hash for current-session identification (stripped before response)
+   */
+  async getActiveSessions(userId: string): Promise<Array<{
+    token_id: string;
+    token_hash: string;
+    ip_address: string | null;
+    user_agent: string | null;
+    created_at: Date;
+  }>> {
+    const result = await this.pool.query(
+      `SELECT token_id, token_hash, ip_address, user_agent, created_at
+       FROM refresh_tokens
+       WHERE user_id = $1 AND revoked = false AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+    return result.rows;
+  }
+
+  /**
    * Store a password reset token in the database
    * Token is hashed (SHA-256) before storage for security
    */
@@ -210,6 +242,49 @@ export class UserRepository {
     await this.pool.query(
       'UPDATE password_reset_tokens SET used = true WHERE token_hash = $1',
       [tokenHash]
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Email verification tokens
+  // ---------------------------------------------------------------------------
+
+  async storeEmailVerificationToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3)`,
+      [userId, tokenHash, expiresAt]
+    );
+  }
+
+  async findEmailVerificationToken(tokenHash: string): Promise<{ user_id: string; used: boolean; expires_at: Date } | null> {
+    const result = await this.pool.query(
+      'SELECT user_id, used, expires_at FROM email_verification_tokens WHERE token_hash = $1',
+      [tokenHash]
+    );
+    return result.rows[0] || null;
+  }
+
+  async markEmailVerificationTokenUsed(tokenHash: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE email_verification_tokens SET used = true WHERE token_hash = $1',
+      [tokenHash]
+    );
+  }
+
+  /** Returns the most recent token for rate-limiting resend requests. */
+  async findLatestEmailVerificationToken(userId: string): Promise<{ created_at: Date } | null> {
+    const result = await this.pool.query(
+      'SELECT created_at FROM email_verification_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [userId]
+    );
+    return result.rows[0] || null;
+  }
+
+  async updateEmail(userId: string, email: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE users SET email = $1, updated_at = NOW() WHERE user_id = $2',
+      [email.toLowerCase(), userId]
     );
   }
 }

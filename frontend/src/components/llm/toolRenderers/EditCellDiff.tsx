@@ -31,14 +31,14 @@ export function EditCellDiff({ call, output }: { call: ToolCall; output: EditCel
   return (
     <div className="font-mono text-[11px] space-y-px">
       {removedLines.map((line, i) => (
-        <div key={`old-${i}`} className="text-red-500 bg-red-500/10 px-2 py-0.5 rounded-sm">
-          <span className="text-red-400/60 select-none mr-2">-</span>
+        <div key={`old-${i}`} className="text-metric-negative bg-metric-negative/10 px-2 py-0.5 rounded-sm">
+          <span className="text-metric-negative/60 select-none mr-2">-</span>
           {line || ' '}
         </div>
       ))}
       {addedLines.map((line, i) => (
-        <div key={`new-${i}`} className="text-green-500 bg-green-500/10 px-2 py-0.5 rounded-sm">
-          <span className="text-green-400/60 select-none mr-2">+</span>
+        <div key={`new-${i}`} className="text-metric-positive bg-metric-positive/10 px-2 py-0.5 rounded-sm">
+          <span className="text-metric-positive/60 select-none mr-2">+</span>
           {line || ' '}
         </div>
       ))}

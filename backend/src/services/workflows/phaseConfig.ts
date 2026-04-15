@@ -32,6 +32,7 @@ export interface RuntimeContext {
 export interface ToolContext {
   projectId: string;
   toolCallId: string | undefined;
+  rationale?: string;
   run: WorkflowRunState;
   args: Record<string, unknown>;
   turn: WorkflowTurnRequest;
@@ -66,6 +67,13 @@ export interface StageConfig {
 export interface PhaseConfig {
   phase: PhaseType;
   lifecycle: LifecycleStageDefinition[];
+
+  /**
+   * Optional per-phase override for the maximum number of times any single
+   * tool can be invoked in one turn.  Falls back to MAX_SINGLE_TOOL_CALLS
+   * from graphState.ts when undefined.
+   */
+  maxSingleToolCalls?: number;
 
   classifyTurn(
     messages: unknown[],

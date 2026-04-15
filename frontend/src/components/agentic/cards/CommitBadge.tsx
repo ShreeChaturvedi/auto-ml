@@ -1,13 +1,13 @@
 /**
- * CommitBadge - Compact one-liner for completed/committed steps.
+ * CommitBadge — emitted for `commit_*` / `register_*` tool results.
  *
- * Shows a checkmark icon and step name. Clicking expands to reveal
- * full step details when provided.
+ * `GitCommit` header icon tinted with `metric-positive`, left-aligned
+ * "Committed" title + muted step subtitle, and a `success → committed`
+ * status pill. Details expand into the shell body when present.
  */
 
-import { useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { GitCommit } from 'lucide-react';
+import { ToolCardShell } from '@/components/llm/shared/ToolCardShell';
 
 export interface CommitBadgeProps {
   title: string;
@@ -15,39 +15,25 @@ export interface CommitBadgeProps {
 }
 
 export function CommitBadge({ title, details }: CommitBadgeProps) {
-  const [expanded, setExpanded] = useState(false);
   const hasDetails = !!details;
 
   return (
-    <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        disabled={!hasDetails}
-        className={cn(
-          'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-          hasDetails && 'hover:bg-muted/50 cursor-pointer',
-          !hasDetails && 'cursor-default',
-        )}
-      >
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-        <span className="flex-1 text-xs font-medium text-foreground">{title}</span>
-        {hasDetails && (
-          expanded ? (
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          )
-        )}
-      </button>
-
-      {expanded && details && (
-        <div className="ml-6 mt-1 rounded-md border border-muted/50 bg-muted/30 p-3">
-          <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+    <ToolCardShell
+      icon={GitCommit}
+      iconClassName="text-metric-positive"
+      title="Committed"
+      subtitle={title}
+      status="success"
+      statusLabel="committed"
+      expandable={hasDetails}
+    >
+      {hasDetails && (
+        <div className="px-3 py-2">
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
             {details}
           </p>
         </div>
       )}
-    </div>
+    </ToolCardShell>
   );
 }

@@ -10,7 +10,7 @@ import {
 } from '@/components/agentic/toolbarStyles';
 import { WorkbookActionsMenu } from '@/components/agentic/WorkbookActionsMenu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus } from 'lucide-react';
+import { Database, Plus } from 'lucide-react';
 import type { WorkbookEntry } from '@/types/workbook';
 
 interface TrainingToolbarLeftProps {
@@ -69,6 +69,67 @@ export function TrainingToolbarLeft({
         disableAll={!activeWorkbookId}
         disableDelete={!canDelete}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Right toolbar — dataset + target column selectors
+// ---------------------------------------------------------------------------
+
+interface TrainingToolbarRightProps {
+  selectedDatasetId: string;
+  datasetOptions: Array<{ datasetId: string; name: string }>;
+  onDatasetSelect: (datasetId: string) => void;
+  selectedTargetColumn: string;
+  targetColumns: string[];
+  onTargetColumnSelect: (column: string) => void;
+}
+
+export function TrainingToolbarRight({
+  selectedDatasetId,
+  datasetOptions,
+  onDatasetSelect,
+  selectedTargetColumn,
+  targetColumns,
+  onTargetColumnSelect
+}: TrainingToolbarRightProps) {
+  return (
+    <div className={COMPACT_TOOLBAR_GROUP_CLASS}>
+      <Select
+        value={selectedDatasetId}
+        onValueChange={onDatasetSelect}
+        disabled={datasetOptions.length === 0}
+      >
+        <SelectTrigger className={compactToolbarSelectClass('max-w-[200px]')}>
+          <Database className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <SelectValue placeholder="Dataset" />
+        </SelectTrigger>
+        <SelectContent>
+          {datasetOptions.map((opt) => (
+            <SelectItem key={opt.datasetId} value={opt.datasetId}>
+              {opt.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={selectedTargetColumn}
+        onValueChange={onTargetColumnSelect}
+        disabled={targetColumns.length === 0}
+      >
+        <SelectTrigger className={compactToolbarSelectClass('max-w-[160px]')}>
+          <SelectValue placeholder="Target column" />
+        </SelectTrigger>
+        <SelectContent>
+          {targetColumns.map((col) => (
+            <SelectItem key={col} value={col}>
+              {col}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

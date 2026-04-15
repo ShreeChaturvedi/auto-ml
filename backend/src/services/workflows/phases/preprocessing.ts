@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { env } from '../../../config.js';
 import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
 import {
   createFilePreprocessingRunRepository
 } from '../../../repositories/preprocessingRunRepository.js';
+import type { DatasetFileType } from '../../../types/dataset.js';
 import { ToolCallSchema } from '../../../types/llm.js';
 import type { ToolResult } from '../../../types/llm.js';
 import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import { createPreprocessingLangGraphRuntime } from '../../llm/langgraph/preprocessingRuntime.js';
-import type { LlmClient, LlmToolDefinition } from '../../llm/llmClient.js';
+import type { LlmClient } from '../../llm/llmClient.js';
 import { createPreprocessingCellInspector, createPreprocessingCellMetadataStore } from '../../llm/preprocessing/cellBinding.js';
 import {
   createPreprocessingLangGraphSynchronizer,
@@ -18,14 +20,10 @@ import {
 } from '../../llm/preprocessing/stateSync.js';
 import { fail } from '../../llm/preprocessingTools/helpers.js';
 import { TOOL_HANDLERS } from '../../llm/preprocessingTools/index.js';
-import {
-  CELL_TOOL_DEFINITIONS,
-  PREPROCESSING_ORCHESTRATION_TOOLS
-} from '../../llm/toolRegistry.js';
+import * as notebookService from '../../notebook/notebookService.js';
 import { buildPreprocessingCellContent } from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
-  LifecycleStageDefinition,
   PhaseConfig,
   PhaseContext,
   RuntimeContext,
@@ -34,111 +32,354 @@ import type {
 } from '../phaseConfig.js';
 import { registerPhaseConfig } from '../phaseConfig.js';
 
+import {
+  extractLatestCellId,
+  extractLatestRunCellContext,
+  extractLatestStepNotebookContext,
+  type StepNotebookContext
+} from './preprocessing/context.js';
+import {
+  PREPROCESSING_LIFECYCLE,
+  buildPreprocessingStageConfig
+} from './preprocessing/stageConfig.js';
+import { resolvePreprocessingNextStage } from './preprocessing/transition.js';
+
 // ---------------------------------------------------------------------------
-// Context extractors (inlined from preprocessingPlannerContext.ts)
+// Multi-cell decomposition helpers (our additions for #271)
 // ---------------------------------------------------------------------------
 
-interface StepNotebookContext {
-  runId: string;
-  stepId: string;
-  title?: string;
-  code?: string;
-  toolCallId?: string;
-  version?: number;
-  codeHash?: string;
-  requiresApproval?: boolean;
-  cellIds: string[];
-}
-
-interface LatestRunCellContext {
+interface RunCellResultContext {
+  tool: string;
   cellId?: string;
   status?: string;
   stdout?: string;
   stderr?: string;
+  error?: string;
 }
 
-function extractLatestStepNotebookContext(state: WorkflowGraphState): StepNotebookContext | null {
-  const runId = state.controllerSummary?.runId;
-  if (!runId) {
-    return null;
+interface NotebookExecutionSnapshot {
+  status?: string;
+  stdout: string;
+  stderr: string;
+  cellId?: string;
+}
+
+const PREPROCESSING_CELL_MARKER_RE = /^\s*#\s*(?:cell\b.*|%%.*)$/i;
+
+export function splitMaterializedStepCode(code: string): string[] {
+  const trimmed = code.trim();
+  if (!trimmed) {
+    return [];
   }
 
-  for (let index = state.toolResultHistory.length - 1; index >= 0; index -= 1) {
-    const output = asRecord(state.toolResultHistory[index]?.output);
-    const step = asRecord(output?.step);
-    const stepId = typeof output?.stepId === 'string'
-      ? output.stepId
-      : typeof step?.stepId === 'string'
-        ? step.stepId
-        : null;
-    if (!stepId) {
+  const lines = trimmed.split(/\r?\n/);
+  const segments: string[] = [];
+  let currentSegment: string[] = [];
+  let sawMarker = false;
+
+  const pushSegment = () => {
+    const joined = currentSegment.join('\n').trim();
+    if (joined) {
+      segments.push(joined);
+    }
+    currentSegment = [];
+  };
+
+  for (const line of lines) {
+    if (PREPROCESSING_CELL_MARKER_RE.test(line)) {
+      sawMarker = true;
+      pushSegment();
       continue;
     }
-
-    const cellIds = Array.isArray(step?.cellIds)
-      ? step.cellIds.filter((value: unknown): value is string => typeof value === 'string')
-      : [];
-
-    return {
-      runId: runId as string,
-      stepId,
-      title: typeof step?.title === 'string' ? step.title : undefined,
-      code: typeof step?.code === 'string' ? step.code : undefined,
-      toolCallId: typeof step?.toolCallId === 'string' ? step.toolCallId : undefined,
-      version: typeof step?.version === 'number' ? step.version : undefined,
-      codeHash: typeof step?.codeHash === 'string' ? step.codeHash : undefined,
-      requiresApproval: typeof step?.requiresApproval === 'boolean' ? step.requiresApproval : undefined,
-      cellIds
-    };
+    currentSegment.push(line);
   }
 
-  return null;
+  pushSegment();
+
+  if (!sawMarker || segments.length === 0) {
+    return [trimmed];
+  }
+
+  return segments;
 }
 
-function extractLatestCellId(toolResults: ToolResult[]): string | null {
-  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
-    const result = toolResults[index];
-    if (!['write_cell', 'edit_cell', 'run_cell'].includes(result.tool)) {
+export function buildPreprocessingCodeGenerationSystemPrompt(): string {
+  return `You are a Python data preprocessing expert. Author executable Python code for the requested transformation.
+
+RULES:
+- Work on a DataFrame variable named \`df\` (already loaded in scope).
+- Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
+- Use pandas/numpy idioms. Keep the code minimal and focused.
+- If the step has more than one logical notebook phase, you MUST separate it with explicit comment markers like \`# Cell 1\`, \`# Cell 2\`.
+- Treat audit/profile, transform, and post-transform validation as separate notebook phases whenever they are distinct.
+- Do NOT collapse audit + transform + validation into one monolithic cell.
+- Do NOT use asserts. Summarize validation as print() statements.
+- Return ONLY raw Python code — no markdown fences, no explanation.
+
+PANDAS COMPATIBILITY (avoid FutureWarnings):
+- Before assigning float results (e.g. scaled/normalized values) to columns with integer dtype, cast first: \`df[cols] = df[cols].astype("float64")\`.
+- Never use \`inplace=True\`. Write \`df[col] = df[col].fillna(...)\` instead of \`df[col].fillna(..., inplace=True)\`.
+- Use \`isinstance(dtype, pd.CategoricalDtype)\` instead of \`pd.api.types.is_categorical_dtype()\`.
+- When assigning transformed arrays back to DataFrame columns, ensure dtype compatibility explicitly.`;
+}
+
+
+function extractWrittenCellIds(toolResults: ToolResult[]): string[] {
+  const cellIds: string[] = [];
+  for (const result of toolResults) {
+    if (!['write_cell', 'edit_cell'].includes(result.tool)) {
       continue;
     }
-    const output = asRecord(result.output);
-    if (typeof output?.cellId === 'string') {
-      return output.cellId;
-    }
-    const cell = asRecord(output?.cell);
-    if (typeof cell?.cellId === 'string') {
-      return cell.cellId;
-    }
-    if (typeof cell?.id === 'string') {
-      return cell.id;
+    const cellId = extractLatestCellId([result]);
+    if (cellId) {
+      cellIds.push(cellId);
     }
   }
-
-  return null;
+  return cellIds;
 }
 
-function extractLatestRunCellContext(toolResults: ToolResult[]): LatestRunCellContext | null {
-  for (let index = toolResults.length - 1; index >= 0; index -= 1) {
-    const result = toolResults[index];
+function extractRunCellResults(toolResults: ToolResult[]): RunCellResultContext[] {
+  const results: RunCellResultContext[] = [];
+  for (const result of toolResults) {
     if (result.tool !== 'run_cell') {
       continue;
     }
     const output = asRecord(result.output);
-    return {
+    results.push({
+      tool: result.tool,
       cellId: extractLatestCellId([result]) ?? undefined,
       status: typeof output?.status === 'string' ? output.status : undefined,
       stdout: typeof output?.stdout === 'string' ? output.stdout : undefined,
-      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined
-    };
+      stderr: typeof output?.stderr === 'string' ? output.stderr : undefined,
+      error: typeof output?.error === 'string' ? output.error : result.error
+    });
+  }
+  return results;
+}
+
+function aggregateRunOutputs(runCells: RunCellResultContext[]): { stdout: string; stderr: string } {
+  return {
+    stdout: runCells.map((entry) => entry.stdout?.trim()).filter(Boolean).join('\n\n'),
+    stderr: runCells.map((entry) => entry.stderr?.trim()).filter(Boolean).join('\n\n')
+  };
+}
+
+function didRunCellsEncounterError(runCells: RunCellResultContext[]): boolean {
+  return runCells.some((entry) => {
+    const normalizedStatus = entry.status?.toLowerCase();
+    return normalizedStatus === 'error' || normalizedStatus === 'failed' || Boolean(entry.error);
+  });
+}
+
+function summarizeNotebookCellOutputs(outputs: Array<{ type: string; content: string }>): { stdout: string; stderr: string } {
+  const stdout = outputs
+    .filter((output) => output.type !== 'error')
+    .map((output) => output.content?.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  const stderr = outputs
+    .filter((output) => output.type === 'error')
+    .map((output) => output.content?.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  return { stdout, stderr };
+}
+
+async function resolveNotebookExecutionSnapshot(cellIds: string[]): Promise<NotebookExecutionSnapshot | null> {
+  const statuses: string[] = [];
+  const stdoutParts: string[] = [];
+  const stderrParts: string[] = [];
+  let latestCellId: string | undefined;
+
+  for (const cellId of cellIds) {
+    try {
+      const cell = await notebookService.readCell(cellId);
+      latestCellId = cellId;
+      const hasErrorOutput = (cell.output ?? []).some((output) => output?.type === 'error');
+      const hasVisibleOutput = (cell.output ?? []).length > 0 || (cell.outputRefs ?? []).length > 0;
+      const hasObservedExecution = Boolean(
+        cell.executedAt
+        || cell.executionOrder != null
+        || cell.executionCount != null
+        || hasVisibleOutput
+      );
+      if (cell.executionStatus) {
+        statuses.push(cell.executionStatus);
+      } else if (hasErrorOutput) {
+        statuses.push('error');
+      } else if (hasObservedExecution) {
+        statuses.push('success');
+      }
+      const { stdout, stderr } = summarizeNotebookCellOutputs(
+        (cell.output ?? [])
+          .filter((output) =>
+            Boolean(output) && typeof output.type === 'string' && typeof output.content === 'string')
+      );
+      if (stdout) {
+        stdoutParts.push(stdout);
+      }
+      if (stderr) {
+        stderrParts.push(stderr);
+      }
+    } catch {
+      continue;
+    }
   }
 
-  return null;
+  if (!latestCellId && stdoutParts.length === 0 && stderrParts.length === 0) {
+    return null;
+  }
+
+  const hasError = statuses.includes('error');
+  const allSucceeded = statuses.length >= cellIds.length && statuses.every((status) => status === 'success');
+  const hasPending = statuses.some((status) => status === 'running' || status === 'idle');
+
+  return {
+    cellId: latestCellId,
+    status: hasError ? 'error' : allSucceeded ? 'success' : hasPending ? 'running' : undefined,
+    stdout: stdoutParts.join('\n\n'),
+    stderr: stderrParts.join('\n\n')
+  };
+}
+
+async function resolveNotebookExecutionOutcome(cellIds: string[]): Promise<RunCellResultContext | null> {
+  const attempts = 20;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const snapshot = await resolveNotebookExecutionSnapshot(cellIds);
+    if (!snapshot) {
+      if (attempt < attempts - 1) {
+        await delay(250);
+      }
+      continue;
+    }
+
+    if (snapshot.status === 'success' || snapshot.status === 'error') {
+      return {
+        tool: 'run_cell',
+        cellId: snapshot.cellId,
+        status: snapshot.status,
+        stdout: snapshot.stdout,
+        stderr: snapshot.stderr
+      };
+    }
+
+    if (attempt < attempts - 1) {
+      await delay(250);
+    }
+  }
+
+  const finalSnapshot = await resolveNotebookExecutionSnapshot(cellIds);
+  if (!finalSnapshot) {
+    return null;
+  }
+
+  return {
+    tool: 'run_cell',
+    cellId: finalSnapshot.cellId,
+    status: finalSnapshot.status,
+    stdout: finalSnapshot.stdout,
+    stderr: finalSnapshot.stderr
+  };
+}
+
+async function resolveReusableStepCellIds(cellIds: string[]): Promise<Array<string | undefined>> {
+  return Promise.all(cellIds.map(async (cellId) => {
+    try {
+      await notebookService.readCell(cellId);
+      return cellId;
+    } catch {
+      return undefined;
+    }
+  }));
+}
+
+async function resolveLatestStepNotebookContext(
+  state: WorkflowGraphState
+): Promise<StepNotebookContext | null> {
+  const direct = extractLatestStepNotebookContext(state);
+  if (direct) {
+    return direct;
+  }
+
+  const controllerSummary = asRecord(state.controllerSummary);
+  const runId = asString(controllerSummary?.runId);
+  const stepId = asString(controllerSummary?.activeStepId) ?? asString(controllerSummary?.currentStepId);
+  if (!runId || !stepId) {
+    return null;
+  }
+
+  const run = await runRepository.getById(runId);
+  const step = run?.steps?.[stepId];
+  if (!step) {
+    return null;
+  }
+
+  return {
+    runId,
+    stepId: step.stepId,
+    title: step.title,
+    code: step.code,
+    toolCallId: step.toolCallId,
+    version: step.version,
+    codeHash: step.codeHash,
+    requiresApproval: step.requiresApproval,
+    cellIds: [...step.cellIds]
+  };
+}
+
+
+
+export function buildSegmentedPreprocessingCellContent(params: {
+  segment: string;
+  segmentIndex: number;
+  segmentCount: number;
+  dataset?: {
+    filename: string;
+    datasetId: string;
+    fileType: DatasetFileType;
+  };
+}): string {
+  const trimmedSegment = params.segment.trim();
+  const dataset = params.dataset;
+  if (!dataset) {
+    return trimmedSegment;
+  }
+
+  if (params.segmentCount <= 1) {
+    return buildPreprocessingCellContent({
+      filename: dataset.filename,
+      datasetId: dataset.datasetId,
+      fileType: dataset.fileType,
+      dataframeName: 'df',
+      userCode: trimmedSegment
+    });
+  }
+
+  if (params.segmentIndex === 0) {
+    return [
+      `df = load_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`,
+      '',
+      trimmedSegment
+    ].join('\n');
+  }
+
+  if (params.segmentIndex === params.segmentCount - 1) {
+    return [
+      trimmedSegment,
+      '',
+      `save_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`
+    ].join('\n');
+  }
+
+  return trimmedSegment;
 }
 
 // ---------------------------------------------------------------------------
 // Preprocessing PhaseConfig — replaces Systems A (preprocessingRuntime) and
-// B (controller). All classification, stage routing, and tool allowlists
-// are encoded here.
+// B (controller). The coordinator lives here, while stage configuration,
+// routing, and notebook-context helpers live in focused modules.
 // ---------------------------------------------------------------------------
 
 // -- Module-level singletons (same as preprocessingGraph.ts) ----------------
@@ -153,180 +394,38 @@ const syncLangGraphState = createPreprocessingLangGraphSynchronizer({
   runtime: createPreprocessingLangGraphRuntime()
 });
 
-// -- Lifecycle stages -------------------------------------------------------
-
-const PREPROCESSING_LIFECYCLE: LifecycleStageDefinition[] = [
-  { name: 'answer', label: 'Answering', order: 0 },
-  { name: 'plan_step', label: 'Planning step', order: 1 },
-  { name: 'generate_code', label: 'Generating code', order: 2 },
-  { name: 'write_code', label: 'Writing to notebook', order: 3 },
-  { name: 'record_execution', label: 'Recording execution', order: 4 },
-  { name: 'validate', label: 'Validating', order: 5 },
-  { name: 'await_approval', label: 'Awaiting approval', order: 6 },
-  { name: 'commit', label: 'Committing', order: 7 },
-  { name: 'summarize', label: 'Summarizing', order: 8 }
-];
-
-// -- Tool allowlists per stage (ported from controller.ts stageNode) --------
-
-const ORCHESTRATION_TOOL_MAP = new Map<string, LlmToolDefinition>(
-  [...PREPROCESSING_ORCHESTRATION_TOOLS, ...CELL_TOOL_DEFINITIONS]
-    .map((tool) => [tool.name, tool])
-);
-
-function toolsByNames(names: string[]): LlmToolDefinition[] {
-  return names
-    .map((name) => ORCHESTRATION_TOOL_MAP.get(name))
-    .filter((tool): tool is LlmToolDefinition => Boolean(tool));
-}
-
-const STAGE_TOOLS: Record<string, string[]> = {
-  answer: [],
-  plan_step: [
-    'list_project_datasets', 'set_active_dataset', 'profile_active_dataset',
-    'list_cells', 'read_cell', 'propose_transformation_step'
-  ],
-  generate_code: ['materialize_step_code'],
-  write_code: ['write_cell', 'edit_cell', 'run_cell', 'list_cells', 'read_cell'],
-  record_execution: ['execute_transformation_step', 'list_cells', 'read_cell'],
-  validate: ['validate_step_result', 'profile_active_dataset', 'read_cell'],
-  await_approval: [],
-  commit: ['commit_transformation_step', 'checkpoint_dataset'],
-  summarize: []
-};
-
-// -- Stage configs ----------------------------------------------------------
-
-function buildStageConfig(stage: string, runtimeContext?: RuntimeContext): StageConfig {
-  const toolNames = STAGE_TOOLS[stage] ?? [];
-  const isTextStage = stage === 'answer' || stage === 'await_approval' || stage === 'summarize';
-  const isDeterministic = stage === 'write_code' || stage === 'record_execution' || stage === 'validate';
-  const isDelegated = stage === 'generate_code';
-
-  // For preprocessing, the controller's classification may override defaults
-  const allowTextResponse = runtimeContext?.allowTextResponse === true || isTextStage;
-  const requireToolCall = runtimeContext?.requireToolCall === true || (!isTextStage && !allowTextResponse);
-
-  const config: StageConfig = {
-    name: stage,
-    mode: isDeterministic ? 'deterministic'
-      : isDelegated ? 'llm_delegated'
-      : isTextStage ? 'text'
-      : 'action',
-    allowedTools: toolsByNames(toolNames),
-    toolChoice: requireToolCall ? 'required' : 'auto',
-    requiresApproval: stage === 'await_approval',
-    allowAssistantMessage: allowTextResponse,
-    allowAskUser: false,
-    allowRenderUi: false,
-    allowPlanExit: false,
-    requireToolCall
-  };
-
-  // Attach deterministic/delegated actions per stage
-  if (stage === 'generate_code') {
-    config.delegatedAction = buildCodeGenerationAction;
-  } else if (stage === 'write_code') {
-    config.deterministicAction = buildWriteCodeAction;
-  } else if (stage === 'record_execution') {
-    config.deterministicAction = buildRecordExecutionAction;
-  } else if (stage === 'validate') {
-    config.deterministicAction = buildValidateAction;
+function isWorkflowThreadReference(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
   }
-
-  return config;
+  return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
 }
 
-// -- Turn classification (ported from controller.ts classify_turn) ----------
-
-function inferPendingApproval(toolResults: ToolResult[]): boolean {
-  const latest = toolResults.at(-1);
-  if (!latest?.output || typeof latest.output !== 'object') return false;
-  const output = latest.output as Record<string, unknown>;
-  const step = output.step && typeof output.step === 'object' ? output.step as Record<string, unknown> : null;
-  const status = typeof output.status === 'string' ? output.status
-    : typeof step?.status === 'string' ? step.status : undefined;
-  const reasonCode = typeof output.reasonCode === 'string' ? output.reasonCode : undefined;
-  return status === 'awaiting_approval'
-    || reasonCode === 'STEP_APPROVAL_REQUIRED'
-    || reasonCode === 'STEP_APPROVAL_USER_REQUIRED';
-}
-
-function getLatestToolOutcome(toolResults: ToolResult[]): {
-  latestToolName?: string;
-  latestToolSucceeded: boolean;
-} {
-  const latest = toolResults.at(-1);
-  if (!latest) return { latestToolSucceeded: false };
-  const succeeded = !latest.error;
-  return { latestToolName: latest.tool, latestToolSucceeded: succeeded };
-}
-
-// -- Action node inference (ported from controller.ts inferActionNode) ------
-
-function inferActionNode(
-  toolResults: ToolResult[],
-  pendingApproval: boolean
-): string {
-  if (pendingApproval) return 'await_approval';
-
-  const { latestToolName, latestToolSucceeded } = getLatestToolOutcome(toolResults);
-  if (!latestToolName) return 'plan_step';
-
-  if (!latestToolSucceeded) {
-    // When validation fails, pause at await_approval for user review
-    if (latestToolName === 'validate_step_result') {
-      return 'await_approval';
-    }
-    // On failure of other tools, stay in plan_step for replanning
-    return 'plan_step';
-  }
-
-  switch (latestToolName) {
-    case 'propose_transformation_step': return 'generate_code';
-    case 'materialize_step_code': return 'write_code';
-    case 'write_cell':
-    case 'edit_cell': return 'write_code';
-    case 'run_cell': return 'record_execution';
-    case 'execute_transformation_step': return 'validate';
-    case 'validate_step_result': {
-      // Check if approval is required from the tool result
-      const latest = toolResults.at(-1);
-      const output = latest?.output as Record<string, unknown> | undefined;
-      const step = output?.step as Record<string, unknown> | undefined;
-      const requiresApproval = step?.requiresApproval === true || output?.requiresApproval === true;
-      return requiresApproval ? 'await_approval' : 'commit';
-    }
-    case 'commit_transformation_step': return 'summarize';
-    case 'set_active_dataset':
-    case 'profile_active_dataset':
-    case 'list_project_datasets':
-    case 'checkpoint_dataset':
-    case 'list_cells':
-    case 'read_cell':
-      return 'plan_step';
-    default: return 'plan_step';
-  }
-}
 
 // -- Deterministic actions (ported from plannerNotebook, plannerExecution, plannerValidation)
 
 async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
-  const step = extractLatestStepNotebookContext(state);
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
   if (!step.code) return [];
+  const codeSegments = splitMaterializedStepCode(step.code);
+  if (codeSegments.length === 0) {
+    return [];
+  }
 
   const activeDatasetId = state.run.activeDatasetId;
-  const latestCellId = extractLatestCellId(state.toolResultHistory);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const writtenCellIds = extractWrittenCellIds(currentTurnResults);
+  const runCells = extractRunCellResults(currentTurnResults);
+  const reusableStepCellIds = await resolveReusableStepCellIds(step.cellIds);
 
-  // If last tool was write_cell and we have a cell, run it
-  const latestTool = state.toolResultHistory.at(-1)?.tool;
-  if (latestTool === 'write_cell' && latestCellId) {
+  if (writtenCellIds.length > runCells.length) {
+    const nextCellId = writtenCellIds[runCells.length];
     const parsed = ToolCallSchema.safeParse({
       id: `wf-call-${randomUUID()}`,
       tool: 'run_cell',
       args: {
-        cellId: latestCellId,
+        cellId: nextCellId,
         ...(activeDatasetId ? { datasetId: activeDatasetId } : {})
       },
       rationale: `Execute notebook cell for preprocessing step ${step.stepId}.`
@@ -334,18 +433,28 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
     return parsed.success ? [parsed.data] : [];
   }
 
+  if (writtenCellIds.length >= codeSegments.length) {
+    return [];
+  }
+
+  const nextSegmentIndex = writtenCellIds.length;
+  const nextSegment = codeSegments[nextSegmentIndex];
+
   // Build visible cell content with explicit load/save calls so the user
   // sees exactly what runs in the kernel (no invisible wrapping at execution).
-  let cellContent = step.code;
+  let cellContent = nextSegment;
   if (activeDatasetId) {
     const dataset = await datasetRepository.getById(activeDatasetId);
     if (dataset && dataset.projectId === state.run.projectId) {
-      cellContent = buildPreprocessingCellContent({
-        filename: dataset.filename,
-        datasetId: dataset.datasetId,
-        fileType: dataset.fileType,
-        dataframeName: 'df',
-        userCode: step.code
+      cellContent = buildSegmentedPreprocessingCellContent({
+        segment: nextSegment,
+        segmentIndex: nextSegmentIndex,
+        segmentCount: codeSegments.length,
+        dataset: {
+          filename: dataset.filename,
+          datasetId: dataset.datasetId,
+          fileType: dataset.fileType
+        }
       });
     }
   }
@@ -366,8 +475,10 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
     id: `wf-call-${randomUUID()}`,
     tool: 'write_cell',
     args: {
-      ...(latestCellId ? { cellId: latestCellId } : {}),
-      title: step.title ?? `Step ${step.stepId}`,
+      ...(reusableStepCellIds[nextSegmentIndex] ? { cellId: reusableStepCellIds[nextSegmentIndex] } : {}),
+      title: codeSegments.length > 1
+        ? `${step.title ?? `Step ${step.stepId}`} (${nextSegmentIndex + 1}/${codeSegments.length})`
+        : step.title ?? `Step ${step.stepId}`,
       content: cellContent,
       cellType: 'code',
       metadata
@@ -377,12 +488,38 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   return parsed.success ? [parsed.data] : [];
 }
 
-function buildRecordExecutionAction(state: WorkflowGraphState): import('../../../types/llm.js').ToolCall[] {
-  const step = extractLatestStepNotebookContext(state);
+async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
 
-  const runCell = extractLatestRunCellContext(state.toolResultHistory);
-  const cellId = extractLatestCellId(state.toolResultHistory);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const runCells = extractRunCellResults(currentTurnResults);
+  const writtenCellIds = extractWrittenCellIds(currentTurnResults);
+  let latestRunCell = runCells.at(-1) ?? null;
+  let { stdout, stderr } = aggregateRunOutputs(runCells);
+
+  if (writtenCellIds.length > 0 && (latestRunCell == null || latestRunCell.status !== 'success')) {
+    const notebookOutcome = await resolveNotebookExecutionOutcome(writtenCellIds);
+    if (notebookOutcome) {
+      latestRunCell = notebookOutcome;
+      if (!stdout) {
+        stdout = notebookOutcome.stdout ?? '';
+      }
+      if (!stderr) {
+        stderr = notebookOutcome.stderr ?? '';
+      }
+    }
+  }
+
+  const latestStatus = latestRunCell?.status?.toLowerCase();
+  const latestSucceeded = latestStatus === 'success'
+    || (
+      latestRunCell != null
+      && latestStatus == null
+      && !latestRunCell.error
+      && !stderr.trim()
+    );
+  const succeeded = latestSucceeded && !didRunCellsEncounterError(runCells);
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,
@@ -390,21 +527,23 @@ function buildRecordExecutionAction(state: WorkflowGraphState): import('../../..
     args: {
       runId: step.runId,
       stepId: step.stepId,
-      cellId: cellId ?? undefined,
-      succeeded: runCell?.status === 'success',
-      stdout: runCell?.stdout ?? '',
-      stderr: runCell?.stderr ?? ''
+      cellId: latestRunCell?.cellId ?? undefined,
+      cellIds: writtenCellIds.length > 0 ? writtenCellIds : undefined,
+      succeeded,
+      stdout,
+      stderr
     },
     rationale: 'Record the latest preprocessing notebook execution outcome.'
   });
   return parsed.success ? [parsed.data] : [];
 }
 
-function buildValidateAction(state: WorkflowGraphState): import('../../../types/llm.js').ToolCall[] {
-  const step = extractLatestStepNotebookContext(state);
+async function buildValidateAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
 
-  const runCell = extractLatestRunCellContext(state.toolResultHistory);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const runCell = extractLatestRunCellContext(currentTurnResults);
   const notes = runCell?.stderr?.trim()
     ? `Notebook execution stderr: ${runCell.stderr.slice(0, 500)}`
     : undefined;
@@ -425,16 +564,40 @@ function buildValidateAction(state: WorkflowGraphState): import('../../../types/
   return parsed.success ? [parsed.data] : [];
 }
 
+async function buildCommitAction(state: WorkflowGraphState): Promise<import('../../../types/llm.js').ToolCall[]> {
+  const step = await resolveLatestStepNotebookContext(state);
+  if (!step) return [];
+
+  const datasetId = state.run.activeDatasetId ?? state.turn.datasetId;
+  if (!datasetId) {
+    return [];
+  }
+
+  const parsed = ToolCallSchema.safeParse({
+    id: `wf-call-${randomUUID()}`,
+    tool: 'commit_transformation_step',
+    args: {
+      runId: step.runId,
+      stepId: step.stepId,
+      datasetId,
+      ...(state.turn.notebookId ? { notebookId: state.turn.notebookId } : {})
+    },
+    rationale: 'Commit the validated preprocessing step and persist the current workbook dataset.'
+  });
+  return parsed.success ? [parsed.data] : [];
+}
+
 // -- Delegated action: code generation (ported from plannerCode.ts) ---------
 
 async function buildCodeGenerationAction(
   client: LlmClient,
   state: WorkflowGraphState
 ): Promise<import('../../../types/llm.js').ToolCall[]> {
-  const step = extractLatestStepNotebookContext(state);
+  const step = await resolveLatestStepNotebookContext(state);
   if (!step) return [];
 
-  // Extract dataset summary from tool history
+  // Extract dataset summary from tool history (search full history — dataset
+  // profiles from previous turns are still valid context for code generation)
   let datasetSummary = '';
   for (let i = state.toolResultHistory.length - 1; i >= 0; i--) {
     const result = state.toolResultHistory[i];
@@ -453,21 +616,6 @@ async function buildCodeGenerationAction(
     }
   }
 
-  const systemPrompt = `You are a Python data preprocessing expert. Author executable Python code for the requested transformation.
-
-RULES:
-- Work on a DataFrame variable named \`df\` (already loaded in scope).
-- Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
-- Use pandas/numpy idioms. Keep the code minimal and focused.
-- Do NOT use asserts. Summarize validation as print() statements.
-- Return ONLY raw Python code — no markdown fences, no explanation.
-
-PANDAS COMPATIBILITY (avoid FutureWarnings):
-- Before assigning float results (e.g. scaled/normalized values) to columns with integer dtype, cast first: \`df[cols] = df[cols].astype("float64")\`.
-- Never use \`inplace=True\`. Write \`df[col] = df[col].fillna(...)\` instead of \`df[col].fillna(..., inplace=True)\`.
-- Use \`isinstance(dtype, pd.CategoricalDtype)\` instead of \`pd.api.types.is_categorical_dtype()\`.
-- When assigning transformed arrays back to DataFrame columns, ensure dtype compatibility explicitly.`;
-
   const userContent = [
     state.turn.prompt ? `User request: ${state.turn.prompt}` : '',
     `Run ID: ${step.runId}`,
@@ -479,7 +627,7 @@ PANDAS COMPATIBILITY (avoid FutureWarnings):
 
   const rawCode = await client.complete({
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: buildPreprocessingCodeGenerationSystemPrompt() },
       { role: 'user', content: userContent }
     ],
     temperature: 0.2,
@@ -516,14 +664,17 @@ async function executePreprocessingToolCall(
   args: Record<string, unknown>
 ): Promise<{ output?: unknown; error?: string }> {
   const explicitRunId = asString(args.runId);
+  const sanitizedRunId = explicitRunId && !isWorkflowThreadReference(explicitRunId)
+    ? explicitRunId
+    : undefined;
   const toolCallId = asString(args.toolCallId);
 
   // Resolve run
   let run;
-  if (explicitRunId) {
-    const existing = await runRepository.getById(explicitRunId);
+  if (sanitizedRunId) {
+    const existing = await runRepository.getById(sanitizedRunId);
     if (!existing) {
-      return fail(explicitRunId, 'RUN_NOT_FOUND', `Run ${explicitRunId} not found.`);
+      return fail(sanitizedRunId, 'RUN_NOT_FOUND', `Run ${sanitizedRunId} not found.`);
     }
     run = existing;
   } else {
@@ -574,7 +725,13 @@ export const preprocessingPhaseConfig: PhaseConfig = {
   },
 
   getStageConfig(stage: string, runtimeContext?: RuntimeContext): StageConfig {
-    return buildStageConfig(stage, runtimeContext);
+    return buildPreprocessingStageConfig(stage, {
+    buildCodeGenerationAction,
+    buildWriteCodeAction,
+    buildRecordExecutionAction,
+    buildValidateAction,
+    buildCommitAction
+  }, runtimeContext);
   },
 
   buildSystemPrompt(): string {
@@ -589,9 +746,7 @@ export const preprocessingPhaseConfig: PhaseConfig = {
     current: string,
     toolResults: ToolResult[]
   ): string | null {
-    const pendingApproval = inferPendingApproval(toolResults);
-    const nextNode = inferActionNode(toolResults, pendingApproval);
-    return nextNode !== current ? nextNode : null;
+    return resolvePreprocessingNextStage(current, toolResults);
   },
 
   isPhaseSpecificTool(toolName: string): boolean {
@@ -606,7 +761,8 @@ export const preprocessingPhaseConfig: PhaseConfig = {
     const toolName = name as PreprocessingToolName;
     const toolArgs = {
       ...(args as Record<string, unknown>),
-      toolCallId: ctx.toolCallId
+      toolCallId: ctx.toolCallId,
+      ...(ctx.turn.notebookId ? { notebookId: ctx.turn.notebookId } : {})
     };
 
     // Execute the tool

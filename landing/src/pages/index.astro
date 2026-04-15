@@ -1,0 +1,28 @@
+---
+import Root from '@/layouts/Root.astro';
+import Nav from '@/components/Nav.astro';
+import SkipLink from '@/components/SkipLink.astro';
+import Hero from '@/components/Hero.astro';
+import AppPreviewFrame from '@/components/AppPreviewFrame.tsx';
+import HowItWorks from '@/components/how-it-works/HowItWorks.tsx';
+import FeaturesSection from '@/components/FeaturesSection.astro';
+import MetaCardRow from '@/components/MetaCardRow.astro';
+import IntegrationsMarquee from '@/components/IntegrationsMarquee.astro';
+import FooterCta from '@/components/FooterCta.astro';
+import Footer from '@/components/Footer.astro';
+---
+
+<Root>
+  <Nav />
+  <main>
+    <SkipLink />
+    <Hero />
+    <AppPreviewFrame client:load />
+    <HowItWorks client:visible />
+    <FeaturesSection />
+    <MetaCardRow />
+    <IntegrationsMarquee />
+    <FooterCta />
+  </main>
+  <Footer />
+</Root>

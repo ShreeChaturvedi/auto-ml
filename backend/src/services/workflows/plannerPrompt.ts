@@ -50,11 +50,36 @@ function summarizeToolResultPayload(payload: Record<string, unknown>): string {
   const runId = typeof payload.runId === 'string' ? payload.runId : null;
   const reasonCode = typeof payload.reasonCode === 'string' ? payload.reasonCode : null;
 
+  // Whitelist of domain-specific ids the planner NEEDS to see so it can
+  // correctly propagate them as tool args on downstream calls. Without this
+  // surface, `configure_experiment` would return `{status=configured}` to the
+  // planner with no experimentId, and the planner would hallucinate a UUID
+  // for `propose_training_plan`'s experimentId arg (see the sprint10 bug
+  // where the planner pulled the workflow threadId from state summary).
+  //
+  // Caveats:
+  //  - featureId pairs with featureStatus so the planner can't mistake a
+  //    'rejected' register_feature result for an ok one.
+  //  - Only adds fields when present; never emits empty "key=".
+  const experimentId = typeof payload.experimentId === 'string' ? payload.experimentId : null;
+  const experimentName = typeof payload.experimentName === 'string' ? payload.experimentName : null;
+  const featureId = typeof payload.featureId === 'string' ? payload.featureId : null;
+  const featureStatus = featureId && typeof payload.status === 'string' ? payload.status : null;
+  const datasetId = typeof payload.datasetId === 'string' ? payload.datasetId : null;
+  const notebookId = typeof payload.notebookId === 'string' ? payload.notebookId : null;
+  const cellId = typeof payload.cellId === 'string' ? payload.cellId : null;
+
   return [
     `status=${status}`,
     stepId ? `stepId=${stepId}` : null,
     runId ? `runId=${runId}` : null,
-    reasonCode ? `reasonCode=${reasonCode}` : null
+    reasonCode ? `reasonCode=${reasonCode}` : null,
+    experimentId ? `experimentId=${experimentId}` : null,
+    experimentName ? `experimentName=${experimentName}` : null,
+    featureId ? `featureId=${featureId}${featureStatus ? ` featureStatus=${featureStatus}` : ''}` : null,
+    datasetId ? `datasetId=${datasetId}` : null,
+    notebookId ? `notebookId=${notebookId}` : null,
+    cellId ? `cellId=${cellId}` : null
   ].filter((value): value is string => Boolean(value)).join(', ');
 }
 
@@ -78,14 +103,45 @@ function summarizeToolResults(state: WorkflowGraphState): string {
     .join('\n');
 }
 
+function summarizeExperimentContext(state: WorkflowGraphState): string | null {
+  const experiments = state.run.metadata?.experiments;
+  if (!experiments || typeof experiments !== 'object' || Array.isArray(experiments)) {
+    return null;
+  }
+  const entries = Object.values(experiments as Record<string, Record<string, unknown>>);
+  if (entries.length === 0) return null;
+
+  const lines = entries.map((exp) => {
+    const id = typeof exp.experimentId === 'string' ? exp.experimentId : '?';
+    const name = typeof exp.experimentName === 'string' ? exp.experimentName : 'unnamed';
+    const status = typeof exp.status === 'string' ? exp.status : '?';
+    const target = typeof exp.targetColumn === 'string' ? `, target=${exp.targetColumn}` : '';
+    const features = Array.isArray(exp.featureColumns)
+      ? `, features=[${(exp.featureColumns as string[]).join(', ')}]`
+      : '';
+    return `- ${id} (${name}) — status: ${status}${target}${features}`;
+  });
+
+  return `Active experiments:\n${lines.join('\n')}`;
+}
+
 function summarizeWorkflowState(state: WorkflowGraphState): string {
+  // DO NOT add `Workflow thread: ${state.run.threadId}` back. The thread id
+  // is an internal routing concern, not a planning input — exposing it led
+  // the planner to pick `thread-<uuid>` as the experimentId arg for
+  // propose_training_plan in the sprint10 Training bug, producing
+  // "Experiment thread-... not found. Call configure_experiment first."
   return [
-    `Workflow thread: ${state.run.threadId}`,
     `Current node: ${state.run.currentNode}`,
     state.controllerSummary?.runId ? `Preprocessing run: ${state.controllerSummary.runId}` : null,
     state.controllerSummary?.activeStepId ? `Active step: ${state.controllerSummary.activeStepId}` : null,
     state.run.activeDatasetId ? `Active dataset: ${state.run.activeDatasetId}` : null,
-    state.run.activeNotebookId ? `Active notebook: ${state.run.activeNotebookId}` : null
+    state.run.activeNotebookId ? `Active notebook: ${state.run.activeNotebookId}` : null,
+    // Experiment context persists across the MAX_TOOL_RESULTS sliding window
+    // so the planner can always see the experimentId it needs for lifecycle
+    // tools (execute_training, evaluate_results, register_model) even after
+    // configure_experiment drops out of the recent-results summary.
+    summarizeExperimentContext(state)
   ].filter((value): value is string => Boolean(value)).join('\n');
 }
 

@@ -1,10 +1,10 @@
-import { forwardRef } from 'react';
-import type { InputHTMLAttributes } from 'react';
+import { forwardRef, useCallback, useId } from 'react';
+import type { InputHTMLAttributes, KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import {
   useAnimatedPlaceholder,
   CHAR_ANIM_DURATION_MS,
-  CHAR_STAGGER_MS,
+  computeCharDelay,
 } from './useAnimatedPlaceholder';
 
 interface AnimatedPlaceholderInputProps
@@ -13,6 +13,8 @@ interface AnimatedPlaceholderInputProps
   interval?: number;
   /** Left padding in rem to align with icons */
   leftPadding?: number;
+  /** Called when Tab is pressed on an empty input to accept the visible placeholder. */
+  onTabAccept?: (placeholder: string) => void;
 }
 
 const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholderInputProps>(
@@ -21,17 +23,22 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       placeholders,
       interval = 3000,
       leftPadding,
+      onTabAccept,
       className,
       value,
       style,
       onFocus,
       onBlur,
+      onKeyDown,
       disabled,
       readOnly,
+      id,
+      name,
       ...props
     },
     ref
   ) => {
+    const generatedId = useId();
     const {
       currentPlaceholder,
       nextPlaceholder,
@@ -44,6 +51,15 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       handleFocus,
       handleBlur,
     } = useAnimatedPlaceholder({ placeholders, interval, value, disabled, readOnly });
+
+    const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Tab' && !e.shiftKey && !hasValue && currentPlaceholder && onTabAccept) {
+        e.preventDefault();
+        onTabAccept(currentPlaceholder);
+        return;
+      }
+      onKeyDown?.(e);
+    }, [hasValue, currentPlaceholder, onTabAccept, onKeyDown]);
 
     const paddingLeft = leftPadding !== undefined
       ? `${leftPadding}rem`
@@ -58,6 +74,8 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
       <div className="relative w-full">
         <input
           ref={ref}
+          id={id ?? (name ? undefined : generatedId)}
+          name={name}
           value={value}
           disabled={disabled}
           readOnly={readOnly}
@@ -77,6 +95,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
             handleBlur();
             onBlur?.(event);
           }}
+          onKeyDown={handleKeyDown}
           {...props}
         />
         {!hasValue && (
@@ -130,7 +149,7 @@ const AnimatedPlaceholderInput = forwardRef<HTMLInputElement, AnimatedPlaceholde
                         style={{
                           display: 'inline-block',
                           animation: `placeholder-char-in ${CHAR_ANIM_DURATION_MS}ms ease-out both`,
-                          animationDelay: `${i * CHAR_STAGGER_MS}ms`,
+                          animationDelay: `${computeCharDelay(i)}ms`,
                         }}
                       >
                         {char === ' ' ? '\u00a0' : char}

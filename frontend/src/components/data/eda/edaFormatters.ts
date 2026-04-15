@@ -3,14 +3,25 @@
  * Consolidates duplicated formatNumber/formatPercentage/truncateText.
  */
 
+import { getDecimalPrecisionPref } from '@/lib/dataPrefs';
+
+/** Cached decimal precision — read once per module load, not per call. */
+let _cachedPrecision: number | null = null;
+function getCachedPrecision(): number {
+  if (_cachedPrecision === null) _cachedPrecision = getDecimalPrecisionPref();
+  return _cachedPrecision;
+}
+// Invalidate on storage change so the next formatNumber picks up the new value.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'automl-decimal-precision') _cachedPrecision = null;
+  });
+}
+
 /**
  * Smart number formatting for data values.
  * Handles millions, thousands, small decimals, and scientific notation.
- *
- * Consolidates the different implementations from:
- * - HistogramChart.tsx:25 (used .toFixed(1) for M/K)
- * - NumericSummaryCards.tsx:12 (used .toFixed(2) for M/K)
- * - ScatterChart.tsx:25 (same as HistogramChart)
+ * Reads decimal precision from user preferences (cached, not per-call).
  */
 export function formatNumber(value: number): string {
   if (Math.abs(value) >= 1_000_000) {
@@ -26,7 +37,7 @@ export function formatNumber(value: number): string {
     return value.toExponential(1);
   }
   if (Math.abs(value) < 1) {
-    return value.toFixed(3);
+    return value.toFixed(getCachedPrecision());
   }
   return value.toFixed(1);
 }

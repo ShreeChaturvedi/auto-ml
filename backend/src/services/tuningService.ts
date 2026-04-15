@@ -16,16 +16,17 @@ import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
+import type { ColumnDataType, DatasetProfile } from '../types/dataset.js';
 import type { ModelTemplate, ModelTemplateParam } from '../types/model.js';
 import {
   copyArtifactsToPermanentStorage,
   orchestrateContainerExecution,
 } from '../utils/containerOrchestrator.js';
+import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import { getModelTemplate } from './modelTemplates.js';
 import {
   buildOutputDirSetup,
-  buildPreprocessingLines,
   buildResultSaving,
   buildStandardImports,
   buildTrainTestSplitLines,
@@ -75,6 +76,47 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = appLogger.child({ service: 'tuningService' });
+
+function toModelFeatureType(dtype: ColumnDataType | undefined): 'float' | 'int' | 'str' {
+  switch (dtype) {
+    case 'float':
+      return 'float';
+    case 'integer':
+      return 'int';
+    default:
+      return 'str';
+  }
+}
+
+function deriveServingSchema(
+  dataset: DatasetProfile,
+  targetColumn: string,
+  summaryFeatureColumns?: string[],
+): {
+  featureColumns: string[];
+  featureTypes: Record<string, 'float' | 'int' | 'str'>;
+  sampleRequest?: Record<string, unknown>;
+} {
+  const datasetFeatureColumns = dataset.columns
+    .map((column) => column.name)
+    .filter((column) => column !== targetColumn);
+  const featureColumns = summaryFeatureColumns?.length ? summaryFeatureColumns : datasetFeatureColumns;
+  const datasetColumnsByName = new Map(dataset.columns.map((column) => [column.name, column]));
+  const featureTypes = Object.fromEntries(
+    featureColumns.map((column) => [column, toModelFeatureType(datasetColumnsByName.get(column)?.dtype)])
+  );
+
+  const sampleRow = dataset.sample.find((row) => featureColumns.every((column) => column in row)) ?? dataset.sample[0];
+  const sampleRequest = sampleRow
+    ? Object.fromEntries(
+        featureColumns
+          .filter((column) => column in sampleRow)
+          .map((column) => [column, sampleRow[column]])
+      )
+    : undefined;
+
+  return { featureColumns, featureTypes, sampleRequest };
+}
 
 /* ------------------------------------------------------------------ */
 /*  Script generation                                                  */
@@ -167,11 +209,39 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push('df = pd.read_csv(dataset_path)');
   lines.push('');
 
-  // ── Preprocessing (same as training) ──
-  lines.push(...buildPreprocessingLines({
-    targetColumn,
-    validateColumnExists: true,
-  }));
+  // ── Extract target + build preprocessor (Pipeline-based) ──
+  lines.push(`target_col = ${JSON.stringify(targetColumn)}`);
+  lines.push('if target_col not in df.columns:');
+  lines.push('    raise ValueError(f"Target column {target_col} not found in dataset.")');
+  lines.push('df = df.dropna(subset=[target_col])');
+  lines.push('y = df[target_col]');
+  lines.push('X = df.drop(columns=[target_col])');
+  lines.push('');
+  lines.push('# Identify column types');
+  lines.push('numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()');
+  lines.push('categorical_cols = [col for col in X.columns if col not in numeric_cols]');
+  lines.push('feature_columns = numeric_cols + categorical_cols  # pre-encoding names');
+  lines.push('');
+  lines.push('# Build preprocessor ONCE (reused across trials)');
+  lines.push('from sklearn.pipeline import Pipeline as SkPipeline');
+  lines.push('from sklearn.compose import ColumnTransformer');
+  lines.push('from sklearn.preprocessing import StandardScaler, OneHotEncoder');
+  lines.push('from sklearn.impute import SimpleImputer');
+  lines.push('');
+  lines.push("numeric_pipeline = SkPipeline([");
+  lines.push("    ('imputer', SimpleImputer(strategy='median')),");
+  lines.push("    ('scaler', StandardScaler())");
+  lines.push("])");
+  lines.push("categorical_pipeline = SkPipeline([");
+  lines.push("    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),");
+  lines.push("    ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))");
+  lines.push("])");
+  lines.push('transformers = []');
+  lines.push('if numeric_cols:');
+  lines.push("    transformers.append(('num', numeric_pipeline, numeric_cols))");
+  lines.push('if categorical_cols:');
+  lines.push("    transformers.append(('cat', categorical_pipeline, categorical_cols))");
+  lines.push("preprocessor = ColumnTransformer(transformers=transformers, remainder='drop')");
   lines.push('');
 
   // ── Train/test split ──
@@ -202,8 +272,9 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   }
 
   const randomStateSuffix = 'random_state' in template.defaultParams ? ', random_state=42' : '';
-  lines.push(`    model = ${template.modelClass}(**params${randomStateSuffix})`);
-  lines.push(`    scores = cross_val_score(model, X_train, y_train, cv=5, scoring=${JSON.stringify(sklearnScoring)})`);
+  lines.push(`    estimator = ${template.modelClass}(**params${randomStateSuffix})`);
+  lines.push("    trial_pipeline = SkPipeline([('preprocessor', preprocessor), ('model', estimator)])");
+  lines.push(`    scores = cross_val_score(trial_pipeline, X_train, y_train, cv=5, scoring=${JSON.stringify(sklearnScoring)})`);
   lines.push('    return scores.mean()');
   lines.push('');
 
@@ -258,13 +329,14 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   // ── Refit best model on full train set ──
   lines.push('best_params = study.best_params');
-  lines.push(`best_model = ${template.modelClass}(**best_params${randomStateSuffix})`);
-  lines.push('best_model.fit(X_train, y_train)');
+  lines.push(`best_estimator = ${template.modelClass}(**best_params${randomStateSuffix})`);
+  lines.push("best_pipeline = SkPipeline([('preprocessor', preprocessor), ('model', best_estimator)])");
+  lines.push('best_pipeline.fit(X_train, y_train)');
   lines.push('');
 
   // ── Save artifacts ──
   lines.push(...buildOutputDirSetup(outputDir));
-  lines.push('joblib.dump(best_model, os.path.join(output_dir, "model.joblib"))');
+  lines.push('joblib.dump(best_pipeline, os.path.join(output_dir, "model.joblib"))');
   lines.push('');
 
   // ── Param importances (best-effort) ──
@@ -300,7 +372,8 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
   lines.push(`    "best_value": ${negated ? 'abs(study.best_value)' : 'study.best_value'},`);
   lines.push('    "best_trial_number": study.best_trial.number,');
   lines.push('    "optimization_history": optimization_history,');
-  lines.push('    "param_importances": param_importances');
+  lines.push('    "param_importances": param_importances,');
+  lines.push('    "feature_columns": feature_columns');
   lines.push('}');
   lines.push(
     ...buildResultSaving('output_dir', {
@@ -364,7 +437,10 @@ export async function runTuningStudy(
       return;
     }
 
-    // 3. Check for tunable parameters
+    // 3. Resolve target column (heals stale metadata)
+    const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
+
+    // 4. Check for tunable parameters
     const tunableParams = template.parameters.filter(
       (p) => p.min !== undefined || p.options !== undefined || p.type === 'boolean'
     );
@@ -374,13 +450,13 @@ export async function runTuningStudy(
       return;
     }
 
-    // 4. Pre-compute workspace paths
+    // 5. Pre-compute workspace paths
     const workspacePath = join(env.executionWorkspaceDir, projectId, 'model-runtime');
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
     const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
 
-    // 5. Orchestrate container execution with streaming callback
+    // 6. Orchestrate container execution with streaming callback
     const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
     const { container, executionResult: result } = await orchestrateContainerExecution({
       projectId,
@@ -389,7 +465,7 @@ export async function runTuningStudy(
         buildTuningScript({
           template,
           datasetPath: containerDatasetPath,
-          targetColumn: model.targetColumn ?? '',
+          targetColumn,
           testSize: 0.2,
           nTrials,
           metric,
@@ -419,7 +495,7 @@ export async function runTuningStudy(
       },
     });
 
-    // 6. On success — register the best model as a new ModelRecord
+    // 7. On success — register the best model as a new ModelRecord
     const workspaceOutputDir = join(workspacePath, 'tuning', modelId);
     const summaryPath = join(workspaceOutputDir, 'tuning_summary.json');
 
@@ -431,18 +507,9 @@ export async function runTuningStudy(
         best_trial_number: number;
         optimization_history: { trial_numbers: number[]; values: number[]; best_values: number[] };
         param_importances: { params?: string[]; importances?: number[] };
+        feature_columns?: string[];
       };
-
-      // Create new model ID and copy artifacts to permanent storage
-      const newModelId = `${modelId}-tuned-${Date.now()}`;
-      await copyArtifactsToPermanentStorage(newModelId, container, [
-        { workspace: `tuning/${modelId}/model.joblib`, permanent: 'model.joblib' },
-        { workspace: `tuning/${modelId}/tuning_summary.json`, permanent: 'tuning_summary.json' },
-      ]);
-
-      // Get artifact size for storage metadata
-      const storedModelPath = join(env.modelStorageDir, newModelId, 'model.joblib');
-      const artifactStat = await stat(storedModelPath);
+      const servingSchema = deriveServingSchema(dataset, targetColumn, summary.feature_columns);
 
       const dateTag = new Date().toISOString().slice(0, 10);
       const newRecord = await modelRepository.create({
@@ -457,14 +524,11 @@ export async function runTuningStudy(
         metrics: { [metric]: summary.best_value },
         status: 'completed',
         trainingMs: result.executionMs,
-        targetColumn: model.targetColumn,
-        featureColumns: model.featureColumns,
+        targetColumn,
+        featureColumns: servingSchema.featureColumns,
+        featureTypes: servingSchema.featureTypes,
+        sampleRequest: servingSchema.sampleRequest,
         sampleCount: model.sampleCount,
-        artifact: {
-          filename: 'model.joblib',
-          path: storedModelPath,
-          size: artifactStat.size,
-        },
         metadata: {
           tuning: {
             sourceModelId: modelId,
@@ -476,6 +540,35 @@ export async function runTuningStudy(
           },
         },
       });
+
+      try {
+        await copyArtifactsToPermanentStorage(newRecord.modelId, container, [
+          { workspace: `tuning/${modelId}/model.joblib`, permanent: 'model.joblib' },
+          { workspace: `tuning/${modelId}/tuning_summary.json`, permanent: 'tuning_summary.json' },
+        ]);
+
+        const storedModelPath = join(env.modelStorageDir, newRecord.modelId, 'model.joblib');
+        const artifactStat = await stat(storedModelPath);
+
+        await modelRepository.update(newRecord.modelId, (current) => ({
+          ...current,
+          artifact: {
+            filename: 'model.joblib',
+            path: storedModelPath,
+            size: artifactStat.size,
+          },
+        }));
+      } catch (artifactErr) {
+        await modelRepository.delete(newRecord.modelId).catch(() => undefined);
+        writeJsonLine(res, {
+          type: 'error',
+          message: artifactErr instanceof Error
+            ? artifactErr.message
+            : 'Failed to persist tuned model artifacts.',
+        });
+        res.end();
+        return;
+      }
 
       writeJsonLine(res, { type: 'done', resultModelId: newRecord.modelId });
 

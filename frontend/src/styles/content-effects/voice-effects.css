@@ -1,0 +1,84 @@
+/* Voice input waveform + cursor animations */
+@keyframes waveform-dance {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  50% {
+    transform: scaleY(1.5);
+  }
+}
+
+.voice-idle-btn:hover {
+  color: var(--voice-theme-color, hsl(var(--foreground)));
+}
+
+.waveform-bar {
+  animation: waveform-dance 0.8s ease-in-out infinite paused;
+}
+
+/* Trigger dance on parent hover */
+.group\/voice:hover .waveform-bar {
+  animation-play-state: running;
+}
+
+@keyframes voice-caret-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scaleY(0.92);
+    box-shadow:
+      0 0 0 1px hsl(var(--background)),
+      0 0 3px 1px var(--voice-theme-color, hsl(var(--primary) / 0.25));
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleY(1.06);
+    box-shadow:
+      0 0 0 1px hsl(var(--background)),
+      0 0 7px 2px var(--voice-theme-color, hsl(var(--primary) / 0.45));
+  }
+}
+
+/* Per-character reveal for voice-transcribed text in the chat input.
+   No translateY - vertical movement in contentEditable causes line-height
+   recalc and cursor jitter. Uses --voice-theme-color for themed bloom. */
+@keyframes voice-char-in {
+  0% {
+    opacity: 0;
+    color: var(--voice-theme-color, hsl(var(--foreground)));
+    text-shadow: 0 0 4px currentColor;
+  }
+
+  30% {
+    opacity: 1;
+    color: var(--voice-theme-color, hsl(var(--foreground)));
+    text-shadow: 0 0 2px currentColor;
+  }
+
+  100% {
+    opacity: 1;
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+.voice-char-enter {
+  animation: voice-char-in 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waveform-bar,
+  .voice-char-enter {
+    animation: none;
+  }
+
+  .mention-input-voice-caret {
+    animation: none;
+    opacity: 0.85;
+    transform: none;
+    box-shadow: 0 0 0 1px hsl(var(--background));
+  }
+}

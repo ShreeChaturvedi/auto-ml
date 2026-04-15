@@ -13,10 +13,11 @@ import { setupWSHandlers } from './wsHandlers';
 import type { NotebookSlice, NotebookState } from './types';
 
 // ============================================================
-// WS listener cleanup handle (module-scoped)
+// WS listener cleanup handle — HMR-safe storage
 // ============================================================
 
-let wsListenersCleanup: (() => void) | null = null;
+const _hmr = (import.meta.hot?.data ?? {}) as { wsCleanup?: () => void };
+let wsListenersCleanup: (() => void) | null = _hmr.wsCleanup ?? null;
 
 // ============================================================
 // Session state helpers
@@ -36,7 +37,7 @@ export interface SessionSlice {
   error: string | null;
 
   // Actions
-  initializeNotebook: (projectId: string) => Promise<void>;
+  initializeNotebook: (projectId: string, notebookId?: string) => Promise<void>;
   disconnect: () => void;
   loadNotebooks: (projectId?: string) => Promise<void>;
   setActiveNotebook: (notebookId: string) => Promise<void>;
@@ -67,7 +68,10 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
   // --- actions ---
 
-  initializeNotebook: async (projectId: string) => {
+  initializeNotebook: async (projectId: string, notebookId?: string) => {
+    // Guard: skip if notebookId was explicitly passed but is nullish (disconnect cleanup race)
+    if (notebookId !== undefined && !notebookId) return;
+
     const {
       wsClient: existingClient,
       notebook: existingNotebook,
@@ -80,6 +84,10 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       && existingNotebook
       && existingClient?.isConnected
     ) {
+      // If a specific notebook is requested and it differs from active, switch to it
+      if (notebookId && existingNotebook.notebookId !== notebookId) {
+        await get().setActiveNotebook(notebookId);
+      }
       return;
     }
 
@@ -88,13 +96,12 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     try {
       const notebooks = await notebooksApi.listNotebooks(projectId);
       const preferredNotebookId =
-        currentProjectId === projectId
-          ? activeNotebookId
-          : null;
+        notebookId
+        ?? (currentProjectId === projectId ? activeNotebookId : null);
       const resolvedNotebookId =
         preferredNotebookId && notebooks.some((entry) => entry.notebookId === preferredNotebookId)
           ? preferredNotebookId
-          : notebooks[0]?.notebookId ?? null;
+          : notebooks.find((nb) => nb.kind === 'phase')?.notebookId ?? null;
       const resolvedNotebook =
         notebooks.find((entry) => entry.notebookId === resolvedNotebookId) ?? null;
 
@@ -123,6 +130,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
       // Set up WebSocket event handlers
       wsListenersCleanup = setupWSHandlers(wsClient, get, set);
+      _hmr.wsCleanup = wsListenersCleanup;
 
       await wsClient.connect();
       if (resolvedNotebookId) {
@@ -154,17 +162,20 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
 
     wsListenersCleanup?.();
     wsListenersCleanup = null;
+    delete _hmr.wsCleanup;
+    wsClient?.disconnect();
 
     set({
       currentProjectId: null,
       notebooks: [],
       activeNotebookId: null,
       notebook: null,
+      wsClient: null,
       cells: [],
       cellSummaries: [],
       lockedCells: new Map(),
       isConnected: false,
-      isConnecting: false
+      isConnecting: false,
     });
   },
 
@@ -173,25 +184,36 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     if (!resolvedProjectId) return;
 
     try {
+      set({
+        currentProjectId: resolvedProjectId,
+        isLoading: true,
+        error: null
+      });
       const notebooks = await notebooksApi.listNotebooks(resolvedProjectId);
       set((state: NotebookState) => {
         const nextActiveNotebookId =
           state.activeNotebookId && notebooks.some((entry) => entry.notebookId === state.activeNotebookId)
             ? state.activeNotebookId
-            : notebooks[0]?.notebookId ?? null;
+            : notebooks.find((nb) => nb.kind === 'phase')?.notebookId ?? null;
 
         const nextNotebook =
           notebooks.find((entry) => entry.notebookId === nextActiveNotebookId) ?? null;
 
         return {
+          currentProjectId: resolvedProjectId,
           notebooks,
           activeNotebookId: nextActiveNotebookId,
-          notebook: nextNotebook
+          notebook: nextNotebook,
+          isLoading: false
         };
       });
     } catch (error) {
       console.error('[notebookStore] Failed to load notebooks:', error);
-      set({ error: error instanceof Error ? error.message : 'Failed to load notebooks' });
+      set({
+        currentProjectId: resolvedProjectId,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to load notebooks'
+      });
     }
   },
 
@@ -222,12 +244,23 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       wsClient.unsubscribe(currentNotebook.notebookId);
     }
 
+    // Abort any in-flight suggested-cell streams before clearing tracking
+    // state so they can't leak completions into the new notebook.
+    const { streamAbortControllers } = get();
+    for (const controller of streamAbortControllers.values()) {
+      try { controller.abort(); } catch { /* best-effort */ }
+    }
+
     set({
       activeNotebookId: notebookId,
       notebook: targetNotebook,
       cells: [],
       cellSummaries: [],
       lockedCells: new Map(),
+      suggestedCellIds: new Set(),
+      streamingCellIds: new Set(),
+      streamErrors: new Map(),
+      streamAbortControllers: new Map(),
       isLoading: true,
       error: null
     });
@@ -314,7 +347,13 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       }));
 
       if (get().activeNotebookId === notebookId) {
-        await get().setActiveNotebook(result.fallbackNotebookId);
+        if (result.fallbackNotebookId) {
+          await get().setActiveNotebook(result.fallbackNotebookId);
+        } else {
+          // Deleted the last standalone notebook: clear active selection.
+          // Callers (e.g. data-viewer tab close) will surface an empty state.
+          set({ activeNotebookId: null, notebook: null, cells: [], cellSummaries: [] });
+        }
       }
 
       return true;
@@ -374,6 +413,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       cells: [],
       cellSummaries: [],
       lockedCells: new Map(),
+      runAllRunningCellId: null,
       isLoading: false,
       isConnecting: false,
       isSaving: false,
@@ -383,3 +423,14 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
     });
   }
 });
+
+// ============================================================
+// HMR cleanup — run old WS handlers before module re-execution
+// ============================================================
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    wsListenersCleanup?.();
+    import.meta.hot!.data.wsCleanup = null;
+  });
+}

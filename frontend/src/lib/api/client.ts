@@ -27,7 +27,10 @@ const REFRESH_EXCLUDED_PATHS = new Set([
   '/auth/register',
   '/auth/forgot-password',
   '/auth/reset-password',
-  '/auth/refresh'
+  '/auth/refresh',
+  '/auth/verify-email',
+  '/auth/resend-verification',
+  '/auth/verification-status'
 ]);
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -178,15 +181,18 @@ function extractApiErrorMessage(payload: unknown): string | null {
 }
 
 async function applyAuthSideEffects(response: Response): Promise<void> {
-  // Unverified email: clear session so the user is redirected to login
+  // Unverified email: redirect to pending page (keep session alive)
   if (response.status === 403) {
     const cloned = response.clone();
     try {
       const body = await cloned.json() as { error?: string };
       if (body?.error === 'Email not verified') {
         const store = useAuthStore.getState();
-        store.clearAuth();
         store.setError('Please verify your email address before continuing.');
+        // Redirect outside React tree — skip if already on a verify-email page
+        if (!window.location.pathname.startsWith('/verify-email')) {
+          window.location.href = '/verify-email/pending';
+        }
       }
     } catch {
       // not JSON — ignore and let caller handle the response normally
@@ -195,6 +201,10 @@ async function applyAuthSideEffects(response: Response): Promise<void> {
 }
 
 export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {
+  if (typeof window !== 'undefined' && (window as unknown as { __AGENTIC_DEMO_MODE__?: boolean }).__AGENTIC_DEMO_MODE__ === true) {
+    throw new Error('apiFetch called while in demo mode');
+  }
+
   const method = options.method ?? 'GET';
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);

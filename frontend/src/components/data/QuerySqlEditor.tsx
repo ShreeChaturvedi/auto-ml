@@ -5,7 +5,7 @@
  * Provides syntax highlighting, context-aware completions, and SQL linting.
  */
 
-import { Suspense, useEffect, useRef, useCallback, useState } from 'react';
+import { Suspense, useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { LazyMonacoEditor } from '@/lib/monaco/LazyMonacoEditor';
 import {
@@ -23,6 +23,8 @@ import { quoteSqlIdentifier } from './sqlIdentifiers';
 import { SqlPlaceholderOverlay } from './SqlPlaceholderOverlay';
 import { SqlEditorChips } from './SqlEditorChips';
 import { useSqlEditorIdle } from './useSqlEditorIdle';
+import { assignMonacoHiddenTextareaIdentity } from '@/lib/monaco/dom';
+import { useEditorMonacoOptions } from '@/stores/editorPrefsStore';
 
 import type { IDisposable, editor as MonacoEditor } from 'monaco-editor';
 import type { Monaco } from '@monaco-editor/react';
@@ -63,6 +65,7 @@ export function QuerySqlEditor({
   modKey,
   projectId,
 }: QuerySqlEditorProps) {
+  const globalEditorOpts = useEditorMonacoOptions();
   const monacoRef = useRef<Monaco | null>(null);
   const editorInstanceRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const completionProviderRef = useRef<IDisposable | null>(null);
@@ -73,6 +76,7 @@ export function QuerySqlEditor({
   const tabHandlerRef = useRef<{ domNode: HTMLElement; handler: (e: KeyboardEvent) => void } | null>(null);
 
   const [editorLeftOffset, setEditorLeftOffset] = useState(0);
+  const [editorContentWidth, setEditorContentWidth] = useState(0);
   const { isFocused, isIdle, setFocused, onActivity } = useSqlEditorIdle();
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -82,7 +86,11 @@ export function QuerySqlEditor({
   // Shuffle once per data change using ref to avoid impure useMemo
   const placeholderKeyRef = useRef('');
   const shuffledRef = useRef<string[]>([]);
-  const placeholderKey = JSON.stringify([llmPlaceholders, tableNames[0]]);
+  const placeholderKey = JSON.stringify([
+    llmPlaceholders,
+    tableNames[0],
+    columnsByTable[tableNames[0] ?? ''] ?? [],
+  ]);
   if (placeholderKey !== placeholderKeyRef.current) {
     placeholderKeyRef.current = placeholderKey;
     let items: string[];
@@ -106,13 +114,14 @@ export function QuerySqlEditor({
   const placeholders = shuffledRef.current;
 
   // Ticker state owned here so Tab handler can read currentIndex directly
+  const placeholderLengths = useMemo(() => placeholders.map(p => p.length), [placeholders]);
   const {
     currentIndex,
     nextIndex,
     isAnimating,
     outgoingTransition,
     incomingTransition,
-  } = useInsightTicker(placeholders.length, 4000);
+  } = useInsightTicker(placeholders.length, 4000, placeholderLengths);
 
   const showPlaceholder = sqlQuery === '' && !isExecuting;
   const showChips = !isFocused || isIdle;
@@ -122,6 +131,10 @@ export function QuerySqlEditor({
   onExecuteRef.current = onExecute;
   const onQueryChangeRef = useRef(onQueryChange);
   onQueryChangeRef.current = onQueryChange;
+  const tableNamesRef = useRef(tableNames);
+  tableNamesRef.current = tableNames;
+  const columnsByTableRef = useRef(columnsByTable);
+  columnsByTableRef.current = columnsByTable;
   const showPlaceholderRef = useRef(showPlaceholder);
   showPlaceholderRef.current = showPlaceholder;
   const placeholdersRef = useRef(placeholders);
@@ -178,13 +191,15 @@ export function QuerySqlEditor({
 
       // Cmd/Ctrl + Enter to execute
       editorInstance.addCommand(
-        (window.navigator.platform.toLowerCase().includes('mac') ? 2048 : 2176) | 3,
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
         () => onExecuteRef.current()
       );
 
       // Tab-to-accept: capture phase intercept, skips when Monaco suggest widget is open
       const domNode = editorInstance.getDomNode();
       if (domNode) {
+        assignMonacoHiddenTextareaIdentity(domNode, 'query-sql-editor-ime')
+
         const handler = (e: KeyboardEvent) => {
           if (e.key !== 'Tab' || e.shiftKey || !showPlaceholderRef.current || placeholdersRef.current.length === 0) return;
           // Don't intercept if Monaco's suggest widget is visible
@@ -203,14 +218,21 @@ export function QuerySqlEditor({
       // Focus/blur tracking
       focusSubRef.current?.dispose();
       blurSubRef.current?.dispose();
-      focusSubRef.current = editorInstance.onDidFocusEditorText(() => setFocused(true));
+      focusSubRef.current = editorInstance.onDidFocusEditorText(() => {
+        assignMonacoHiddenTextareaIdentity(editorInstance.getDomNode(), 'query-sql-editor-ime')
+        setFocused(true)
+      });
       blurSubRef.current = editorInstance.onDidBlurEditorText(() => setFocused(false));
 
       // Content left offset for placeholder alignment
       layoutSubRef.current?.dispose();
-      const updateLeftOffset = () => setEditorLeftOffset(editorInstance.getLayoutInfo().contentLeft);
-      updateLeftOffset();
-      layoutSubRef.current = editorInstance.onDidLayoutChange(updateLeftOffset);
+      const updateLayout = () => {
+        const info = editorInstance.getLayoutInfo();
+        setEditorLeftOffset(info.contentLeft);
+        setEditorContentWidth(info.contentWidth);
+      };
+      updateLayout();
+      layoutSubRef.current = editorInstance.onDidLayoutChange(updateLayout);
 
       const model = editorInstance.getModel();
       if (model && model.getLanguageId() !== 'sql') {
@@ -230,10 +252,15 @@ export function QuerySqlEditor({
             startColumn: word.startColumn,
             endColumn: word.endColumn
           };
-          const safeTableNames = tableNames
+          const safeTableNames = tableNamesRef.current
             .map((tableName) => sanitizeSuggestionToken(tableName))
             .filter((tableName): tableName is string => Boolean(tableName));
-          const collector = createSqlSuggestionCollector({ monaco, range, safeTableNames, columnsByTable });
+          const collector = createSqlSuggestionCollector({
+            monaco,
+            range,
+            safeTableNames,
+            columnsByTable: columnsByTableRef.current,
+          });
 
           try {
             const textUntilPosition = completionModel.getValueInRange({
@@ -276,9 +303,7 @@ export function QuerySqlEditor({
       validateSql();
       validationSubscriptionRef.current = model.onDidChangeContent(() => validateSql());
     },
-    // tableNames/columnsByTable captured at mount; the completion closure reads them.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [monacoTheme]
+    [monacoTheme, setFocused]
   );
 
   const currentSql = placeholders[currentIndex] ?? '';
@@ -304,8 +329,7 @@ export function QuerySqlEditor({
           onMount={handleMount}
           theme={monacoTheme}
           options={{
-            minimap: { enabled: false },
-            lineNumbers: 'on',
+            ...globalEditorOpts,
             lineNumbersMinChars: 2,
             glyphMargin: false,
             folding: false,
@@ -315,11 +339,8 @@ export function QuerySqlEditor({
             overviewRulerLanes: 0,
             overviewRulerBorder: false,
             hideCursorInOverviewRuler: true,
-            scrollbar: { vertical: 'hidden', horizontal: 'hidden', alwaysConsumeMouseWheel: false },
+            scrollbar: { vertical: 'hidden', horizontal: 'hidden', verticalScrollbarSize: 12, alwaysConsumeMouseWheel: false },
             readOnly: isExecuting,
-            fontSize: 13,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            wordWrap: 'on',
             automaticLayout: true,
             quickSuggestions: true,
             suggestOnTriggerCharacters: true,
@@ -332,8 +353,6 @@ export function QuerySqlEditor({
               filterGraceful: true,
               localityBonus: true
             },
-            cursorBlinking: 'smooth',
-            cursorSmoothCaretAnimation: 'on'
           }}
         />
       </Suspense>
@@ -346,6 +365,7 @@ export function QuerySqlEditor({
           incomingTransition={incomingTransition}
           animateChars={isAnimating && !prefersReducedMotion}
           editorLeftOffset={editorLeftOffset}
+          contentWidth={editorContentWidth}
         />
       )}
       {!collapsed && (

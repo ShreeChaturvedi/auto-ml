@@ -18,7 +18,7 @@ export function ReportSkeleton() {
           {BAR_WIDTHS.slice(0, i % 2 === 0 ? 3 : 2).map((w, j) => (
             <div
               key={j}
-              className={`h-3 animate-pulse rounded bg-muted/40 ${w}`}
+              className={`h-3 skeleton-shimmer rounded bg-muted/40 ${w}`}
             />
           ))}
         </div>

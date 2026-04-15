@@ -20,10 +20,14 @@ export type AppScreenComponent = ComponentType<AppScreenProps>;
  */
 
 export const screenRegistry: Partial<Record<AppScreenId, AppScreenComponent>> = {
-  // Populated by Beat 1/2/3+ tasks via `lazy()` imports, e.g.:
-  //   landing: lazy(() => import("./screens/LandingScreen").then(m => ({ default: m.LandingScreen }))),
-  //   login:   lazy(() => import("./screens/LoginScreen").then(m => ({ default: m.LoginScreen }))),
-  //   signup:  lazy(() => import("./screens/SignupScreen").then(m => ({ default: m.SignupScreen }))),
+  // Populated by Beat 1/2/3+ tasks via `lazy()` imports. Beat 1 will add
+  // `landing` once `LandingScreen` lands.
+  login: lazy(() =>
+    import("./screens/LoginScreen").then((m) => ({ default: m.LoginScreen })),
+  ),
+  signup: lazy(() =>
+    import("./screens/SignupScreen").then((m) => ({ default: m.SignupScreen })),
+  ),
   home: lazy(() =>
     import("./screens/HomeScreen").then((m) => ({ default: m.HomeScreen })),
   ),

@@ -14,10 +14,10 @@
  *   2. `setAuthFixture` stamps the mock auth store synchronously so HomePage's
  *      `useAuthStore(state => state.user?.name)` selector returns "Ayush Yadav"
  *      on first render.
- *   3. The real HomePage is wrapped in `StaticRouterAdapter` at "/" so the
- *      `<Link>` inside its "Learn More" button and any `useNavigate` calls
- *      from child components (e.g. the real ProjectDialog, which we shim to
- *      null for now) resolve without a browser history.
+ *   3. The real HomePage is wrapped in `StaticRouterAdapter` at "/" so any
+ *      future in-app `Link` / `useNavigate` usage from child components (e.g.
+ *      the real ProjectDialog, which we shim to null for now) resolves without
+ *      a browser history. "Learn more" is an external `<a target="_blank">`.
  */
 import "../../../../src/frontend-bridge/determinism";
 import { HomePage } from "@/pages/HomePage";

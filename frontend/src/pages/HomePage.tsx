@@ -1,6 +1,5 @@
 import { useState, useLayoutEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { BookOpen, FolderOpen } from 'lucide-react';
+import { ArrowUpRight, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -15,6 +14,7 @@ import { HomeEmptyIllustration } from '@/components/ui/illustrations';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAuthStore } from '@/stores/authStore';
+import { getLandingUrl } from '@/lib/landingUrl';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -148,15 +148,12 @@ export function HomePage() {
             </EmptyTitle>
             <EmptyDescription className="empty-state-enter" style={{ animationDelay: '300ms' }}>
               {projects.length === 0
-                ? 'Start your first ML workflow by creating a new project or importing one.'
-                : 'Select a project from the sidebar to continue working, or create/import a new one.'}
+                ? 'Start your first ML workflow by creating a new project.'
+                : 'Select a project from the sidebar to continue working, or create a new one.'}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="empty-state-enter" style={{ animationDelay: '400ms' }}>
-            <div className="flex gap-2">
-              <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
-              <Button variant="outline">Import Project</Button>
-            </div>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
           </EmptyContent>
           <Button
             variant="link"
@@ -165,9 +162,14 @@ export function HomePage() {
             size="sm"
             style={{ animationDelay: '500ms' }}
           >
-            <Link to="/docs">
-              Learn More <BookOpen className="h-4 w-4" />
-            </Link>
+            <a
+              href={getLandingUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Learn More (opens marketing site in new tab)"
+            >
+              Learn More <ArrowUpRight className="h-4 w-4" aria-hidden />
+            </a>
           </Button>
           <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
         </Empty>

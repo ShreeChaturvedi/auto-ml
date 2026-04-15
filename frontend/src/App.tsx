@@ -8,7 +8,7 @@
  * - /settings/:tab : Settings page (general, ai-models, editor, data, execution, profile)
  * - /settings : Redirects to /settings/general
  * - /profile : Redirects to /settings/profile
- * - /docs : Documentation page
+ * - /docs : Redirects to public marketing landing (legacy README route removed)
  * - /login, /signup, /forgot-password, /reset-password : Auth flows
  */
 
@@ -46,8 +46,8 @@ const VerifyEmailPage = lazy(() =>
 const VerifyEmailPendingPage = lazy(() =>
   import('@/components/auth/VerifyEmailPendingPage').then((m) => ({ default: m.VerifyEmailPendingPage }))
 );
-const DocsPage = lazy(() =>
-  import('@/components/docs/DocsPage').then((m) => ({ default: m.DocsPage }))
+const LandingRedirectPage = lazy(() =>
+  import('@/pages/LandingRedirectPage').then((m) => ({ default: m.LandingRedirectPage }))
 );
 const SettingsPage = lazy(() =>
   import('@/components/settings/SettingsPage').then((m) => ({ default: m.SettingsPage }))
@@ -163,7 +163,7 @@ function App() {
           <Route path="/profile" element={<Navigate to="/settings/profile" replace />} />
           <Route
             path="/docs"
-            element={<ProtectedRoute><DocsPage /></ProtectedRoute>}
+            element={<ProtectedRoute><LandingRedirectPage /></ProtectedRoute>}
           />
           <Route
             path="/*"

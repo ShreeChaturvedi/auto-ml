@@ -3,6 +3,8 @@ image: node:22-slim
 variables:
   NODE_OPTIONS: --max-old-space-size=4096
   VERCEL_CLI_VERSION: "51.2.1"
+  # Temporary: deploy landing production from sprint11 while we iterate quickly.
+  LANDING_VERCEL_PROD_BRANCH: "sprint11"
 
 stages:
   - install
@@ -118,7 +120,7 @@ landing:vercel:preview:
     - npx --yes vercel@"$VERCEL_CLI_VERSION" build --yes --target=preview --token="$VERCEL_TOKEN"
     - npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --yes --target=preview --token="$VERCEL_TOKEN" -m gitlabDeployment="1" -m gitlabCommitRef="$CI_COMMIT_REF_NAME" -m gitlabCommitSha="$CI_COMMIT_SHA"
   rules:
-    - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+    - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH && $CI_COMMIT_BRANCH != $LANDING_VERCEL_PROD_BRANCH'
       changes:
         - .gitlab-ci.yml
         - package.json
@@ -157,7 +159,7 @@ landing:vercel:production:
       echo "Deployment URL: $DEPLOYMENT_URL"
       npx --yes vercel@"$VERCEL_CLI_VERSION" alias set "$DEPLOYMENT_URL" agentic-automl.vercel.app --token="$VERCEL_TOKEN" --non-interactive
   rules:
-    - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$VERCEL_TOKEN && $VERCEL_ORG_ID && $VERCEL_PROJECT_ID && $CI_COMMIT_BRANCH == $LANDING_VERCEL_PROD_BRANCH'
       changes:
         - .gitlab-ci.yml
         - package.json

@@ -49,8 +49,12 @@ const EVENT_KINDS: readonly AppTimelineEvent["kind"][] = [
 export function useTimelineRunner(
   scene: TimelineRunnerScene,
   meta: SceneWithMetadata,
-  /** Raw VO script with {{MARK}} tokens. Scenes pass this from a fixture. */
-  rawScript: string,
+  /**
+   * Raw VO script with `{{MARK}}` tokens. Pass `null` when the scene has no
+   * annotated script — `{mark}` refs become unsupported and only absolute
+   * frame starts and `{after}` chain refs resolve.
+   */
+  rawScript: string | null,
 ): TimelineRunnerResult {
   const alignment = useVoiceoverAlignment(meta, rawScript);
 

@@ -23,6 +23,7 @@ import {
 } from "../../primitives/SyntheticCursor";
 import { ZoomFrame } from "../../primitives/ZoomFrame";
 import type { SceneWithMetadata } from "../../../config/scenes";
+import { cursorJsonToWaypoints, type CursorTrackEntry } from "./cursorJson";
 
 type DemoSceneType = z.infer<typeof demoScene>;
 
@@ -30,14 +31,6 @@ type Props = {
   scene: DemoSceneType;
   theme: Theme;
   meta?: SceneWithMetadata;
-};
-
-/** Raw cursor-track record written by the Playwright capture driver. */
-type CursorTrackEntry = {
-  t_ms: number;
-  x: number;
-  y: number;
-  click?: boolean;
 };
 
 /**
@@ -116,16 +109,7 @@ function useCursorPath(
       })
       .then((entries) => {
         if (cancelled) return;
-        setPath(
-          entries.map((e) => ({
-            at: Math.round((e.t_ms / 1000) * fps),
-            x: e.x,
-            y: e.y,
-            clickAt: e.click
-              ? Math.round((e.t_ms / 1000) * fps)
-              : undefined,
-          })),
-        );
+        setPath(cursorJsonToWaypoints(entries, fps));
         continueRender(handle);
       })
       .catch(() => {
@@ -174,7 +158,9 @@ const TimelineInner: React.FC<Required<TimelineOverlayProps>> = ({
   meta,
   children,
 }) => {
-  const { byKind } = useTimelineRunner(scene, meta, "");
+  // `null` rawScript: demo scenes have no `{{MARK}}` annotations — only
+  // absolute-frame starts and `{after}` chain refs are supported here.
+  const { byKind } = useTimelineRunner(scene, meta, null);
 
   const zoomed = byKind.zoom.reduce<React.ReactNode>(
     (inner, evt) => {
@@ -210,6 +196,10 @@ const TimelineInner: React.FC<Required<TimelineOverlayProps>> = ({
   return (
     <>
       {zoomed}
+      {/* Use timeline `click` events for clicks NOT represented in `cursorFile` —
+          e.g. synthetic clicks on overlaid UI. Clicks already in the cursor JSON
+          render their own ripple via `SyntheticCursor`, so listing them here
+          would double up. */}
       {byKind.click.map((evt) => {
         const p = evt.payload as { x?: number; y?: number };
         if (p.x === undefined || p.y === undefined) return null;

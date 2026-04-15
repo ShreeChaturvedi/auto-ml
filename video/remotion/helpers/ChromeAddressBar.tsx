@@ -1,12 +1,10 @@
 import React from "react";
 
 export type ChromeAddressBarProps = {
+  /** Fully-formed URL string rendered inside the address bar. URL transitions
+   * (crossfade between values) are driven externally by callers via the
+   * Demo scene's timeline — this component stays presentational. */
   url: string;
-  /** When set, the URL will visually crossfade from `fromUrl` → `url` over
-   * `crossfadeFrames` frames, driven by Remotion's useCurrentFrame.
-   * `fromUrl` and the transition timing are driven by callers via the
-   * `navigate` timeline event — kept simple here (no internal animation
-   * state yet; AppScene composes a keyframed value via interpolate). */
 };
 
 export const ChromeAddressBar: React.FC<ChromeAddressBarProps> = ({ url }) => {

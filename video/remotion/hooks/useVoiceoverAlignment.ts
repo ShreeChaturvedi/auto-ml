@@ -26,17 +26,22 @@ export type AlignmentHandle = {
  * marks in the voiceover. Memoises the `resolveMarks` walk per scene. If
  * the scene has no alignment sidecar, returns a no-op handle that resolves
  * all mark refs to frame 0 and logs a single warning.
+ *
+ * Pass `rawScript = null` when the scene has no `{{MARK}}`-annotated script
+ * (e.g. Playwright-captured demo beats): mark-ref resolution is skipped and
+ * any `{mark}` ref falls back to frame 0 with a one-shot console warning.
  */
 export const useVoiceoverAlignment = (
   meta: SceneWithMetadata,
-  rawScript: string,
+  rawScript: string | null,
 ): AlignmentHandle => {
   const { fps } = useVideoConfig();
   const warnedRef = useRef(false);
   const alignment = meta.alignment;
 
   const markFrames = useMemo(
-    () => (alignment ? resolveMarks(rawScript, alignment, fps) : null),
+    () =>
+      alignment && rawScript ? resolveMarks(rawScript, alignment, fps) : null,
     [alignment, rawScript, fps],
   );
 

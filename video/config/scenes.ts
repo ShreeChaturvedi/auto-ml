@@ -104,6 +104,75 @@ export const tableOfContentsScene = z.object({
   durationInFrames: z.number().int().positive().default(240),
 });
 
+// ---- App (real app components inside a chrome variant) ---------------------
+
+/** Reference to a VO alignment mark (resolved at runtime via useVoiceoverAlignment). */
+const markRef = z.object({ mark: z.string() });
+/** Reference that starts after another timeline event completes. */
+const afterRef = z.object({ after: z.string(), offset: z.number().optional() });
+
+/** Start-time discriminator for timeline events: absolute frame, mark, or after-ref. */
+const eventStart = z.union([z.number(), markRef, afterRef]);
+
+export const appTimelineEvent = z.object({
+  id: z.string(),
+  start: eventStart,
+  kind: z.enum([
+    "scrollTo",
+    "cursorTo",
+    "click",
+    "type",
+    "zoom",
+    "toolCall",
+    "llmToken",
+    "assemble",
+    "navigate",
+    "sfx",
+  ]),
+  payload: z.record(z.string(), z.unknown()),
+  /** Event duration (for events with an implicit end — e.g., zoom hold). */
+  durationFrames: z.number().int().positive().optional(),
+});
+
+export type AppTimelineEvent = z.infer<typeof appTimelineEvent>;
+
+/** Which real-app screen to mount inside the chrome. */
+export const appScreenId = z.enum([
+  "landing",
+  "login",
+  "signup",
+  "home",
+  "project.upload",
+  "project.eda",
+  "project.preprocess",
+  "project.features",
+  "project.train",
+  "project.experiments",
+]);
+
+export type AppScreenId = z.infer<typeof appScreenId>;
+
+export const appChromeVariant = z.enum(["mac", "browser", "none"]);
+export type AppChromeVariant = z.infer<typeof appChromeVariant>;
+
+export const appScene = z.object({
+  type: z.literal("app"),
+  /** Which screen renderer to mount. Maps 1:1 to AppScene/screens/*. */
+  screen: appScreenId,
+  /** Chrome variant wrapping the screen (mac window / browser / full-bleed). */
+  chrome: appChromeVariant.default("mac"),
+  /** URL shown in chrome="browser" variant's address bar. */
+  url: z.string().optional(),
+  /** Per-screen fixture payload; consumed by the screen component. */
+  state: z.record(z.string(), z.unknown()).optional(),
+  /** Choreographed events (VO-mark or chain-triggered). */
+  timeline: z.array(appTimelineEvent).optional(),
+  voiceoverFile,
+  durationInFrames: z.number().int().positive().default(600),
+});
+
+export type AppScene = z.infer<typeof appScene>;
+
 // ---- Union ------------------------------------------------------------------
 
 export const selectableScenes = z.discriminatedUnion("type", [
@@ -113,6 +182,7 @@ export const selectableScenes = z.discriminatedUnion("type", [
   titleScene,
   endcardScene,
   tableOfContentsScene,
+  appScene,
 ]);
 
 export type SelectableScene = z.infer<typeof selectableScenes>;
@@ -130,11 +200,20 @@ export type VideoConf = z.infer<typeof videoConf>;
 
 // ---- Metadata (computed by calc-metadata) -----------------------------------
 
+/** Alignment block sidecar from ElevenLabs /with-timestamps — optional. */
+export type SceneAlignment = {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+};
+
 export type SceneWithMetadata = {
   scene: SelectableScene;
   from: number;
   durationInFrames: number;
   chapter: string | null;
+  /** Populated only when scene has a voiceoverFile and its sidecar .alignment.json exists. */
+  alignment?: SceneAlignment;
 };
 
 export type ChapterMark = {

@@ -55,6 +55,9 @@ const DEFAULT_SCENES: SelectableScene[] = [
     meta: { chapters: DEFAULT_CHAPTERS },
   },
   // === Beat 1: Landing scroll (full-bleed Playwright capture) ===
+  // Playwright's `recordVideo` starts encoding at `newContext()`, so the first
+  // ~1 s of the webm is blank while the page loads + fonts settle. Skip past
+  // it with `startOffset` so the scene opens on real content, not a blank flash.
   {
     type: "demo",
     videoFile: "landing.webm",
@@ -63,10 +66,13 @@ const DEFAULT_SCENES: SelectableScene[] = [
     chrome: "none",
     voiceoverFile: "scene-landing.mp3",
     durationInFrames: 3600, // 60s at 60 fps — overridden by MP3 duration when present
-    startOffset: 0,
+    startOffset: 1,
   },
 
   // === Beat 2: Signup (browser chrome) ===
+  // Signup capture shows a `Checking session...` auth-bootstrap screen for
+  // ~3 s before the form mounts; the first cursor event (driver start) is at
+  // webm t=4.234 s. Opening on the empty form matches the drive's typing beat.
   {
     type: "demo",
     videoFile: "signup.webm",
@@ -76,10 +82,13 @@ const DEFAULT_SCENES: SelectableScene[] = [
     url: "app.agentic-automl.dev/signup",
     voiceoverFile: "scene-signup.mp3",
     durationInFrames: 900,
-    startOffset: 0,
+    startOffset: 4,
   },
 
   // === Beat 3: Home arrival (mac window) ===
+  // Home content only appears at t=4 s of the webm (page load + Zustand auth
+  // hydration + staggered HomePage entry animations). With the scene's 4 s
+  // budget, `startOffset: 4` is what makes the beat show the greeting at all.
   {
     type: "demo",
     videoFile: "home.webm",
@@ -88,7 +97,7 @@ const DEFAULT_SCENES: SelectableScene[] = [
     chrome: "mac",
     voiceoverFile: "scene-home.mp3",
     durationInFrames: 240,
-    startOffset: 0,
+    startOffset: 4,
   },
 ];
 

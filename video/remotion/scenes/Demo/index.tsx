@@ -52,7 +52,7 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
       : mainVideoPath(scene.videoFile),
   );
 
-  const cursorPath = useCursorPath(scene.cursorFile, fps);
+  const cursorPath = useCursorPath(scene.cursorFile, fps, scene.startOffset);
 
   return (
     <BrowserChrome
@@ -89,10 +89,15 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
  * Loads `public/captures/<cursorFile>` at mount, converts `t_ms → frame`, and
  * returns a waypoint list for `SyntheticCursor`. Returns null when `cursorFile`
  * is undefined or the fetch fails — the scene falls through gracefully.
+ *
+ * `startOffsetSeconds` mirrors `scene.startOffset`: when the video is trimmed
+ * via `<OffthreadVideo startFrom>`, cursor times must be rebased to scene-time
+ * so the overlay tracks the trimmed content.
  */
 function useCursorPath(
   cursorFile: string | undefined,
   fps: number,
+  startOffsetSeconds: number,
 ): readonly CursorWaypoint[] | null {
   const [path, setPath] = useState<readonly CursorWaypoint[] | null>(null);
 
@@ -109,7 +114,7 @@ function useCursorPath(
       })
       .then((entries) => {
         if (cancelled) return;
-        setPath(cursorJsonToWaypoints(entries, fps));
+        setPath(cursorJsonToWaypoints(entries, fps, startOffsetSeconds));
         continueRender(handle);
       })
       .catch(() => {
@@ -120,7 +125,7 @@ function useCursorPath(
     return () => {
       cancelled = true;
     };
-  }, [cursorFile, fps]);
+  }, [cursorFile, fps, startOffsetSeconds]);
 
   return path;
 }

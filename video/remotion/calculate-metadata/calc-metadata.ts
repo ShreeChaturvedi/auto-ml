@@ -29,6 +29,10 @@ const alignmentFileFor = (mp3File: string): string =>
 type SceneTimingData = {
   durationInFrames: number;
   alignment?: SceneAlignment;
+  /** False when the scene declared a `voiceoverFile` but the MP3 failed to
+   * load — used downstream to strip the filename so `<SceneVoiceover>` stays
+   * silent instead of crashing the render on a 404. */
+  voiceoverAvailable: boolean;
 };
 
 /**
@@ -83,7 +87,7 @@ const resolveSceneData = async (
   scene: SelectableScene,
 ): Promise<SceneTimingData> => {
   if (!hasVoiceover(scene)) {
-    return { durationInFrames: scene.durationInFrames };
+    return { durationInFrames: scene.durationInFrames, voiceoverAvailable: false };
   }
   const [duration, alignment] = await Promise.all([
     loadDuration(scene.voiceoverFile),
@@ -91,6 +95,7 @@ const resolveSceneData = async (
   ]);
   return {
     durationInFrames: duration ?? scene.durationInFrames,
+    voiceoverAvailable: duration !== null,
     ...(alignment ? { alignment } : {}),
   };
 };
@@ -107,14 +112,26 @@ const computeScenesWithMetadata = async (
   const timings = await Promise.all(scenes.map(resolveSceneData));
   let cursor = 0;
   return scenes.map((scene, i) => {
-    const timing = timings[i] ?? { durationInFrames: 0 };
+    const timing = timings[i] ?? {
+      durationInFrames: 0,
+      voiceoverAvailable: false,
+    };
     const from = cursor;
     cursor += timing.durationInFrames;
+    // When the scene claims a VO file but the MP3 can't be resolved (not yet
+    // generated, path typo, network hiccup), drop `voiceoverFile` from the
+    // resolved scene so `<SceneVoiceover>` renders nothing instead of feeding
+    // a 404 URL to `<Audio>`, which would crash the renderer. The scene's
+    // `durationInFrames` has already fallen back to its own declared value.
+    const resolvedScene: SelectableScene =
+      hasVoiceover(scene) && !timing.voiceoverAvailable
+        ? ({ ...scene, voiceoverFile: undefined } as SelectableScene)
+        : scene;
     return {
-      scene,
+      scene: resolvedScene,
       from,
       durationInFrames: timing.durationInFrames,
-      chapter: getChapterTitle(scene),
+      chapter: getChapterTitle(resolvedScene),
       ...(timing.alignment ? { alignment: timing.alignment } : {}),
     };
   });

@@ -32,4 +32,20 @@ describe("cursorJsonToWaypoints", () => {
   it("returns an empty list for empty input", () => {
     expect(cursorJsonToWaypoints([], 60)).toEqual([]);
   });
+
+  it("rebases waypoints by startOffsetSeconds and drops pre-trim entries", () => {
+    const out = cursorJsonToWaypoints(
+      [
+        { t_ms: 1000, x: 10, y: 20 }, // before the 2 s trim — dropped
+        { t_ms: 2500, x: 30, y: 40, click: true }, // 0.5 s into scene
+        { t_ms: 4000, x: 50, y: 60 }, // 2 s into scene
+      ],
+      60,
+      2,
+    );
+    expect(out).toEqual([
+      { at: 30, x: 30, y: 40, clickAt: 30 },
+      { at: 120, x: 50, y: 60, clickAt: undefined },
+    ]);
+  });
 });

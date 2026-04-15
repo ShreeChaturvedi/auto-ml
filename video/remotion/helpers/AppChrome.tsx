@@ -1,94 +1,37 @@
 import React from "react";
-import { AbsoluteFill } from "remotion";
 import type { Theme } from "../../config/themes";
-import { COLORS, getChromeGradient } from "../../config/themes";
+import { getChromeGradient } from "../../config/themes";
+import { BrowserChrome } from "./BrowserChrome";
 
 type Props = {
   theme: Theme;
   children: React.ReactNode;
-  /** Outer padding (px) around the chrome frame. Default 96. */
+  /**
+   * Outer padding and radius were configurable on the legacy AppChrome.
+   * BrowserChrome bakes these into CONTINUITY tokens so cross-fades between
+   * variants never jump. These props are accepted for back-compat but ignored
+   * — if a caller needs custom values, migrate to BrowserChrome directly.
+   */
   padding?: number;
-  /** Border radius of the window frame in px. Default 24. */
   radius?: number;
   /** Optional overlay (e.g. chapter label) rendered inside the frame. */
   overlay?: React.ReactNode;
 };
 
 /**
- * Macro "app window" wrapper used around the demo screen recording.
+ * Back-compat wrapper for the old AppChrome (mac-window only). New scenes
+ * should import `BrowserChrome` directly for access to all three variants
+ * (mac / browser / none).
  *
- * Style: Linear/Vercel launch-video aesthetic — gradient background, soft
- * shadow, rounded window with a subtle title bar. Children fill the inner
- * area at 16:9.
+ * Preserves the original signature — `theme` maps to `outerBackground` via
+ * `getChromeGradient`; `overlay` is rendered on top of children inside the
+ * chrome frame.
  */
-export const AppChrome: React.FC<Props> = ({
-  theme,
-  children,
-  padding = 96,
-  radius = 24,
-  overlay,
-}) => {
-  const c = COLORS[theme];
+export const AppChrome: React.FC<Props> = ({ theme, children, overlay }) => {
   return (
-    <AbsoluteFill
-      style={{
-        background: getChromeGradient(theme),
-        padding,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          borderRadius: radius,
-          overflow: "hidden",
-          background: c.BACKGROUND_ELEVATED,
-          border: `1px solid ${c.BORDER_COLOR}`,
-          boxShadow:
-            theme === "dark"
-              ? "0 40px 120px -20px rgba(0,0,0,0.6)"
-              : "0 40px 120px -20px rgba(0,0,0,0.25)",
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <TitleBar theme={theme} />
-        <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-          {children}
-          {overlay}
-        </div>
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-const TitleBar: React.FC<{ theme: Theme }> = ({ theme }) => {
-  const c = COLORS[theme];
-  return (
-    <div
-      style={{
-        height: 36,
-        display: "flex",
-        alignItems: "center",
-        paddingInline: 16,
-        gap: 8,
-        borderBottom: `1px solid ${c.BORDER_COLOR}`,
-        background: c.BACKGROUND,
-      }}
-    >
-      {["#FF5F57", "#FEBC2E", "#28C840"].map((color) => (
-        <div
-          key={color}
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 6,
-            background: color,
-            opacity: 0.9,
-          }}
-        />
-      ))}
-    </div>
+    <BrowserChrome variant="mac" outerBackground={getChromeGradient(theme)}>
+      {children}
+      {overlay}
+    </BrowserChrome>
   );
 };

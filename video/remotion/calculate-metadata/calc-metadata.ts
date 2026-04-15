@@ -4,6 +4,7 @@ import { getAudioDurationInSeconds } from "@remotion/media-utils";
 import type { MainProps } from "../Main";
 import type {
   ChapterMark,
+  SceneAlignment,
   SceneWithMetadata,
   SelectableScene,
 } from "../../config/scenes";
@@ -18,29 +19,80 @@ const hasVoiceover = (
 };
 
 /**
- * Resolve a scene's duration in frames.
+ * Swap an MP3 basename for its alignment sidecar sibling.
+ * `scene-intro.mp3` → `scene-intro.alignment.json`. Kept inline rather
+ * than elevated to helpers/paths.ts since it's a single call site today.
+ */
+const alignmentFileFor = (mp3File: string): string =>
+  mp3File.replace(/\.mp3$/i, ".alignment.json");
+
+type SceneTimingData = {
+  durationInFrames: number;
+  alignment?: SceneAlignment;
+};
+
+/**
+ * Load alignment sidecar from `public/voiceover/main/<basename>.alignment.json`.
+ * Absent / unreadable sidecars are silently tolerated — scenes without marks
+ * still work, they just get no `alignment` field in their metadata.
+ */
+const loadAlignment = async (
+  voiceoverFile: string,
+): Promise<SceneAlignment | undefined> => {
+  const url = staticFile(voiceoverPath(alignmentFileFor(voiceoverFile)));
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return undefined;
+    return (await res.json()) as SceneAlignment;
+  } catch {
+    return undefined;
+  }
+};
+
+const loadDuration = async (
+  voiceoverFile: string,
+): Promise<number | null> => {
+  try {
+    const seconds = await getAudioDurationInSeconds(
+      staticFile(voiceoverPath(voiceoverFile)),
+    );
+    return Math.max(1, Math.ceil(seconds * FPS));
+  } catch (err) {
+    console.warn(
+      `[calc-metadata] Failed to read voiceover "${voiceoverFile}" — falling back to scene.durationInFrames. Cause:`,
+      err,
+    );
+    return null;
+  }
+};
+
+/**
+ * Resolve a scene's duration (in frames) and its optional alignment sidecar.
  *
- * Priority: voiceover MP3 length → scene.durationInFrames.
- * VO durations drive total composition length, so scene content determines
+ * Duration priority: voiceover MP3 length → scene.durationInFrames.
+ * VO durations drive total composition length so scene content determines
  * pacing rather than hardcoded numbers. Every scene variant defines
  * `durationInFrames` with a default (see config/scenes.ts), so the
  * fallback branch is always safe.
+ *
+ * MP3 duration and alignment JSON are loaded **in parallel** per scene, so
+ * metadata resolution across many scenes parallelises fully via the
+ * outer `Promise.all` in computeScenesWithMetadata.
  */
-const resolveDuration = async (scene: SelectableScene): Promise<number> => {
-  if (hasVoiceover(scene)) {
-    try {
-      const seconds = await getAudioDurationInSeconds(
-        staticFile(voiceoverPath(scene.voiceoverFile)),
-      );
-      return Math.max(1, Math.ceil(seconds * FPS));
-    } catch (err) {
-      console.warn(
-        `[calc-metadata] Failed to read voiceover "${scene.voiceoverFile}" for scene type "${scene.type}" — falling back to scene.durationInFrames. Cause:`,
-        err,
-      );
-    }
+const resolveSceneData = async (
+  scene: SelectableScene,
+): Promise<SceneTimingData> => {
+  if (!hasVoiceover(scene)) {
+    return { durationInFrames: scene.durationInFrames };
   }
-  return scene.durationInFrames;
+  const [duration, alignment] = await Promise.all([
+    loadDuration(scene.voiceoverFile),
+    loadAlignment(scene.voiceoverFile),
+  ]);
+  return {
+    durationInFrames: duration ?? scene.durationInFrames,
+    ...(alignment ? { alignment } : {}),
+  };
 };
 
 const getChapterTitle = (scene: SelectableScene): string | null => {
@@ -52,17 +104,18 @@ const getChapterTitle = (scene: SelectableScene): string | null => {
 const computeScenesWithMetadata = async (
   scenes: SelectableScene[],
 ): Promise<SceneWithMetadata[]> => {
-  const durations = await Promise.all(scenes.map(resolveDuration));
+  const timings = await Promise.all(scenes.map(resolveSceneData));
   let cursor = 0;
   return scenes.map((scene, i) => {
-    const durationInFrames = durations[i] ?? 0;
+    const timing = timings[i] ?? { durationInFrames: 0 };
     const from = cursor;
-    cursor += durationInFrames;
+    cursor += timing.durationInFrames;
     return {
       scene,
       from,
-      durationInFrames,
+      durationInFrames: timing.durationInFrames,
       chapter: getChapterTitle(scene),
+      ...(timing.alignment ? { alignment: timing.alignment } : {}),
     };
   });
 };

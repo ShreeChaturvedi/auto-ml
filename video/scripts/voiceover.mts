@@ -2,8 +2,15 @@
  * Voiceover generator.
  *
  * Reads narration scripts from `voiceover/scripts/*.txt`, synthesises each
- * with ElevenLabs, and writes the resulting MP3s to
- * `public/voiceover/main/<basename>.mp3`.
+ * via ElevenLabs' `/with-timestamps` endpoint, and writes:
+ *   - MP3 audio → `public/voiceover/main/<basename>.mp3`
+ *   - Alignment sidecar → `public/voiceover/main/<basename>.alignment.json`
+ *
+ * Scripts may embed inline `{{MARK_NAME}}` tokens. These are stripped from
+ * the text sent to the API (otherwise the TTS voice would speak them) but
+ * their character-position in the stripped text is recorded at runtime by
+ * `resolveMarks()` → each mark → frame at which the following character
+ * begins being spoken.
  *
  * Usage:
  *   ELEVENLABS_API_KEY=... npm run voiceover
@@ -14,8 +21,8 @@
  *   ELEVENLABS_VOICE_ID  optional, defaults to Rachel (21m00Tcm4TlvDq8ikWAM)
  *   ELEVENLABS_MODEL_ID  optional, defaults to eleven_multilingual_v2
  *
- * Idempotent: existing MP3s are only regenerated if the source .txt is
- * newer or the --force flag is passed.
+ * Idempotent: existing outputs are only regenerated if the source .txt is
+ * newer than BOTH the MP3 and the .alignment.json, or `--force` is passed.
  */
 
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
@@ -32,6 +39,17 @@ const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM"; // R
 const MODEL_ID = process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2";
 
 type CliFlags = { force: boolean; only: Set<string> | null };
+
+type AlignmentBlock = {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+};
+
+type SynthesisResult = {
+  audio: Buffer;
+  alignment: AlignmentBlock;
+};
 
 /**
  * Max ElevenLabs requests in flight. Free tier allows 2 concurrent, Creator
@@ -92,23 +110,39 @@ const listScripts = async (): Promise<string[]> => {
   }
 };
 
-const isOlder = async (outputPath: string, sourcePath: string): Promise<boolean> => {
+/**
+ * Strip `{{MARK_NAME}}` tokens from the script. The stripped text is what
+ * actually gets sent to ElevenLabs; marks are character-position references
+ * only. Kept regex-based (cheap, marks don't nest) — resolveMarks() does the
+ * character-by-character walk needed for alignment.
+ */
+const stripMarks = (text: string): string =>
+  text.replace(/\{\{[^}]*\}\}/g, "");
+
+/**
+ * True when `target` is missing or older than `source`. Used to decide
+ * whether to regenerate a sidecar file.
+ */
+const isStaleAgainst = async (
+  target: string,
+  source: string,
+): Promise<boolean> => {
   try {
-    const [outStat, srcStat] = await Promise.all([stat(outputPath), stat(sourcePath)]);
-    return outStat.mtimeMs < srcStat.mtimeMs;
+    const [t, s] = await Promise.all([stat(target), stat(source)]);
+    return t.mtimeMs < s.mtimeMs;
   } catch {
-    return true; // missing output → treat as stale
+    return true; // missing target → stale
   }
 };
 
-const synthesize = async (text: string): Promise<Buffer> => {
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
+const synthesize = async (text: string): Promise<SynthesisResult> => {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/with-timestamps`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "xi-api-key": API_KEY as string,
       "content-type": "application/json",
-      accept: "audio/mpeg",
+      accept: "application/json",
     },
     body: JSON.stringify({
       text,
@@ -129,8 +163,21 @@ const synthesize = async (text: string): Promise<Buffer> => {
     );
   }
 
-  const arrayBuffer = await res.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const json = (await res.json()) as {
+    audio_base64?: string;
+    alignment?: AlignmentBlock;
+  };
+
+  if (!json.audio_base64 || !json.alignment) {
+    throw new Error(
+      `ElevenLabs response missing audio_base64 or alignment: ${JSON.stringify(json).slice(0, 200)}`,
+    );
+  }
+
+  return {
+    audio: Buffer.from(json.audio_base64, "base64"),
+    alignment: json.alignment,
+  };
 };
 
 const run = async () => {
@@ -173,25 +220,46 @@ const run = async () => {
   const tasks = targets.map((file) => async () => {
     const base = file.replace(/\.txt$/, "");
     const src = join(SCRIPTS_DIR, file);
-    const dst = join(OUTPUT_DIR, `${base}.mp3`);
+    const dstAudio = join(OUTPUT_DIR, `${base}.mp3`);
+    const dstAlignment = join(OUTPUT_DIR, `${base}.alignment.json`);
 
-    if (!force && !(await isOlder(dst, src))) {
-      console.log(`[voiceover] skip ${base} (output is newer than source)`);
-      skipped += 1;
-      return;
+    if (!force) {
+      const [audioStale, alignStale] = await Promise.all([
+        isStaleAgainst(dstAudio, src),
+        isStaleAgainst(dstAlignment, src),
+      ]);
+      if (!audioStale && !alignStale) {
+        console.log(`[voiceover] skip ${base} (outputs newer than source)`);
+        skipped += 1;
+        return;
+      }
     }
 
-    const text = (await readFile(src, "utf8")).trim();
-    if (!text) {
+    const raw = (await readFile(src, "utf8")).trim();
+    if (!raw) {
       console.warn(`[voiceover] skip ${base} (empty script)`);
       skipped += 1;
       return;
     }
 
-    console.log(`[voiceover] synthesise ${base} (${text.length} chars)...`);
-    const audio = await synthesize(text);
-    await writeFile(dst, audio);
-    console.log(`[voiceover]   → ${dst} (${(audio.length / 1024).toFixed(1)} KB)`);
+    const text = stripMarks(raw);
+    if (!text) {
+      console.warn(`[voiceover] skip ${base} (script is all marks, no text)`);
+      skipped += 1;
+      return;
+    }
+
+    console.log(
+      `[voiceover] synthesise ${base} (${text.length} chars, ${raw.length - text.length} mark chars stripped)...`,
+    );
+    const { audio, alignment } = await synthesize(text);
+    await Promise.all([
+      writeFile(dstAudio, audio),
+      writeFile(dstAlignment, JSON.stringify(alignment)),
+    ]);
+    console.log(
+      `[voiceover]   → ${dstAudio} (${(audio.length / 1024).toFixed(1)} KB) + alignment (${alignment.characters.length} chars)`,
+    );
     generated += 1;
   });
 

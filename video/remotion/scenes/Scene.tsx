@@ -3,6 +3,7 @@ import { AbsoluteFill } from "remotion";
 import type { ChapterMark, SceneWithMetadata } from "../../config/scenes";
 import type { Theme } from "../../config/themes";
 import { COLORS } from "../../config/themes";
+import { AppScene } from "./AppScene";
 import { CodeReveal } from "./CodeReveal";
 import { Demo } from "./Demo";
 import { EndCard } from "./EndCard";
@@ -52,6 +53,9 @@ export const Scene: React.FC<Props> = ({ sceneAndMetadata, theme, chapters }) =>
 
     case "tableofcontents":
       return <TableOfContents theme={theme} chapters={chapters} />;
+
+    case "app":
+      return <AppScene scene={scene} meta={sceneAndMetadata} />;
 
     default:
       scene satisfies never;

@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Landing hotspots",
+  "description": "BBoxes for zoom targets, emitted by video/scripts/capture-landing.ts (Beat 1).",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "x": { "type": "number" },
+      "y": { "type": "number" },
+      "w": { "type": "number" },
+      "h": { "type": "number" }
+    },
+    "required": ["x", "y", "w", "h"]
+  }
+}

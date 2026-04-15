@@ -134,14 +134,26 @@ landing:vercel:production:
     - npx --yes vercel@"$VERCEL_CLI_VERSION" pull --yes --environment=production --token="$VERCEL_TOKEN"
     - npx --yes vercel@"$VERCEL_CLI_VERSION" build --yes --target=production --token="$VERCEL_TOKEN"
     - |
-      set -e
+      set -euo pipefail
+
+      # Vercel CLI output is not reliably single-line JSON even with --format json.
+      # Extract the production URL from the human-readable "Production:" line instead.
       DEPLOYMENT_URL="$(
-        npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --yes --target=production --token="$VERCEL_TOKEN" --format json \
+        npx --yes vercel@"$VERCEL_CLI_VERSION" deploy --prebuilt --yes --target=production --token="$VERCEL_TOKEN" \
           -m gitlabDeployment="1" \
           -m gitlabCommitRef="$CI_COMMIT_REF_NAME" \
           -m gitlabCommitSha="$CI_COMMIT_SHA" \
-          | node -e "const fs=require('fs');const txt=fs.readFileSync(0,'utf8').trim();const lines=txt.split(/\r?\n/).filter(Boolean);const j=JSON.parse(lines[lines.length-1]);const url=j.url||j.deploymentUrl||(j.deployment&&j.deployment.url);if(!url)process.exit(1);process.stdout.write(String(url).replace(/^https?:\\/\\//,''));"
+          2>&1 | tee /tmp/vercel-deploy.log \
+          | awk '/^Production: https:\/\//{url=$2} END{print url}' \
+          | sed -E 's#^https?://##'
       )"
+
+      if [ -z "$DEPLOYMENT_URL" ]; then
+        echo "Failed to extract DEPLOYMENT_URL from Vercel output" >&2
+        tail -n 120 /tmp/vercel-deploy.log || true
+        exit 1
+      fi
+
       echo "Deployment URL: $DEPLOYMENT_URL"
       npx --yes vercel@"$VERCEL_CLI_VERSION" alias set "$DEPLOYMENT_URL" agentic-automl.vercel.app --token="$VERCEL_TOKEN" --non-interactive
   rules:

@@ -53,21 +53,30 @@
     transform 260ms var(--ease-out-quart);
 }
 
-:global([data-notebook-cell-wrapper][data-output-visible='false']) :global(.border-t.bg-muted\/30) {
+/* Default state: collapse the output region entirely so the cell visually
+ * expands when we reveal it. Using max-height + opacity keeps transitions
+ * cheap and avoids JS height measurement. We scope to `.host` (rather than
+ * `[data-notebook-cell-wrapper]`) so the hidden state applies *before* the
+ * post-mount tagging effect runs — otherwise the output would briefly
+ * flash on first paint of the hydrated island. The generous max-height
+ * ceiling accommodates the tallest seeded cell output. */
+.host :global(.border-t.bg-muted\/30) {
+  max-height: 0;
   opacity: 0;
-  transform: translateY(4px);
-  transition:
-    opacity 320ms var(--ease-out-quart),
-    transform 320ms var(--ease-out-quart);
+  overflow: hidden;
   pointer-events: none;
+  transition:
+    max-height 520ms var(--ease-out-quart),
+    opacity 320ms var(--ease-out-quart);
 }
 
 :global([data-notebook-cell-wrapper][data-output-visible='true']) :global(.border-t.bg-muted\/30) {
+  max-height: 520px;
   opacity: 1;
-  transform: translateY(0);
+  pointer-events: auto;
   transition:
-    opacity 520ms var(--ease-out-quart) 80ms,
-    transform 520ms var(--ease-out-quart) 80ms;
+    max-height 560ms var(--ease-out-quart),
+    opacity 520ms var(--ease-out-quart) 80ms;
 }
 
 :global([data-notebook-cell-wrapper][data-cell-active='true']) {
@@ -77,8 +86,10 @@
 }
 
 .rootReduced :global([data-notebook-cell-wrapper]) :global(.border-t.bg-muted\/30) {
+  max-height: none !important;
   opacity: 1 !important;
-  transform: none !important;
+  pointer-events: auto !important;
+  overflow: visible !important;
   transition: none !important;
 }
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev --port 4321",
+    "dev:fresh": "rm -rf node_modules/.vite && astro dev --port 4321 --force",
     "build": "astro build",
     "preview": "astro preview",
     "postinstall": "node ../scripts/patch-csp-deps.mjs",
@@ -38,6 +39,8 @@
     "clsx": "^2.1.1",
     "gsap": "^3.12.5",
     "lucide-react": "^0.544.0",
+    "@monaco-editor/react": "^4.7.0",
+    "monaco-editor": "0.53.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-resizable-panels": "^4.0.15",

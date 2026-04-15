@@ -138,7 +138,10 @@
   position: absolute;
   top: 50%; left: 50%;
   width: 14px; height: 14px;
-  color: var(--text);
+  /* Lucide defaults to stroke-only (fill none); solid fill + light stroke keeps the pointer visible on light surfaces. */
+  color: #f8fafc;
+  fill: #0a0a0a;
+  stroke: #f8fafc;
   transform: translate(-30px, -20px);
   animation: cursor-drop 4s ease-in-out infinite;
 }

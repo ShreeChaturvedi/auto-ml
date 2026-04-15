@@ -1,6 +1,6 @@
 import "../../../src/frontend-bridge/determinism";
-import React, { Suspense } from "react";
-import { AbsoluteFill, continueRender, delayRender } from "remotion";
+import React from "react";
+import { AbsoluteFill } from "remotion";
 import type {
   AppScene as AppSceneData,
   SceneWithMetadata,
@@ -27,10 +27,10 @@ export type AppSceneProps = {
  *   2. Wrap the screen in `AppSceneChrome`, which dispatches to the right
  *      `BrowserChrome` variant (`mac` / `browser` / `none`) and forwards
  *      `scene.url` to the address bar.
- *   3. Wrap the screen in a `<Suspense>` boundary — registry entries are
- *      lazy-loaded via `React.lazy`, and Suspense+`delayRender`+`continueRender`
- *      keeps the render deterministic (the frame is held until the screen's
- *      module has resolved).
+ *
+ * Screen modules are imported synchronously (see `screenRegistry.ts`) so
+ * Remotion always captures real content on the first frame — no Suspense,
+ * no lazy-load flicker, no `delayRender` race with `continueRender`.
  *
  * The top-level determinism import is defensive: `Root.tsx` also imports it,
  * but it's idempotent and guarantees the Math.random / Date / matchMedia
@@ -45,27 +45,9 @@ export const AppScene: React.FC<AppSceneProps> = ({ scene, meta }) => {
 
   return (
     <AppSceneChrome scene={scene}>
-      <Suspense fallback={<LazyFallback />}>
-        <ScreenComponent scene={scene} meta={meta} />
-      </Suspense>
+      <ScreenComponent scene={scene} meta={meta} />
     </AppSceneChrome>
   );
-};
-
-/**
- * Rendered while `React.lazy` resolves the screen module. Holds the Remotion
- * render via `delayRender` so the frame we ultimately capture shows the real
- * screen, not the blank fallback. The 100ms ceiling is defensive — webpack
- * resolves lazy chunks synchronously during SSR in Remotion, so in practice
- * the fallback never actually paints.
- */
-const LazyFallback: React.FC = () => {
-  const [handle] = React.useState(() => delayRender("Lazy-load AppScene screen"));
-  React.useEffect(() => {
-    const t = setTimeout(() => continueRender(handle), 100);
-    return () => clearTimeout(t);
-  }, [handle]);
-  return <AbsoluteFill style={{ background: "#ffffff" }} />;
 };
 
 /**

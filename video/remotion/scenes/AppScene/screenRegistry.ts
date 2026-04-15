@@ -1,5 +1,9 @@
-import { lazy, type ComponentType } from "react";
+import type { ComponentType } from "react";
 import type { AppScene, AppScreenId, SceneWithMetadata } from "../../../config/scenes";
+import { LandingScreen } from "./screens/LandingScreen";
+import { LoginScreen } from "./screens/LoginScreen";
+import { SignupScreen } from "./screens/SignupScreen";
+import { HomeScreen } from "./screens/HomeScreen";
 
 export type AppScreenProps = {
   scene: AppScene;
@@ -9,28 +13,25 @@ export type AppScreenProps = {
 export type AppScreenComponent = ComponentType<AppScreenProps>;
 
 /**
- * Screen registry. Each entry is a lazy-loaded screen component so we don't
- * bundle all real-app components into every scene. `React.lazy` is used with
- * Remotion's `<delayRender>` handle via `<Suspense>` in `AppScene/index.tsx`
- * so renders stay deterministic — the lazy fallback delays the frame until
- * the screen module has loaded.
+ * Screen registry. Each entry is a concrete screen component imported
+ * synchronously.
  *
- * Screens are added as Beats 1/2/3+ land. Empty registry == AppScene renders
- * an empty-state placeholder pointing at the missing screen id.
+ * We previously used `React.lazy(() => import(...))` here, paired with a
+ * `<Suspense fallback>` in `AppScene/index.tsx` that called
+ * `continueRender(handle)` on a 100ms setTimeout. That arrangement lied to
+ * Remotion: the fallback signalled "frame ready" before the lazy import
+ * had necessarily resolved, so the captured frame sometimes painted the
+ * blank white fallback instead of the screen. These screen modules are
+ * small enough that lazy-splitting offers no real payoff, and the
+ * deterministic synchronous path is strictly better for Remotion renders.
+ *
+ * Empty registry == AppScene renders the missing-screen placeholder
+ * pointing at the unregistered screen id.
  */
 
 export const screenRegistry: Partial<Record<AppScreenId, AppScreenComponent>> = {
-  // Populated by Beat 1/2/3+ tasks via `lazy()` imports.
-  landing: lazy(() =>
-    import("./screens/LandingScreen").then((m) => ({ default: m.LandingScreen })),
-  ),
-  login: lazy(() =>
-    import("./screens/LoginScreen").then((m) => ({ default: m.LoginScreen })),
-  ),
-  signup: lazy(() =>
-    import("./screens/SignupScreen").then((m) => ({ default: m.SignupScreen })),
-  ),
-  home: lazy(() =>
-    import("./screens/HomeScreen").then((m) => ({ default: m.HomeScreen })),
-  ),
+  landing: LandingScreen,
+  login: LoginScreen,
+  signup: SignupScreen,
+  home: HomeScreen,
 };

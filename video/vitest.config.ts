@@ -128,6 +128,31 @@ export default defineConfig({
           "./node_modules/react-dom/server.js",
         ),
       },
+      // react-router dedupe: mirrors the webpack aliases in remotion.config.ts.
+      // `video/` ships 7.14.1 and `frontend/` ships 7.13.1, and the two
+      // copies carry distinct Router context singletons. Pinning both
+      // package names to video's copy ensures `StaticRouterAdapter` and the
+      // real `useNavigate()` in frontend forms thread the same context —
+      // without this, tests crash with "useNavigate() may be used only in
+      // the context of a <Router> component".
+      //
+      // `react-router-dom` only ships a top-level dist/index.mjs, while
+      // `react-router` ships development/production variants. Point each
+      // specifier at the concrete ESM entry Vite should resolve.
+      {
+        find: /^react-router-dom$/,
+        replacement: path.resolve(
+          __dirname,
+          "./node_modules/react-router-dom/dist/index.mjs",
+        ),
+      },
+      {
+        find: /^react-router$/,
+        replacement: path.resolve(
+          __dirname,
+          "./node_modules/react-router/dist/development/index.mjs",
+        ),
+      },
     ],
   },
   // Vitest uses Vite's dev server under the hood. By default its root is

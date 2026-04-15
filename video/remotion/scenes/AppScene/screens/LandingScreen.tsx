@@ -101,14 +101,41 @@ export const LandingScreen: AppScreenComponent = ({ scene, meta }) => {
   const { byKind } = useTimelineRunner(scene, meta, LANDING_VOICEOVER);
 
   // Scroll keyframes — VO-mark-relative y-offsets (landing CSS px → scaled).
-  const scrollKeyframes = useMemo(
-    () =>
-      byKind.scrollTo.map((e) => ({
-        at: e.resolvedStart,
-        y: ((e.payload.y as number) ?? 0) * PNG_SCALE,
-      })),
-    [byKind.scrollTo],
-  );
+  //
+  // Fallback: when `meta.alignment` is undefined (no `scene-landing.mp3` yet,
+  // local dev without captured voiceover), `useVoiceoverAlignment` degrades
+  // every `{{MARK}}` ref to frame 0. All scroll events then resolve to the
+  // same frame, collapsing ScrollViewport's keyframes to a single t=0 point
+  // — the page never scrolls. Until the MP3 + alignment sidecar land we
+  // substitute EVEN-SPACED numeric-frame keyframes so scroll still plays in
+  // the Studio preview. The y-offsets match the original mark-anchored
+  // payloads (0 → 800 → 1800 → 2800 → 3800 → 4800 landing CSS-px), and the
+  // `at` values are spread linearly across `scene.durationInFrames` (minus
+  // a trailing 120-frame hold so the final footer zoom isn't clipped).
+  // Once real alignment ships, `byKind.scrollTo` resolves to non-zero frames
+  // again and the fallback branch stops firing.
+  const scrollKeyframes = useMemo(() => {
+    const realKeyframes = byKind.scrollTo.map((e) => ({
+      at: e.resolvedStart,
+      y: ((e.payload.y as number) ?? 0) * PNG_SCALE,
+    }));
+
+    const allAtZero =
+      realKeyframes.length > 1 && realKeyframes.every((k) => k.at === 0);
+
+    if (!meta.alignment && (realKeyframes.length === 0 || allAtZero)) {
+      const fallbackOffsets = [0, 800, 1800, 2800, 3800, 4800];
+      const tail = 120;
+      const span = Math.max(scene.durationInFrames - tail, fallbackOffsets.length);
+      const step = span / (fallbackOffsets.length - 1);
+      return fallbackOffsets.map((y, i) => ({
+        at: Math.round(i * step),
+        y: y * PNG_SCALE,
+      }));
+    }
+
+    return realKeyframes;
+  }, [byKind.scrollTo, meta.alignment, scene.durationInFrames]);
 
   // Hotspot-driven overlay positions (fall back to "near end of scroll" if
   // no real hotspots.json is available — see placeholder script).

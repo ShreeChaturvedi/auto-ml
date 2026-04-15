@@ -79,7 +79,47 @@ Config.overrideWebpackConfig((currentConfig) => {
       workspaceRoot,
       "./node_modules/react/jsx-dev-runtime.js",
     ),
+    // react-router dedupe: `video/` ships 7.14.1 and `frontend/` ships 7.13.1.
+    // Without this, `<StaticRouterAdapter>` wraps children in the 7.14.1
+    // Router context, but `LoginForm`/`SignupForm` (imported from frontend/)
+    // resolve `useNavigate` through the 7.13.1 context singleton. Two
+    // separate contexts → `useNavigate() may be used only in the context of a
+    // <Router>` at render time.
+    //
+    // Use webpack's `$` exact-match suffix so we only intercept the bare
+    // specifier — `react-router-dom@7.14.1` internally imports
+    // `"react-router/dom"` (a subpath export), and a prefix alias on
+    // `react-router` would redirect that to `<video-root>/.../react-router/dom`
+    // (a file that doesn't exist) and webpack would fail to resolve it.
+    "react-router-dom$": path.resolve(
+      workspaceRoot,
+      "./node_modules/react-router-dom/dist/index.mjs",
+    ),
+    "react-router$": path.resolve(
+      workspaceRoot,
+      "./node_modules/react-router/dist/development/index.mjs",
+    ),
   };
+
+  // Defensively include `.tsx` + friends in `resolve.extensions`. Remotion's
+  // default bundler config already lists them, but when someone adds a
+  // cross-workspace import (e.g. `frontend/src/components/ui/input.tsx` via
+  // the `@` alias), webpack error messages can bubble up as
+  // "Cannot find module '…/input.tsx'" if an intermediate loader rewrites
+  // extensions. Pinning the full list on the final config makes resolution
+  // robust regardless of the plugin order above.
+  cfg.resolve.extensions = Array.from(
+    new Set([
+      ...(cfg.resolve.extensions ?? []),
+      ".tsx",
+      ".ts",
+      ".jsx",
+      ".js",
+      ".json",
+      ".mjs",
+      ".cjs",
+    ]),
+  );
 
   return cfg;
 });

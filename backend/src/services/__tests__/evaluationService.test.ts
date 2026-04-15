@@ -510,7 +510,7 @@ describe('runEvaluation', () => {
                       experimentId: 'exp-1',
                       segments: [
                         { content: 'DATASET_ID = "test-dataset"\nDATASET_FILENAME = "data.csv"\nTARGET_COLUMN = "target"\nTEST_SIZE = 0.2' },
-                        { content: 'dataset_path = resolve_dataset_path(DATASET_FILENAME, DATASET_ID)\ndf = pd.read_csv(dataset_path)\nX_train = df[[\"feat1\"]].iloc[:3].copy()\ny_train = df[TARGET_COLUMN].iloc[:3].copy()\nX_test = df[[\"feat1\"]].iloc[3:].copy()\ny_test = df[TARGET_COLUMN].iloc[3:].copy()' },
+                        { content: 'dataset_path = resolve_dataset_path(DATASET_FILENAME, DATASET_ID)\ndf = pd.read_csv(dataset_path)\nX_train = df[["feat1"]].iloc[:3].copy()\ny_train = df[TARGET_COLUMN].iloc[:3].copy()\nX_test = df[["feat1"]].iloc[3:].copy()\ny_test = df[TARGET_COLUMN].iloc[3:].copy()' },
                         { content: 'pipeline.fit(X_train, y_train)\ny_pred = pipeline.predict(X_test)' },
                       ],
                     },

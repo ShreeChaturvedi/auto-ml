@@ -59,12 +59,10 @@ export function useTabNotebookSync({
   tabsReady,
   tabsRef,
   activeTabIdRef,
-  tabs,
   activeTab,
   setTabNotebookId
 }: UseTabNotebookSyncOptions): UseTabNotebookSyncResult {
   const activeNotebookId = useNotebookStore((state) => state.activeNotebookId);
-  const notebookProjectId = useNotebookStore((state) => state.currentProjectId);
   const createNotebook = useNotebookStore((state) => state.createNotebook);
   const loadNotebooksInStore = useNotebookStore((state) => state.loadNotebooks);
   const renameNotebook = useNotebookStore((state) => state.renameNotebook);

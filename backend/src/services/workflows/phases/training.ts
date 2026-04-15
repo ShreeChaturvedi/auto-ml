@@ -8,16 +8,16 @@ import type { LlmClient, LlmToolDefinition } from '../../llm/llmClient.js';
 import { TRAINING_LIFECYCLE_CONTRACT } from '../../llm/prompts/trainingContract.js';
 import { LLM_ALL_TOOLS, LLM_TRAINING_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import { TRAINING_TOOL_NAMES } from '../../llm/tools/trainingTools.js';
-import {
-  extractMissingModuleName,
-  resolvePackageRequirementForMissingModule,
-} from '../../runtimeDependencies.js';
 import { TRAINING_TOOL_HANDLERS } from '../../llm/trainingTools/index.js';
 import { toTrainingToolContext } from '../../llm/trainingTools/types.js';
 import {
   extractWorkflowPrepSegmentsFromSegments,
   normalizeWorkflowPrepSegments,
 } from '../../llm/trainingTools/workflowPrepSegments.js';
+import {
+  extractMissingModuleName,
+  resolvePackageRequirementForMissingModule,
+} from '../../runtimeDependencies.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
   LifecycleStageDefinition,
@@ -313,7 +313,7 @@ function getTrainingMissingDependencyRecovery(
     }
     const errorMessage = getToolErrorMessage(result);
     const missingModuleName = extractMissingModuleName(errorMessage);
-    const resolvedPackage = resolvePackageRequirementForMissingModule(missingModuleName);
+    const resolvedPackage = resolvePackageRequirementForMissingModule(missingModuleName ?? undefined);
     if (!missingModuleName || !resolvedPackage) {
       continue;
     }
@@ -322,7 +322,7 @@ function getTrainingMissingDependencyRecovery(
     failureIndex = index;
     moduleName = missingModuleName;
     packageName = resolvedPackage;
-    failedCellId = asString(output?.cellId) ?? asString(asRecord(call.args)?.cellId) ?? null;
+    failedCellId = asString(output?.cellId) ?? asString(asRecord(call?.args)?.cellId) ?? null;
     break;
   }
 
@@ -347,7 +347,7 @@ function getTrainingMissingDependencyRecovery(
       continue;
     }
 
-    const output = getOutputRecord(result);
+    const output = getOutputRecord(result ?? null);
     const succeeded = result?.error == null && output?.success === true;
     const failed = Boolean(result?.error) || output?.success === false;
 

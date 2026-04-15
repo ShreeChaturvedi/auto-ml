@@ -4,6 +4,7 @@ import { QuestionCards } from '@frontend/components/upload/QuestionCards';
 import { PlanViewerPane } from '@frontend/components/upload/PlanViewerPane';
 import type { AskUserQuestion } from '@frontend/types/llmUi';
 import { cn } from '@/lib/cn';
+import { getCssVarCubicBezierEase } from '@/lib/cssCubicBezierEase';
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion';
 import { useScrollPlayOnce } from './useScrollPlayOnce';
 import styles from './PlanDeepDive.module.css';
@@ -28,6 +29,8 @@ import styles from './PlanDeepDive.module.css';
  *     as a user click would produce. The submit is wired to a no-op.
  *   • `prefers-reduced-motion` short-circuits all of this: the final
  *     state just shows the first question card, already rendered.
+ *   • After the plan viewer mounts, the markdown viewport scrolls top → bottom
+ *     via rAF with `--ease-plan-markdown-scroll` (reduced motion jumps to end).
  */
 
 const PLAN_QUESTIONS: AskUserQuestion[] = [
@@ -133,7 +136,14 @@ const TIMING = {
   holdAfterClick: 260,  // post-click dwell so the ripple is visible
   stepGap: 440,         // wait between "option-click" and "next-click"
   questionGap: 600,     // wait between questions after the Next click
+  planRevealScrollDelay: 480,
+  planScrollDurationMs: 2900,
 } as const;
+
+/** Matches `theme.css` `--ease-plan-markdown-scroll` if the CSS var cannot be read. */
+const EASE_PLAN_MARKDOWN_SCROLL: readonly [number, number, number, number] = [
+  0.77, 0, 0.16, 1,
+];
 
 function PlanDeepDiveVisual() {
   const reduced = usePrefersReducedMotion();
@@ -251,6 +261,55 @@ function PlanDeepDiveVisual() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPlayed, reduced]);
+
+  useEffect(() => {
+    if (!showPlan) return;
+
+    const root = rootRef.current;
+    if (!root) return;
+
+    let rafId = 0;
+
+    const timer = window.setTimeout(() => {
+      const viewport = root.querySelector<HTMLElement>(
+        '[data-radix-scroll-area-viewport]',
+      );
+      if (!viewport) return;
+
+      const maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      if (maxScroll <= 0) return;
+
+      if (reduced) {
+        viewport.scrollTop = maxScroll;
+        return;
+      }
+
+      viewport.scrollTop = 0;
+
+      const ease = getCssVarCubicBezierEase(
+        root,
+        '--ease-plan-markdown-scroll',
+        EASE_PLAN_MARKDOWN_SCROLL,
+      );
+      const { planScrollDurationMs: durationMs } = TIMING;
+      let start: number | null = null;
+
+      const tick = (now: number) => {
+        if (start === null) start = now;
+        const elapsed = now - start;
+        const t = Math.min(1, elapsed / durationMs);
+        viewport.scrollTop = ease(t) * maxScroll;
+        if (t < 1) rafId = requestAnimationFrame(tick);
+      };
+
+      rafId = requestAnimationFrame(tick);
+    }, TIMING.planRevealScrollDelay);
+
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(rafId);
+    };
+  }, [showPlan, reduced, rootRef]);
 
   // Don't render the cursor sprite at all for reduced-motion, and fade it
   // out once the timeline reaches `done`.

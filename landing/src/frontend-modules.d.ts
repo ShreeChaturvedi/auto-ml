@@ -53,6 +53,7 @@ declare module '@frontend/components/upload/QuestionCards' {
     questions: AskUserQuestion[];
     onSubmit: (answers: Record<string, unknown>) => void;
     disabled?: boolean;
+    animateStepChanges?: boolean;
   }>;
 }
 

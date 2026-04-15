@@ -139,9 +139,23 @@ describe('EmailService', () => {
         expect.objectContaining({
           from: 'AutoML Toolchain <noreply@example.com>',
           to: 'user@test.com',
-          subject: 'Password Reset Request - AutoML Toolchain',
+          subject: 'Reset your password · Agentic AutoML Platform',
           html: expect.stringContaining('/reset-password?token=token'),
-          text: expect.stringContaining('/reset-password?token=token')
+          text: expect.stringContaining('/reset-password?token=token'),
+          attachments: expect.arrayContaining([
+            expect.objectContaining({
+              filename: 'logo-on-light.png',
+              cid: 'automl-logo-on-light@v1',
+              contentDisposition: 'inline',
+              path: expect.stringMatching(/backend[\\/]src[\\/]assets[\\/]logo-on-light\.png$/),
+            }),
+            expect.objectContaining({
+              filename: 'logo-on-dark.png',
+              cid: 'automl-logo-on-dark@v1',
+              contentDisposition: 'inline',
+              path: expect.stringMatching(/backend[\\/]src[\\/]assets[\\/]logo-on-dark\.png$/),
+            }),
+          ]),
         })
       );
     });

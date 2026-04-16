@@ -52,7 +52,41 @@ function loadDatasetLines(filename: string): string[] {
   return ['df = pd.read_csv(dataset_path)'];
 }
 
-function buildTrainingScript(params: {
+type TrainingMetricsPayload = {
+  metrics?: Record<string, number>;
+  featureColumns?: string[];
+  sampleCount?: number;
+  targetColumn?: string;
+  testSize?: number;
+  clusterSizes?: Record<string, number>;
+  featureTypes?: Record<string, 'float' | 'int' | 'str'>;
+  sampleRequest?: Record<string, unknown>;
+};
+
+function buildClusteringEvaluationPayload(
+  metricsPayload: TrainingMetricsPayload,
+  computeMs: number,
+): Record<string, unknown> {
+  const clusterSizes = Object.fromEntries(
+    Object.entries(metricsPayload.clusterSizes ?? {}).map(([label, count]) => [label, Number(count)])
+  );
+
+  return {
+    taskType: 'clustering',
+    timestamp: new Date().toISOString(),
+    computeMs,
+    warnings: [],
+    clustering_metrics: {
+      n_clusters: Object.keys(clusterSizes).length,
+      cluster_sizes: clusterSizes,
+      silhouette: metricsPayload.metrics?.silhouette ?? null,
+      davies_bouldin: null,
+      calinski_harabasz: null,
+    },
+  };
+}
+
+export function buildTrainingScript(params: {
   datasetFilename: string;
   datasetId: string;
   templateId: string;
@@ -67,6 +101,7 @@ function buildTrainingScript(params: {
   }
 
   const { datasetFilename, datasetId, targetColumn, parameters, testSize, outputDir } = params;
+  const isRandomForestTemplate = template.id.startsWith('random_forest_');
   const lines: string[] = [];
 
   lines.push('import json');
@@ -125,8 +160,10 @@ function buildTrainingScript(params: {
     lines.push('if numeric_cols:');
     lines.push('    X[numeric_cols] = X[numeric_cols].fillna(X[numeric_cols].median())');
     lines.push('if categorical_cols:');
-    lines.push("    X[categorical_cols] = X[categorical_cols].fillna('missing')");
-    lines.push('if categorical_cols:');
+    lines.push("    X[categorical_cols] = X[categorical_cols].fillna('missing').astype(str)");
+    lines.push('    for col in categorical_cols:');
+    lines.push('        top_categories = X[col].value_counts().nlargest(50).index');
+    lines.push('        X[col] = np.where(X[col].isin(top_categories), X[col], "__OTHER__")');
     lines.push('    X = pd.get_dummies(X, columns=categorical_cols, drop_first=False)');
     lines.push('X = X.fillna(0)');
   } else {
@@ -151,8 +188,13 @@ function buildTrainingScript(params: {
     lines.push('        sample_row[k] = bool(v)');
     lines.push('');
     lines.push('# Build ColumnTransformer preprocessor');
-    lines.push("numeric_pipeline = Pipeline([('imputer', SimpleImputer(strategy='median')), ('scaler', StandardScaler())])");
-    lines.push("categorical_pipeline = Pipeline([('imputer', SimpleImputer(strategy='constant', fill_value='missing')), ('encoder', OneHotEncoder(handle_unknown='ignore', sparse_output=False))])");
+    if (isRandomForestTemplate) {
+      lines.push("numeric_pipeline = Pipeline([('imputer', SimpleImputer(strategy='median'))])");
+      lines.push("categorical_pipeline = Pipeline([('imputer', SimpleImputer(strategy='constant', fill_value='missing')), ('encoder', OneHotEncoder(handle_unknown='infrequent_if_exist', min_frequency=10, max_categories=50))])");
+    } else {
+      lines.push("numeric_pipeline = Pipeline([('imputer', SimpleImputer(strategy='median')), ('scaler', StandardScaler())])");
+      lines.push("categorical_pipeline = Pipeline([('imputer', SimpleImputer(strategy='constant', fill_value='missing')), ('encoder', OneHotEncoder(handle_unknown='infrequent_if_exist', min_frequency=10, max_categories=50, sparse_output=False))])");
+    }
     lines.push('transformers = []');
     lines.push('if numeric_cols:');
     lines.push("    transformers.append(('num', numeric_pipeline, numeric_cols))");
@@ -163,12 +205,18 @@ function buildTrainingScript(params: {
 
   if (template.taskType !== 'clustering') {
     lines.push(`test_size = ${testSize}`);
-    lines.push('stratify = None');
-    lines.push('if len(y.unique()) > 1 and len(y) >= 10:');
-    lines.push('    stratify = y');
-    lines.push('X_train, X_test, y_train, y_test = train_test_split(');
-    lines.push('    X, y, test_size=test_size, random_state=42, stratify=stratify');
-    lines.push(')');
+    if (template.taskType === 'classification') {
+      lines.push('stratify = None');
+      lines.push('if len(y.unique()) > 1 and len(y) >= 10:');
+      lines.push('    stratify = y');
+      lines.push('X_train, X_test, y_train, y_test = train_test_split(');
+      lines.push('    X, y, test_size=test_size, random_state=42, stratify=stratify');
+      lines.push(')');
+    } else {
+      lines.push('X_train, X_test, y_train, y_test = train_test_split(');
+      lines.push('    X, y, test_size=test_size, random_state=42');
+      lines.push(')');
+    }
   }
 
   const paramEntries = Object.entries(parameters)
@@ -199,7 +247,8 @@ function buildTrainingScript(params: {
   } else {
     lines.push('cluster_sizes = pd.Series(labels).value_counts().to_dict()');
     lines.push('if len(set(labels)) > 1 and len(labels) > 1:');
-    lines.push('    metrics["silhouette"] = float(silhouette_score(X, labels))');
+    lines.push('    silhouette_sample_size = min(len(X), 2000)');
+    lines.push('    metrics["silhouette"] = float(silhouette_score(X, labels, sample_size=silhouette_sample_size, random_state=42))');
     lines.push('else:');
     lines.push('    metrics["silhouette"] = 0.0');
   }
@@ -267,12 +316,33 @@ function buildTrainingScript(params: {
   return lines.join('\n');
 }
 
+function normalizeEvaluationFailureStatus(record: ModelRecord | undefined): ModelRecord | undefined {
+  if (!record) {
+    return undefined;
+  }
+  if (record.status !== 'failed' || record.evaluationStatus) {
+    return record;
+  }
+  return {
+    ...record,
+    evaluationStatus: 'failed',
+    evaluationError: record.evaluationError ?? record.error ?? 'Training failed before evaluation artifacts were generated.',
+  };
+}
+
 export function listModels(projectId?: string) {
-  return modelRepository.list(projectId);
+  return modelRepository.list(projectId).then((records) => records.map((record) => normalizeEvaluationFailureStatus(record) ?? record));
 }
 
 export function getModelById(modelId: string) {
-  return modelRepository.getById(modelId);
+  return modelRepository.getById(modelId).then((record) => normalizeEvaluationFailureStatus(record));
+}
+
+export function updateModelRecord(
+  modelId: string,
+  updater: (current: ModelRecord) => ModelRecord,
+): Promise<ModelRecord | undefined> {
+  return modelRepository.update(modelId, updater);
 }
 
 export function getModelTemplates() {
@@ -307,7 +377,7 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     throw new Error('Docker runtime is unavailable. Start Docker to train models.');
   }
 
-  const modelId = randomUUID();
+  const workspaceModelId = randomUUID();
   const testSize = normalizeModelTestSize(input.testSize ?? DEFAULT_MODEL_TEST_SIZE);
   const mergedParams = Object.fromEntries(
     Object.entries({
@@ -315,6 +385,9 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
       ...(input.parameters ?? {})
     }).filter(([, value]) => value !== undefined)
   );
+  const optimizedParams = template.id.startsWith('random_forest_') && mergedParams.n_jobs === undefined
+    ? { ...mergedParams, n_jobs: -1 }
+    : mergedParams;
 
   const container = await getOrCreateContainer({
     projectId: input.projectId,
@@ -328,20 +401,20 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     });
   }
 
-  const outputDir = `/workspace/models/${modelId}`;
+  const outputDir = `/workspace/models/${workspaceModelId}`;
   const script = buildTrainingScript({
     datasetFilename: dataset.filename,
     datasetId: dataset.datasetId,
     templateId: template.id,
     targetColumn: input.targetColumn,
-    parameters: mergedParams,
+    parameters: optimizedParams,
     testSize,
     outputDir
   });
 
   const result = await kernelManager.execute(container, script, env.executionTimeoutMs);
 
-  const runDir = join(container.workspacePath, 'models', modelId);
+  const runDir = join(container.workspacePath, 'models', workspaceModelId);
   const metricsPath = join(runDir, 'metrics.json');
   const modelPath = join(runDir, 'model.joblib');
 
@@ -357,12 +430,14 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
       taskType: template.taskType,
       library: template.library,
       algorithm: template.modelClass,
-      parameters: mergedParams,
+      parameters: optimizedParams,
       metrics: {},
       status: 'failed',
       trainingMs: Date.now() - start,
       targetColumn: input.targetColumn,
-      error: result.stderr || result.error || 'Training failed inside the runtime.'
+      error: result.stderr || result.error || 'Training failed inside the runtime.',
+      evaluationStatus: 'failed',
+      evaluationError: result.stderr || result.error || 'Training failed inside the runtime.',
     });
     await rm(runDir, { recursive: true, force: true }).catch(() => undefined);
     return { model: failedRecord, success: false, message: failedRecord.error ?? 'Training failed.' };
@@ -373,17 +448,33 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
     stat(modelPath)
   ]);
 
-  const metricsPayload = JSON.parse(metricsRaw) as {
-    metrics?: Record<string, number>;
-    featureColumns?: string[];
-    sampleCount?: number;
-    targetColumn?: string;
-    clusterSizes?: Record<string, number>;
-    featureTypes?: Record<string, 'float' | 'int' | 'str'>;
-    sampleRequest?: Record<string, unknown>;
-  };
+  const metricsPayload = JSON.parse(metricsRaw) as TrainingMetricsPayload;
 
-  const storageDir = join(env.modelStorageDir, modelId);
+  const record = await modelRepository.create({
+    projectId: input.projectId,
+    datasetId: input.datasetId,
+    name,
+    templateId: template.id,
+    taskType: template.taskType,
+    library: template.library,
+    algorithm: template.modelClass,
+    parameters: optimizedParams,
+    metrics: metricsPayload.metrics ?? {},
+    status: 'completed',
+    trainingMs: Date.now() - start,
+    targetColumn: metricsPayload.targetColumn ?? input.targetColumn,
+    featureColumns: metricsPayload.featureColumns,
+    featureTypes: metricsPayload.featureTypes,
+    sampleRequest: metricsPayload.sampleRequest,
+    sampleCount: metricsPayload.sampleCount,
+    metadata: {
+      ...(metricsPayload.clusterSizes ? { clusterSizes: metricsPayload.clusterSizes } : {}),
+      testSize,
+    },
+    evaluationStatus: 'pending'
+  });
+
+  const storageDir = join(env.modelStorageDir, record.modelId);
   await mkdir(storageDir, { recursive: true });
   const storedModelPath = join(storageDir, 'model.joblib');
   const storedMetricsPath = join(storageDir, 'metrics.json');
@@ -399,43 +490,34 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
   }
   await Promise.all(fileCopies);
 
-  const record = await modelRepository.create({
-    projectId: input.projectId,
-    datasetId: input.datasetId,
-    name,
-    templateId: template.id,
-    taskType: template.taskType,
-    library: template.library,
-    algorithm: template.modelClass,
-    parameters: mergedParams,
-    metrics: metricsPayload.metrics ?? {},
-    status: 'completed',
-    trainingMs: Date.now() - start,
-    targetColumn: metricsPayload.targetColumn ?? input.targetColumn,
-    featureColumns: metricsPayload.featureColumns,
-    featureTypes: metricsPayload.featureTypes,
-    sampleRequest: metricsPayload.sampleRequest,
-    sampleCount: metricsPayload.sampleCount,
+  let updatedRecord = await modelRepository.update(record.modelId, (current) => ({
+    ...current,
     artifact: {
       filename: 'model.joblib',
       path: storedModelPath,
       size: artifactStat.size
     },
-    metadata: {
-      ...(metricsPayload.clusterSizes ? { clusterSizes: metricsPayload.clusterSizes } : {}),
-      testSize,
-    },
-    evaluationStatus: 'pending'
-  });
+  })) ?? record;
 
-  // Fire-and-forget evaluation — training response returns immediately
-  runEvaluation(record.modelId).catch(err =>
-    appLogger.error('[modelTraining] Background evaluation failed', { modelId: record.modelId, error: err })
-  );
+  if (template.taskType === 'clustering') {
+    const clusteringEvaluation = buildClusteringEvaluationPayload(metricsPayload, Date.now() - start);
+    await writeFile(join(storageDir, 'evaluation.json'), JSON.stringify(clusteringEvaluation), 'utf8');
+    updatedRecord = await modelRepository.update(record.modelId, (current) => ({
+      ...current,
+      evaluationStatus: 'ready',
+      evaluationComputedAt: new Date().toISOString(),
+      evaluationError: undefined,
+    })) ?? updatedRecord;
+  } else {
+    // Fire-and-forget evaluation — training response returns immediately
+    runEvaluation(record.modelId).catch(err =>
+      appLogger.error('[modelTraining] Background evaluation failed', { modelId: record.modelId, error: err })
+    );
+  }
 
   await rm(runDir, { recursive: true, force: true }).catch(() => undefined);
 
-  return { model: record, success: true, message: 'Model trained successfully.' };
+  return { model: updatedRecord, success: true, message: 'Model trained successfully.' };
 }
 
 export async function deleteModel(modelId: string): Promise<boolean> {

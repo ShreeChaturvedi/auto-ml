@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 
 import { WebSocket } from 'ws';
 
+import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import type { ExecutionResult, RichOutput } from '../types/execution.js';
 
@@ -41,6 +42,34 @@ export {
 /* ------------------------------------------------------------------ */
 
 const kernels = new Map<string, KernelConnection>();
+const KERNEL_CHANNEL_OPEN_TIMEOUT_MS = Math.max(env.kernelStartupTimeoutMs, 30_000);
+const KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS = 3;
+
+function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function openKernelChannels(container: KernelContainer, kernelId: string): Promise<WebSocket> {
+    const url = wsUrl(container, kernelId);
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS; attempt += 1) {
+        try {
+            return await openWebSocket(url, KERNEL_CHANNEL_OPEN_TIMEOUT_MS);
+        } catch (error) {
+            lastError = error;
+            if (attempt < KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS) {
+                await wait(500 * attempt);
+            }
+        }
+    }
+
+    throw new Error(
+        `Failed to open WebSocket to kernel ${kernelId} on container ${container.id} `
+        + `after ${KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS} attempts: `
+        + `${lastError instanceof Error ? lastError.message : 'connection failed'}`,
+    );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Kernel init code — runs once after a kernel is first connected    */
@@ -205,6 +234,35 @@ def save_to_project(df, name):
 print("Kernel initialized")
 `.trim();
 
+const KERNEL_SITE_REFRESH_CODE = `
+import importlib, site, sys
+site.addsitedir("/workspace/.python")
+if "/workspace/.python" not in sys.path:
+    sys.path.insert(0, "/workspace/.python")
+importlib.invalidate_caches()
+print("Kernel package cache refreshed")
+`.trim();
+
+function buildKernelImportVerificationCode(moduleNames: string[]): string {
+    const payload = JSON.stringify(moduleNames);
+    return `
+import importlib
+import json
+import site
+import sys
+
+site.addsitedir("/workspace/.python")
+if "/workspace/.python" not in sys.path:
+    sys.path.insert(0, "/workspace/.python")
+importlib.invalidate_caches()
+
+modules = json.loads(${JSON.stringify(payload)})
+for module_name in modules:
+    importlib.import_module(module_name)
+print("Kernel package import verification passed")
+`.trim();
+}
+
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
@@ -226,7 +284,7 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
             conn.ws.removeAllListeners();
             conn.ws.terminate();
         }
-        conn.ws = await openWebSocket(wsUrl(container, conn.kernelId));
+        conn.ws = await openKernelChannels(container, conn.kernelId);
         return;
     }
 
@@ -264,22 +322,17 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
     const kernel = (await res.json()) as { id: string; name: string };
 
     // Open WebSocket channels
-    let ws: WebSocket;
     try {
-        ws = await openWebSocket(wsUrl(container, kernel.id));
+        const ws = await openKernelChannels(container, kernel.id);
+        kernels.set(container.id, {
+            kernelId: kernel.id,
+            gatewayUrl: base,
+            ws,
+            sessionId,
+        });
     } catch (err) {
-        throw new Error(
-            `Failed to open WebSocket to kernel ${kernel.id} on container ${container.id}: ` +
-            `${err instanceof Error ? err.message : 'connection failed'}`,
-        );
+        throw new Error(err instanceof Error ? err.message : 'Failed to open WebSocket to kernel');
     }
-
-    kernels.set(container.id, {
-        kernelId: kernel.id,
-        gatewayUrl: base,
-        ws,
-        sessionId,
-    });
 
     // Run kernel init code (environment setup, helpers)
     try {
@@ -308,6 +361,41 @@ export async function execute(
     onOutput?: (output: RichOutput) => void,
 ): Promise<ExecutionResult> {
     return executeOnKernel(connectKernel, kernels, container, code, timeoutMs, onOutput);
+}
+
+/**
+ * Refresh Python import caches inside a live kernel after an out-of-band pip install.
+ * This preserves notebook state while making newly installed packages importable.
+ */
+export async function refreshKernelPythonPath(container: KernelContainer): Promise<void> {
+    if (!hasKernel(container)) {
+        return;
+    }
+
+    const result = await execute(container, KERNEL_SITE_REFRESH_CODE, 10_000);
+    if (result.status !== 'success') {
+        throw new Error(result.error || result.stderr || 'Failed to refresh kernel package cache');
+    }
+}
+
+export async function verifyKernelImports(
+    container: KernelContainer,
+    moduleNames: string[],
+    timeoutMs = 20_000,
+): Promise<void> {
+    const uniqueModuleNames = Array.from(new Set(moduleNames.map((value) => value.trim()).filter(Boolean)));
+    if (uniqueModuleNames.length === 0) {
+        return;
+    }
+
+    const result = await execute(
+        container,
+        buildKernelImportVerificationCode(uniqueModuleNames),
+        timeoutMs,
+    );
+    if (result.status !== 'success') {
+        throw new Error(result.error || result.stderr || 'Kernel import verification failed');
+    }
 }
 
 /**
@@ -343,7 +431,7 @@ export async function restartKernel(container: KernelContainer): Promise<void> {
 
     // Reconnect WebSocket with fresh session
     conn.sessionId = randomUUID();
-    conn.ws = await openWebSocket(wsUrl(container, conn.kernelId));
+    conn.ws = await openKernelChannels(container, conn.kernelId);
 
     // Re-run init code so helpers (resolve_dataset_path, load/save_preprocessing_dataset)
     // survive kernel restarts — fixes #132.
@@ -383,4 +471,3 @@ export async function shutdownKernel(container: KernelContainer): Promise<void> 
 export function hasKernel(container: KernelContainer): boolean {
     return kernels.has(container.id);
 }
-

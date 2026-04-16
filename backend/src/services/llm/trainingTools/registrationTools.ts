@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
 import { createModelRepository } from '../../../repositories/modelRepository.js';
+import type { DatasetProfileColumn } from '../../../types/dataset.js';
 import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
 import { runEvaluation } from '../../evaluationService.js';
 import {
@@ -154,6 +155,84 @@ function resolveRegistrationMetrics(
   return normalizeMetricsRecord(experiment.trainingMetrics);
 }
 
+// Threshold above which a numeric target column is treated as continuous
+// regression rather than categorical classification. Low-cardinality
+// integers (e.g., 1-5 rating, 0-10 class IDs) stay ambiguous so the LLM
+// must declare intent explicitly.
+const CLASSIFICATION_MAX_UNIQUE = 20;
+const BINARY_VALUE_MARKERS = new Set(['0', '1', 'true', 'false', '0.0', '1.0']);
+
+export type TaskTypeInferenceVerdict = {
+  taskType: ModelTaskType | 'ambiguous';
+  reason: string;
+};
+
+/** Task-type inference from a target column's statistical profile. */
+export function inferTaskTypeFromTargetProfile(
+  column: DatasetProfileColumn | null | undefined,
+): TaskTypeInferenceVerdict {
+  if (!column) {
+    return { taskType: 'ambiguous', reason: 'target column profile unavailable' };
+  }
+
+  if (column.dtype === 'string') {
+    return { taskType: 'classification', reason: 'string/categorical dtype' };
+  }
+  if (column.dtype === 'boolean') {
+    return { taskType: 'classification', reason: 'boolean dtype' };
+  }
+  if (column.dtype === 'date') {
+    return { taskType: 'regression', reason: 'date dtype (time-series regression)' };
+  }
+
+  const unique = column.uniqueCount ?? 0;
+  const topKeys = (column.topValues ?? []).map((entry) => String(entry.value).trim().toLowerCase());
+  const isBinary01 = unique > 0 && unique <= 2 && topKeys.length > 0
+    && topKeys.every((key) => BINARY_VALUE_MARKERS.has(key));
+  if (isBinary01) {
+    return { taskType: 'classification', reason: 'binary 0/1 target' };
+  }
+
+  if (column.dtype === 'integer' && unique > 0 && unique <= CLASSIFICATION_MAX_UNIQUE) {
+    return {
+      taskType: 'ambiguous',
+      reason: `low-cardinality integer target (${unique} unique values) — could be ordinal classification or count regression`,
+    };
+  }
+
+  if ((column.dtype === 'integer' || column.dtype === 'float') && unique > CLASSIFICATION_MAX_UNIQUE) {
+    return {
+      taskType: 'regression',
+      reason: `continuous ${column.dtype} target with ${unique} unique values`,
+    };
+  }
+
+  if (column.dtype === 'float') {
+    return {
+      taskType: 'regression',
+      reason: 'float target (default to regression unless binary 0/1)',
+    };
+  }
+
+  return { taskType: 'ambiguous', reason: 'numeric target with insufficient signal for auto-detection' };
+}
+
+export function formatTargetProfileForPrompt(
+  column: DatasetProfileColumn | null | undefined,
+): string | null {
+  if (!column) return null;
+  const verdict = inferTaskTypeFromTargetProfile(column);
+  const parts = [`${column.name} (${column.dtype})`];
+  if (typeof column.uniqueCount === 'number') {
+    parts.push(`${column.uniqueCount.toLocaleString('en-US')} unique values`);
+  }
+  if (typeof column.min === 'number' && typeof column.max === 'number') {
+    parts.push(`range [${column.min}, ${column.max}]`);
+  }
+  parts.push(`inferred task type: ${verdict.taskType} (${verdict.reason})`);
+  return `Target profile: ${parts.join(' — ')}`;
+}
+
 function detectTaskTypeFromMetrics(metrics: Record<string, number>): ModelTaskType | undefined {
   const keys = new Set(Object.keys(metrics).map((key) => key.toLowerCase()));
   if (keys.has('silhouette') || keys.has('davies_bouldin') || keys.has('calinski_harabasz')) {
@@ -181,12 +260,23 @@ function detectTaskTypeFromMetrics(metrics: Record<string, number>): ModelTaskTy
   return undefined;
 }
 
+function isModelTaskType(value: unknown): value is ModelTaskType {
+  return value === 'classification' || value === 'regression' || value === 'clustering';
+}
+
 /** Best-effort task type inference from experiment metadata + metrics. */
 function inferTaskType(
   experiment: Record<string, unknown>,
   explicitModelType: string | undefined,
   metrics: Record<string, number>
 ): ModelTaskType {
+  // 1. Trust the value configure_experiment already stored (authoritative —
+  //    validated against the target column profile at the time of the call).
+  const storedTaskType = experiment.taskType;
+  if (isModelTaskType(storedTaskType)) {
+    return storedTaskType;
+  }
+
   const modelType = String(
     explicitModelType
     ?? experiment.modelType
@@ -194,18 +284,30 @@ function inferTaskType(
     ?? ''
   ).toLowerCase();
 
-  // Classification checks come before regression so model types like
-  // "logistic_regression" are not misclassified as regression.
+  // 2. Narrow regex on explicit classifier/regressor/clusterer model suffixes.
+  //    Classification rules come first so "logistic_regression" is not
+  //    mis-routed to regression by the trailing "regression" token.
   if (/classif|classifier|logistic|svc|svm|naive_bayes|knn/.test(modelType)) return 'classification';
   if (/cluster|kmeans|dbscan|hierarch|gmm|gaussian_mixture|birch/.test(modelType)) return 'clustering';
   if (/regress|regressor|svr|ridge|lasso|elastic/.test(modelType)) return 'regression';
 
+  // 3. Target column profile — authoritative for ambiguous bare model names
+  //    like "catboost", "xgboost", "lightgbm" where the suffix is missing.
+  const targetColumnProfile = experiment.targetColumnProfile;
+  if (targetColumnProfile && typeof targetColumnProfile === 'object') {
+    const verdict = inferTaskTypeFromTargetProfile(targetColumnProfile as DatasetProfileColumn);
+    if (verdict.taskType !== 'ambiguous') {
+      return verdict.taskType;
+    }
+  }
+
+  // 4. Metrics keys as a last hint.
   const inferredFromMetrics = detectTaskTypeFromMetrics(metrics);
   if (inferredFromMetrics) {
     return inferredFromMetrics;
   }
 
-  // If a target column is set, it's supervised; default to classification.
+  // 5. Supervised training with no signal: default to classification.
   return 'classification';
 }
 

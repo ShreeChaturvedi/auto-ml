@@ -36,8 +36,11 @@ import ThemeToggleIsland from './ThemeToggleIsland';
     <div class="nav-right">
       <a href="/login" class="nav-signin">Sign In</a>
       <a href="/login" class="nav-cta">Get Started</a>
-      <ThemeToggleIsland client:only="react" />
     </div>
+  </div>
+
+  <div class="nav-theme-toggle">
+    <ThemeToggleIsland client:only="react" />
   </div>
 </header>
 
@@ -159,6 +162,17 @@ import ThemeToggleIsland from './ThemeToggleIsland';
     display: flex;
     align-items: center;
     gap: 16px;
+  }
+
+  /* Theme toggle anchored to the viewport's top-right corner — intentionally
+     outside .nav-inner's 1280px centered cluster. */
+  .nav-theme-toggle {
+    position: absolute;
+    top: 0;
+    right: 32px;
+    height: 72px;
+    display: flex;
+    align-items: center;
   }
 
   /* ── Sign In — muted text link, height-matched to CTA ── */

@@ -175,14 +175,24 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('permutation_importance');
     expect(script).toContain('learning_curve');
     expect(script).toContain('cross_val_score');
+    expect(script).toContain('_pi_max_samples = min(400, len(X_test))');
+    expect(script).toContain('n_repeats=3');
+    expect(script).toContain('max_samples = min(1000, len(X))');
+    expect(script).toContain('_lc_cv = min(3, len(X_lc))');
+    expect(script).toContain('_cv_max_samples = min(1500, len(X))');
+    expect(script).toContain('cv=_cv_splits');
     expect(script).toContain('predictions.parquet');
     expect(script).toContain('predictions.csv');
     expect(script).toContain('result["predictionsArtifact"] = predictions_filename');
     expect(script).toContain('evaluation.json');
 
-    // Must NOT contain regression-specific code
-    expect(script).not.toContain('residual_histogram');
-    expect(script).not.toContain('residuals_arr');
+    // Classification scripts now also embed a runtime safety-net that emits
+    // residual-based regression metrics when y_test turns out to be continuous.
+    // The runtime `effective_task_type` guard gates which path actually runs.
+    expect(script).toContain('_is_continuous_target');
+    expect(script).toContain('effective_task_type');
+    expect(script).toContain('residual_histogram');
+    expect(script).toContain('residuals_arr');
   });
 
   it('returns valid Python for regression task type', () => {
@@ -231,15 +241,46 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('Feature importance skipped:');
     expect(script).toContain('Learning curve skipped:');
     expect(script).toContain('Cross-validation skipped:');
-    // Memory safety: subsample to 1000
-    expect(script).toContain('1000');
+    // Memory safety: subsample SHAP to 200 rows and use bounded background size
+    expect(script).toContain('X_shap = X_test.iloc[:200] if len(X_test) > 200 else X_test');
+    expect(script).toContain('X_train_shap = X_train.iloc[:200] if len(X_train) > 200 else X_train');
+    expect(script).toContain('def _sanitize_json_value(value):');
+    expect(script).toContain('json.dump(_sanitize_json_value(result), f, allow_nan=False)');
+    expect(script).toContain('json.dump(_sanitize_json_value(shap_result), f, allow_nan=False)');
   });
 
-  it('resolves the fitted estimator from model, regressor, classifier, or the final pipeline step', () => {
+  it('skips expensive secondary analysis for instance-based, kernel, and mlp estimators', () => {
     const script = buildEvaluationScript({
       modelPath: '/workspace/models/m4/model.joblib',
       datasetPath: '/workspace/datasets/data.csv',
       outputDir: '/workspace/eval/m4',
+      taskType: 'classification',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('expensive_analysis_model = (');
+    expect(script).toContain('"neighbors" in fitted_model_module');
+    expect(script).toContain('fitted_model_name in {"svc", "svr", "nusvc", "nusvr"}');
+    expect(script).toContain('fitted_model_name.startswith("mlp")');
+    expect(script).toContain('Permutation importance skipped for expensive estimator family');
+    expect(script).toContain('Learning curve skipped for expensive estimator family');
+    expect(script).toContain('Cross-validation skipped for expensive estimator family');
+    expect(script).toContain('SHAP skipped for expensive estimator family');
+    expect(script).toContain('evaluation_sample_warning = None');
+    expect(script).toContain('expensive_eval_max_samples = 1000');
+    expect(script).toContain('expensive_eval_max_samples = min(expensive_eval_max_samples, 250)');
+    expect(script).toContain('expensive_eval_max_samples = min(expensive_eval_max_samples, 500)');
+    expect(script).toContain('if expensive_analysis_model and len(X_test) > expensive_eval_max_samples:');
+    expect(script).toContain('Evaluation used a capped holdout sample of');
+    expect(script).toContain('result["evaluationSample"] = {');
+  });
+
+  it('resolves the fitted estimator from model, regressor, classifier, or the final pipeline step', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m5/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m5',
       taskType: 'regression',
       targetColumn: 'target',
       testSize: 0.2,
@@ -254,6 +295,244 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('requires_refit_categorical_metadata = is_direct_catboost and len(categorical_columns) > 0');
     expect(script).toContain('Learning curve skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
     expect(script).toContain('Cross-validation skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
+  });
+
+  it('defensively unwraps dict-wrapped model artifacts before calling predict', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m5/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m5',
+      taskType: 'classification',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('if isinstance(pipeline, dict):');
+    expect(script).toContain("for _inner_key in ('pipeline', 'model', 'estimator', 'classifier', 'regressor', 'best_estimator')");
+    expect(script).toContain('Saved model artifact is a dict with no predict-capable inner value');
+  });
+
+  it('auto-derives X_train/X_test/y_train/y_test from train_df/test_df when workflow prep is DataFrame-centric (pytorch_tabular)', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-pt/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-pt',
+      taskType: 'regression',
+      targetColumn: 'usage_log1p',
+      testSize: 0.2,
+      workflowPrepSegments: [
+        'import pandas as pd',
+        'df = pd.read_csv(WORKFLOW_DATASET_PATH)\ntrain_df = df.iloc[:5000]\ntest_df = df.iloc[5000:]',
+      ],
+    });
+
+    // Target col literal injected into the auto-derive guard
+    expect(script).toContain('_EVAL_TARGET_COL = "usage_log1p"');
+    expect(script).toContain('_EVAL_KNOWN_FEATURES = []');
+    // Auto-derive path triggers only when X_train is missing but train_df/test_df exist
+    expect(script).toContain('if "X_train" not in globals() and "train_df" in globals() and "test_df" in globals():');
+    expect(script).toContain('_common_cols = [c for c in _train_cols if c in _test_cols]');
+    // Derivation lines (use _resolved_target, not raw _EVAL_TARGET_COL)
+    expect(script).toContain('X_train = train_df.drop(columns=[_resolved_target])');
+    expect(script).toContain('X_test = test_df.drop(columns=[_resolved_target])');
+    expect(script).toContain('y_train = train_df[_resolved_target]');
+    expect(script).toContain('y_test = test_df[_resolved_target]');
+    // The strict-required-vars check still runs after the auto-derive
+    expect(script).toContain('Workflow evaluation prep did not define required variables');
+  });
+
+  it('auto-derives a holdout split from X/y when workflow prep only leaves cross-validation variables', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-cv/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-cv',
+      taskType: 'classification',
+      targetColumn: 'target',
+      testSize: 0.25,
+      workflowPrepSegments: [
+        'import pandas as pd',
+        'df = pd.read_csv(WORKFLOW_DATASET_PATH)\nX = df.drop(columns=["target"])\ny = df["target"]',
+      ],
+    });
+
+    expect(script).toContain('declared_task_type = "classification"');
+    expect(script).toContain('test_size = 0.25');
+    expect(script).toContain('if missing_runtime_vars and "X" in globals() and "y" in globals():');
+    expect(script).toContain('X = pd.DataFrame(X)');
+    expect(script).toContain('y = pd.Series(np.asarray(y).ravel(), name=_EVAL_TARGET_COL or "target")');
+    expect(script).toContain('_eval_stratify = y');
+    expect(script).toContain('X_train, X_test, y_train, y_test = train_test_split(');
+    expect(script).toContain('Auto-derived X_train/X_test from X/y');
+  });
+
+  it('inlines the model record featureColumns list so the auto-derive resolver can find FE-derived targets', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-fe/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-fe',
+      taskType: 'regression',
+      targetColumn: 'usage_count',
+      testSize: 0.2,
+      workflowPrepSegments: ['df = pd.read_csv(WORKFLOW_DATASET_PATH)'],
+      featureColumns: ['user_id', 'company_id', 'session_minutes'],
+    });
+
+    expect(script).toContain('_EVAL_KNOWN_FEATURES = ["user_id","company_id","session_minutes"]');
+    expect(script).toContain('_candidates = [c for c in _common_cols if c not in _EVAL_KNOWN_FEATURES]');
+  });
+
+  it('normalizes DataFrame y_pred outputs (pytorch_tabular) preferring prediction column and skipping probability columns', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m6/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m6',
+      taskType: 'classification',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('if hasattr(y_pred, "columns"):');
+    expect(script).toContain('if _name in ("prediction", "yhat"):');
+    expect(script).toContain('"probability" in _lower or _lower.endswith("_proba")');
+    expect(script).toContain('y_pred = y_pred[_label_col].values');
+  });
+
+  it('guards .predict against non-sklearn estimators with a clear error', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m7/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m7',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('if not hasattr(pipeline, "predict") or not callable(getattr(pipeline, "predict", None)):');
+    expect(script).toContain('Saved model does not implement .predict(X_test)');
+    expect(script).toContain('try:\n    y_pred = pipeline.predict(X_test)');
+    expect(script).toContain('if isinstance(y_pred, tuple) and len(y_pred) >= 1:');
+  });
+
+  it('normalizes y_test/y_train to pandas Series for .value_counts() / .values compatibility', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m8/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m8',
+      taskType: 'classification',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('if not hasattr(y_test, "value_counts"):');
+    expect(script).toContain('y_test = pd.Series(np.asarray(y_test).ravel(), name="y_test")');
+    expect(script).toContain('if not hasattr(y_train, "value_counts"):');
+  });
+
+  it('uses np.asarray defensively for regression residuals to avoid .values on ndarray', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m9/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m9',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('_y_true_arr = np.asarray(y_test).ravel()');
+    expect(script).toContain('_y_pred_arr = np.asarray(y_pred).ravel()');
+    expect(script).toContain('residuals_arr = (_y_true_arr - _y_pred_arr).tolist()');
+    // Predictions artifact also uses defensive conversion
+    expect(script).toContain('pred_df["y_true"] = np.asarray(y_test).ravel()');
+    expect(script).toContain('pred_df["y_pred"] = np.asarray(y_pred).ravel()');
+  });
+
+  it('loads raw torch.save artifacts via torch.load and wraps them in a predict adapter', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-torch/model.pt',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-torch',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('except Exception as _load_err:');
+    expect(script).toContain('_is_torch_artifact =');
+    expect(script).toContain('torch.load(_EVAL_MODEL_PATH, map_location="cpu", weights_only=False)');
+    expect(script).toContain('class _TorchPredictAdapter:');
+    expect(script).toContain('full nn.Module must be saved');
+    expect(script).toContain('def predict(self, X):');
+  });
+
+  it('detects multi-output predictions and emits per-output metrics instead of raveling to 1-D', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-multi/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-multi',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('_yp_raw = np.asarray(y_pred)');
+    expect(script).toContain('_is_multi_output = _yp_raw.ndim > 1 and _yp_raw.shape[1] > 1');
+    expect(script).toContain('if not _is_multi_output:');
+    expect(script).toContain('y_pred = _yp_raw  # preserve 2-D');
+    expect(script).toContain('result["per_output_metrics"] = _per_output');
+  });
+
+  it('has pseudo-LC and pseudo-CV fallbacks for non-clonable estimators (pytorch_tabular, Prophet)', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-lcfb/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-lcfb',
+      taskType: 'regression',
+      targetColumn: 'target',
+      testSize: 0.2,
+    });
+
+    // CV fallback
+    expect(script).toContain('single_fit_holdout');
+    expect(script).toContain('_manual_scores.append');
+    // LC fallback
+    expect(script).toContain('single_fit_pseudo');
+    expect(script).toContain('Learning curve computed via single-fit pseudo method');
+  });
+
+  it('emits forecasting metrics block (MAPE/sMAPE/MASE/horizon) when taskType=forecasting', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-fc/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-fc',
+      taskType: 'forecasting',
+      targetColumn: 'sales',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('if declared_task_type == "forecasting"');
+    expect(script).toContain('forecasting_metrics');
+    expect(script).toContain('_smape = float');
+    expect(script).toContain('_mase =');
+    expect(script).toContain('horizon_series');
+    expect(script).toContain('residual_series');
+  });
+
+  it('emits clustering metrics block (silhouette/davies_bouldin/calinski_harabasz) when taskType=clustering', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-cl/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-cl',
+      taskType: 'clustering',
+      targetColumn: '',
+      testSize: 0.2,
+    });
+
+    expect(script).toContain('if declared_task_type == "clustering"');
+    expect(script).toContain('silhouette_score');
+    expect(script).toContain('davies_bouldin_score');
+    expect(script).toContain('calinski_harabasz_score');
+    expect(script).toContain('clustering_metrics');
+    expect(script).toContain('PCA(n_components=2');
   });
 });
 
@@ -353,6 +632,32 @@ describe('runEvaluation', () => {
     expect(failedResult.evaluationError).toContain('ImportError');
     expect(failedResult.evaluationError).not.toContain('Series.view is deprecated');
     expect(failedResult.evaluationError).not.toContain('ordinal =');
+  });
+
+  it('prefers the execution timeout message over stderr warnings when evaluation times out', async () => {
+    const model = makeModelRecord();
+    const container = makeContainer();
+    const dataset = { datasetId: 'test-dataset', filename: 'data.csv', projectId: 'test-project', columns: [{ name: 'feat1' }, { name: 'target' }] };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockOrchestrateContainerExecution.mockResolvedValue({
+      container,
+      executionResult: {
+        status: 'timeout',
+        stderr: '/usr/local/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:690: ConvergenceWarning: example',
+        error: 'Execution timed out after 30000ms',
+        executionMs: 30000,
+      },
+    });
+
+    await runEvaluation('test-model-id');
+
+    const failedResult = mockUpdate.mock.calls[1][1](model);
+    expect(failedResult.evaluationStatus).toBe('failed');
+    expect(failedResult.evaluationError).toContain('Execution timed out after 30000ms');
+    expect(failedResult.evaluationError).not.toContain('ConvergenceWarning');
   });
 
   it('copies artifacts to modelStorageDir on success', async () => {

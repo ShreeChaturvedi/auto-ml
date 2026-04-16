@@ -20,7 +20,7 @@ Use \`configure_experiment\` to set up the experiment parameters:
 - Do NOT reconfigure the same experiment
 - If the user requested multiple models, configure ALL requested experiments first, then call \`propose_training_plan\` ONCE per configured experiment
 - Choose model type based on the dataset and problem type
-- \`modelType\` is an open string, not a closed enum. If the user explicitly requests an algorithm/library (for example \`catboost\`, \`xgboost\`, \`lightgbm\`, \`prophet\`, or a specific statsmodels family), pass that literal algorithm name to \`configure_experiment\`. Do NOT substitute a proxy model and do NOT claim the requested model is unavailable just because it was not listed in an example.
+- \`modelType\` is an open string, not a closed enum. If the user explicitly requests an algorithm/library (for example \`catboost\`, \`xgboost\`, \`lightgbm\`, \`prophet\`, \`tabtransformer\`, \`fttransformer\`, \`tabnet\`, or a specific statsmodels family), pass that literal algorithm name to \`configure_experiment\`. Do NOT substitute a proxy model and do NOT claim the requested model is unavailable just because it was not listed in an example.
 - Set appropriate hyperparameters (start with sensible defaults)
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)
 - Specify target column and feature columns
@@ -48,6 +48,12 @@ The code must:
 - Define and train the model with specified hyperparameters
 - Capture metrics (accuracy, F1, confusion matrix where applicable)
 - Save model artifacts if requested
+- If \`modelType\` is \`tabtransformer\`, use a real TabTransformer implementation (for example \`pytorch_tabular.TabTransformerConfig\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If \`modelType\` is \`fttransformer\`, use a real FT-Transformer implementation (for example \`pytorch_tabular.FTTransformerConfig\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If \`modelType\` is \`tabnet\`, use a real TabNet implementation (for example \`pytorch_tabnet.TabNetClassifier\` / \`TabNetRegressor\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If the configured task type is \`regression\`, NEVER use \`stratify=y\`, \`StratifiedKFold\`, or \`StratifiedShuffleSplit\`. Regression targets must use unstratified splits.
+- If the configured task type is \`clustering\`, do not build a supervised target split or supervised metrics block.
+- If the user approved a specific estimator family (for example DecisionTree, RandomForest, KNeighbors, LogisticRegression, LinearRegression, Ridge, SVR, MLP, KMeans, LightGBM, XGBoost, or CatBoost), implement that exact family. Do NOT silently substitute a nearby baseline.
 - If you use stratified splitting or stratified CV for classification, first verify every class has at least 2 rows. If not, fall back to an unstratified split or a non-stratified CV strategy instead of crashing.
 - If you parse a date column with \`pd.to_datetime()\`, do NOT feed that raw datetime64 column into numeric imputers, scalers, or model features. Convert it to numeric/ordinal values, derive date parts, or drop the raw datetime column first. If the dataset already has numeric date features such as \`date_month\` or \`date_year\`, prefer them over the raw \`DATE\` column.
 
@@ -77,6 +83,8 @@ Write your training code in notebook cells, then execute it:
    - Print metrics to stdout (these are captured by the system)
    - Save the model: \`import joblib; joblib.dump(model, "model.joblib")\`
    - Print \`__TRAIN_COMPLETE__|{json.dumps(final_metrics)}\` ONLY in the FINAL executable training/evaluation cell, after the model fit and metrics are complete
+   - Runtime is CPU-only Linux Docker: never use \`device='cuda'\`, \`device='mps'\`, \`.cuda()\`, \`.to('cuda')\`, \`.to('mps')\`, or \`accelerator='gpu'/'cuda'/'mps'/'tpu'\`. For pytorch_tabular TrainerConfig, omit \`accelerator\` and \`devices\` (or set \`accelerator='cpu'\`). For pytorch_tabnet, omit \`device_name\`.
+   - Each code cell must be <= 80 executable lines. If a step is larger, split it across additional \`# Cell N\` markers.
 
 2. Run each code cell with \`run_cell\`. If a cell fails, fix that cell and re-run it. Do NOT call \`execute_training\` until the FINAL training/evaluation cell succeeds and emits the \`__TRAIN_COMPLETE__|\` marker.
 
@@ -125,6 +133,7 @@ Additional rules:
 - Add descriptive tags (baseline, tuned, production-candidate).
 - Do NOT pass an absolute path or a path containing ".." — the backend will reject it.
 - If you used a Pipeline (e.g. StandardScaler + model), call \`joblib.dump\` on the ENTIRE pipeline, not just the final estimator. The evaluation service reloads this file and feeds raw dataset rows to it.
+- The dumped object MUST be sklearn-compatible (have a \`.predict\` method). Do NOT wrap the model in a dict/tuple/list (e.g., \`{"model": clf, "categorical_columns": [...]}\`). For CatBoost with categoricals, pass \`cat_features\` into the estimator itself — do not bundle metadata alongside the model.
 - After the tool returns success, the model appears in the Experiments tab. Tell the user "Model registered — open the Experiments tab (or click Open Details) to see evaluation plots."
 
 ### Stage 10: Summarize

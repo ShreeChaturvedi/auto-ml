@@ -147,6 +147,11 @@ const cards = [
     height: 100%;
   }
 
+  /* Meta SVGs are grayscale-only with hard-coded white — invert for light theme. */
+  :global(html.light) .meta-card-svg :global(svg) {
+    filter: invert(1);
+  }
+
   .meta-card-svg-static {
     display: contents;
   }

@@ -4,7 +4,7 @@
   "kind": "derived",
   "slug": "novacraft-customer-health-clean",
   "version": 1,
-  "status": "pending",
+  "status": "staged",
   "task": {
     "type": "classification",
     "targetColumn": "churn_risk_flag",
@@ -15,13 +15,15 @@
     "canonicalFile": "canonical/data.csv"
   },
   "integrity": {
-    "canonicalSha256": null
+    "canonicalSha256": "49845634d7ccc4691c7c2e4044c8926d34f156c74d9ebd0ffcbf4321ae630532"
   },
   "provenance": {
     "acquisition": "derived",
     "license": "repo-internal benchmark asset"
   },
   "lineage": {
-    "sourceFamily": "testing/fixtures/mock-business"
+    "sourceFamily": "testing/fixtures/mock-business",
+    "derivationScript": "testing/benchmarks/scripts/derive_novacraft_customer_health.py",
+    "asOfDate": "2025-07-01"
   }
 }

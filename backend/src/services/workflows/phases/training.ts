@@ -9,13 +9,18 @@ import { TRAINING_LIFECYCLE_CONTRACT } from '../../llm/prompts/trainingContract.
 import { LLM_ALL_TOOLS, LLM_TRAINING_LIFECYCLE_TOOLS } from '../../llm/tools/index.js';
 import { TRAINING_TOOL_NAMES } from '../../llm/tools/trainingTools.js';
 import { TRAINING_TOOL_HANDLERS } from '../../llm/trainingTools/index.js';
+import { formatTargetProfileForPrompt } from '../../llm/trainingTools/registrationTools.js';
 import { toTrainingToolContext } from '../../llm/trainingTools/types.js';
 import {
   extractWorkflowPrepSegmentsFromSegments,
   normalizeWorkflowPrepSegments,
 } from '../../llm/trainingTools/workflowPrepSegments.js';
 import {
+  extractSuccessfulRuntimeDependenciesFromHistory,
+  hasRuntimeDependency,
   extractMissingModuleName,
+  inferRuntimeDependenciesFromModelType,
+  inferSpecificModelType,
   resolvePackageRequirementForMissingModule,
 } from '../../runtimeDependencies.js';
 import type { WorkflowGraphState } from '../graphState.js';
@@ -82,6 +87,8 @@ const TOOL_BY_NAME = new Map(
 );
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
+const MAX_TRAINING_REPAIR_ATTEMPTS = 3;
+
 interface TrainingCellDraft {
   title: string;
   content: string;
@@ -104,6 +111,9 @@ interface TrainingDraftNotebookActivity {
 }
 
 const TRAINING_MODEL_INFERENCE_PATTERNS: Array<{ pattern: RegExp; modelType: string }> = [
+  { pattern: /\bTabTransformerConfig\b/i, modelType: 'tabtransformer' },
+  { pattern: /\bFTTransformerConfig\b/i, modelType: 'fttransformer' },
+  { pattern: /\bTabNet(?:Classifier|Regressor)\b|\bfrom\s+pytorch_tabnet\b|\bimport\s+pytorch_tabnet\b/i, modelType: 'tabnet' },
   { pattern: /\bCatBoost(?:Classifier|Regressor)\b|\bfrom\s+catboost\s+import\b|\bimport\s+catboost\b/i, modelType: 'catboost' },
   { pattern: /\bXGB(?:Classifier|Regressor)\b|\bfrom\s+xgboost\s+import\b|\bimport\s+xgboost\b/i, modelType: 'xgboost' },
   { pattern: /\bLGBM(?:Classifier|Regressor)\b|\bfrom\s+lightgbm\s+import\b|\bimport\s+lightgbm\b/i, modelType: 'lightgbm' },
@@ -282,6 +292,27 @@ interface TrainingMissingDependencyRecovery {
   installFailedAfterFailure: boolean;
   rerunSucceededAfterInstall: boolean;
   hadSuccessfulInstallEarlierInTurn: boolean;
+}
+
+function normalizePythonForDependencyChecks(code: string): string {
+  return code.replace(/\s+/g, ' ').trim();
+}
+
+function containsInlinePackageInstall(code: string): boolean {
+  const normalized = normalizePythonForDependencyChecks(code);
+  return /pip\s+install/i.test(normalized)
+    || /subprocess\.(check_call|run|Popen)\([^)]*pip/i.test(normalized)
+    || /sys\.executable[^)]*-m[^)]*pip/i.test(normalized);
+}
+
+function getRequiredTrainingRuntimeDependencies(modelType: string | undefined): string[] {
+  return inferRuntimeDependenciesFromModelType(modelType);
+}
+
+function getInstalledTrainingRuntimeDependencies(state: WorkflowGraphState): string[] {
+  const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  return extractSuccessfulRuntimeDependenciesFromHistory(currentTurnCalls, currentTurnResults);
 }
 
 function getCurrentTurnCallResultPairs(state: WorkflowGraphState): Array<{
@@ -481,6 +512,248 @@ function splitTrainingGeneratedCode(code: string): TrainingCellDraft[] {
   ];
 }
 
+function sanitizeGeneratedPython(rawCode: string): string {
+  return rawCode
+    .replace(/^```(?:python)?\s*\n?/i, '')
+    .replace(/\n?```\s*$/i, '')
+    .trim();
+}
+
+type TrainingEstimatorRule = {
+  pattern: RegExp;
+  description: string;
+};
+
+function getSpecificTrainingEstimatorRule(
+  modelType: string | undefined,
+  taskType: string | undefined,
+): TrainingEstimatorRule | null {
+  const canonical = inferSpecificModelType(modelType);
+  switch (canonical) {
+    case 'random_forest_classifier':
+      return { pattern: /\bRandomForestClassifier\b/, description: 'RandomForestClassifier' };
+    case 'random_forest_regressor':
+      return { pattern: /\bRandomForestRegressor\b/, description: 'RandomForestRegressor' };
+    case 'random_forest':
+      return taskType === 'classification'
+        ? { pattern: /\bRandomForestClassifier\b/, description: 'RandomForestClassifier' }
+        : { pattern: /\bRandomForestRegressor\b/, description: 'RandomForestRegressor' };
+    case 'gradient_boosting_classifier':
+      return { pattern: /\bGradientBoostingClassifier\b/, description: 'GradientBoostingClassifier' };
+    case 'gradient_boosting_regressor':
+      return { pattern: /\bGradientBoostingRegressor\b/, description: 'GradientBoostingRegressor' };
+    case 'gradient_boosting':
+      return taskType === 'classification'
+        ? { pattern: /\bGradientBoostingClassifier\b/, description: 'GradientBoostingClassifier' }
+        : { pattern: /\bGradientBoostingRegressor\b/, description: 'GradientBoostingRegressor' };
+    case 'decision_tree_classifier':
+      return { pattern: /\bDecisionTreeClassifier\b/, description: 'DecisionTreeClassifier' };
+    case 'decision_tree_regressor':
+      return { pattern: /\bDecisionTreeRegressor\b/, description: 'DecisionTreeRegressor' };
+    case 'decision_tree':
+      return taskType === 'classification'
+        ? { pattern: /\bDecisionTreeClassifier\b/, description: 'DecisionTreeClassifier' }
+        : { pattern: /\bDecisionTreeRegressor\b/, description: 'DecisionTreeRegressor' };
+    case 'knn_classifier':
+      return { pattern: /\bKNeighborsClassifier\b/, description: 'KNeighborsClassifier' };
+    case 'knn_regressor':
+      return { pattern: /\bKNeighborsRegressor\b/, description: 'KNeighborsRegressor' };
+    case 'knn':
+      return taskType === 'classification'
+        ? { pattern: /\bKNeighborsClassifier\b/, description: 'KNeighborsClassifier' }
+        : { pattern: /\bKNeighborsRegressor\b/, description: 'KNeighborsRegressor' };
+    case 'logistic_regression':
+      return { pattern: /\bLogisticRegression\b/, description: 'LogisticRegression' };
+    case 'linear_regression':
+      return { pattern: /\bLinearRegression\b/, description: 'LinearRegression' };
+    case 'ridge':
+      return { pattern: /\bRidge\b/, description: 'Ridge' };
+    case 'lasso':
+      return { pattern: /\bLasso\b/, description: 'Lasso' };
+    case 'elasticnet':
+      return { pattern: /\bElasticNet\b/, description: 'ElasticNet' };
+    case 'mlp_classifier':
+      return { pattern: /\bMLPClassifier\b/, description: 'MLPClassifier' };
+    case 'mlp_regressor':
+      return { pattern: /\bMLPRegressor\b/, description: 'MLPRegressor' };
+    case 'mlp':
+      return taskType === 'classification'
+        ? { pattern: /\bMLPClassifier\b/, description: 'MLPClassifier' }
+        : { pattern: /\bMLPRegressor\b/, description: 'MLPRegressor' };
+    case 'svr':
+      return { pattern: /\bSVR\b/, description: 'SVR' };
+    case 'svc':
+      return { pattern: /\b(?:LinearSVC|SVC)\b/, description: 'SVC or LinearSVC' };
+    case 'kmeans':
+      return { pattern: /\bKMeans\b/, description: 'KMeans' };
+    case 'lightgbm':
+      return {
+        pattern: /\bLGBM(?:Classifier|Regressor)\b|\bfrom\s+lightgbm\s+import\b|\bimport\s+lightgbm\b/i,
+        description: 'LightGBM (LGBMClassifier/LGBMRegressor)',
+      };
+    case 'xgboost':
+      return {
+        pattern: /\bXGB(?:Classifier|Regressor)\b|\bfrom\s+xgboost\s+import\b|\bimport\s+xgboost\b/i,
+        description: 'XGBoost (XGBClassifier/XGBRegressor)',
+      };
+    case 'catboost':
+      return {
+        pattern: /\bCatBoost(?:Classifier|Regressor)\b|\bfrom\s+catboost\s+import\b|\bimport\s+catboost\b/i,
+        description: 'CatBoost (CatBoostClassifier/CatBoostRegressor)',
+      };
+    default:
+      return null;
+  }
+}
+
+function getSpecificTrainingModelGuidance(modelType: string | undefined): string | null {
+  const TRANSFORMER_CPU_BUDGET_RULES = [
+    'Runtime is CPU-only and the cell must finish in under 10 minutes.',
+    'SUBSAMPLE the training DataFrame before fit when it exceeds 5000 rows: `if len(train_df) > 5000: train_df = train_df.sample(n=5000, random_state=42)`. Keep the full test set for evaluation.',
+    'TrainerConfig: max_epochs=2, batch_size=1024, early_stopping=None, early_stopping_patience=0, checkpoints=None, progress_bar="none", accelerator="cpu". Do NOT pass `trainer_kwargs={"logger": ...}` or `trainer_kwargs={"enable_progress_bar": ...}` — those keys collide with pytorch_tabular\'s internal pl.Trainer call (tabular_model.py ~L359) and raise `TypeError: got multiple values for keyword argument`. Leave `trainer_kwargs={}`.',
+    'DataConfig: validation_split=0.15 (small single pass).',
+    'Architecture (compact for CPU): input_embed_dim=16, num_attn_blocks=1, num_heads=2, ff_hidden_multiplier=2, attn_feature_importance=False.',
+    'Cast integer continuous columns to float64 before fitting: `df[continuous_cols] = df[continuous_cols].astype("float64")`.',
+    'Use TabularModel `verbose=False` in its constructor.',
+    'ARTIFACT SAVE (MANDATORY): the fitted TabularModel MUST be saved with `joblib.dump(model, "model.joblib")` in the final cell, BEFORE printing the __TRAIN_COMPLETE__ marker. TabularModel is picklable via joblib on this runtime. Do NOT skip this step — register_model fails with ENOENT otherwise.',
+  ].join(' ');
+
+  switch (inferSpecificModelType(modelType)) {
+    case 'tabtransformer':
+      return 'Implement a real TabTransformer using pytorch_tabular. REQUIRED IMPORTS (use exactly these module paths; other paths do not exist): `from pytorch_tabular import TabularModel`, `from pytorch_tabular.config import DataConfig, TrainerConfig, OptimizerConfig`, `from pytorch_tabular.models import TabTransformerConfig`. Do not import from `pytorch_tabular.models.tab_transformer.config` (that path does not exist). Do not use sklearn MLPClassifier or MLPRegressor as a proxy. '
+        + TRANSFORMER_CPU_BUDGET_RULES;
+    case 'fttransformer':
+      return 'Implement a real FT-Transformer using pytorch_tabular. REQUIRED IMPORTS (use exactly these module paths; other paths do not exist): `from pytorch_tabular import TabularModel`, `from pytorch_tabular.config import DataConfig, TrainerConfig, OptimizerConfig`, `from pytorch_tabular.models import FTTransformerConfig`. Do not import from `pytorch_tabular.models.ft_transformer.config` (that path does not exist). Do not use sklearn MLPClassifier or MLPRegressor as a proxy. '
+        + TRANSFORMER_CPU_BUDGET_RULES;
+    case 'tabnet':
+      return 'Implement a real TabNet model using pytorch_tabnet. REQUIRED IMPORTS: `from pytorch_tabnet.tab_model import TabNetClassifier, TabNetRegressor`. Handle categorical columns explicitly (pass `cat_idxs` and `cat_dims`) instead of falling back to sklearn MLPClassifier or MLPRegressor. Runtime is CPU-only and the cell must finish in under 10 minutes. SUBSAMPLE training to 5000 rows when len(X_train) > 5000: `X_train, y_train = X_train.sample(n=5000, random_state=42), y_train.loc[X_train.index]`. Use compact settings: max_epochs=2, virtual_batch_size=256, batch_size=1024, patience=0, no hyperparameter search, `n_d=16, n_a=16, n_steps=2`. Pass `verbose=0` in the constructor. Do NOT pass `progress_bar=False` or other unsupported kwargs to the constructor.';
+    default:
+      return null;
+  }
+}
+
+function getSpecificTrainingImplementationFailure(
+  modelType: string | undefined,
+  taskType: string | undefined,
+  code: string,
+): string | null {
+  const canonical = inferSpecificModelType(modelType);
+  if (!canonical) {
+    if (taskType === 'regression') {
+      if (/\bstratify\s*=\s*y\b/.test(code) || /\btrain_test_split\s*\([\s\S]{0,240}\bstratify\s*=\s*y\b/.test(code)) {
+        return 'Regression code must not stratify train/test splits on y. Use an unstratified split for continuous targets.';
+      }
+      if (/\bStratifiedKFold\b|\bStratifiedShuffleSplit\b/.test(code)) {
+        return 'Regression code must not use stratified splitters. Use train_test_split(..., stratify=None) or plain KFold.';
+      }
+    }
+    return containsInlinePackageInstall(code)
+      ? 'Notebook training code must not install Python packages inline. Use the install_package tool before rerunning the cell.'
+      : null;
+  }
+
+  if (taskType === 'regression') {
+    if (/\bstratify\s*=\s*y\b/.test(code) || /\btrain_test_split\s*\([\s\S]{0,240}\bstratify\s*=\s*y\b/.test(code)) {
+      return 'Regression code must not stratify train/test splits on y. Use an unstratified split for continuous targets.';
+    }
+    if (/\bStratifiedKFold\b|\bStratifiedShuffleSplit\b/.test(code)) {
+      return 'Regression code must not use stratified splitters. Use train_test_split(..., stratify=None) or plain KFold.';
+    }
+  }
+
+  if (
+    ['tabtransformer', 'fttransformer', 'tabnet'].includes(canonical)
+    && /\bMLP(?:Classifier|Regressor)\b/.test(code)
+  ) {
+    return `Approved modelType "${canonical}" was replaced with sklearn MLP code.`;
+  }
+  if (containsInlinePackageInstall(code)) {
+    return 'Notebook training code must not install Python packages inline. Use the install_package tool before rerunning the cell.';
+  }
+
+  const estimatorRule = getSpecificTrainingEstimatorRule(modelType, taskType);
+  if (estimatorRule && !estimatorRule.pattern.test(code)) {
+    return `Approved modelType "${canonical}" must implement ${estimatorRule.description}. Do not substitute a different estimator family.`;
+  }
+
+  switch (canonical) {
+    case 'tabtransformer':
+      if (!/\bTabTransformerConfig\b/.test(code) || !/\bTabularModel\b/.test(code)) {
+        return 'TabTransformer code must use pytorch_tabular TabTransformerConfig together with TabularModel.';
+      }
+      break;
+    case 'fttransformer':
+      if (!/\bFTTransformerConfig\b/.test(code) || !/\bTabularModel\b/.test(code)) {
+        return 'FT-Transformer code must use pytorch_tabular FTTransformerConfig together with TabularModel.';
+      }
+      break;
+    case 'tabnet':
+      if (!/\bTabNet(?:Classifier|Regressor)\b/.test(code)) {
+        return 'TabNet code must use pytorch_tabnet TabNetClassifier or TabNetRegressor.';
+      }
+      break;
+    default:
+      break;
+  }
+
+  return null;
+}
+
+function buildTrainingCompletionFooterSegment(): TrainingCellDraft {
+  return {
+    title: 'Finalize Model Artifact and Metrics',
+    content: [
+      'import json',
+      'import math',
+      'import joblib',
+      '',
+      "def _is_predictable(value):",
+      '    return value is not None and hasattr(value, "predict") and callable(getattr(value, "predict"))',
+      '',
+      "_ARTIFACT_CANDIDATES = ('pipeline', 'model', 'best_model', 'best_estimator', 'estimator', 'classifier', 'regressor', 'clf')",
+      '',
+      'trained_artifact = None',
+      'for candidate_name in _ARTIFACT_CANDIDATES:',
+      '    candidate_value = globals().get(candidate_name)',
+      '    if _is_predictable(candidate_value):',
+      '        trained_artifact = candidate_value',
+      '        break',
+      'if trained_artifact is None:',
+      '    for candidate_name in _ARTIFACT_CANDIDATES:',
+      '        candidate_value = globals().get(candidate_name)',
+      '        if isinstance(candidate_value, dict):',
+      "            for inner_key in ('pipeline', 'model', 'estimator', 'classifier', 'regressor', 'best_estimator'):",
+      '                inner_value = candidate_value.get(inner_key)',
+      '                if _is_predictable(inner_value):',
+      '                    trained_artifact = inner_value',
+      '                    break',
+      '            if trained_artifact is not None:',
+      '                break',
+      'if trained_artifact is None:',
+      "    raise TypeError('No sklearn-compatible trained model or pipeline was found in notebook globals. Save the Pipeline or fitted estimator directly — do not wrap it in a dict.')",
+      '',
+      "joblib.dump(trained_artifact, 'model.joblib')",
+      '',
+      "final_metrics = globals().get('final_metrics')",
+      'if not isinstance(final_metrics, dict) or not final_metrics:',
+      "    for container_name in ('metrics', 'result', 'results', 'evaluation'):",
+      '        container = globals().get(container_name)',
+      '        if isinstance(container, dict) and container:',
+      '            final_metrics = {',
+      '                str(key): float(value)',
+      '                for key, value in container.items()',
+      '                if isinstance(value, (int, float)) and math.isfinite(float(value))',
+      '            }',
+      '            if final_metrics:',
+      '                break',
+      'if not isinstance(final_metrics, dict) or not final_metrics:',
+      "    raise ValueError('Training completed without a numeric final_metrics dict. Define final_metrics before finalization.')",
+      '',
+      "print('__TRAIN_COMPLETE__|' + json.dumps(final_metrics))",
+    ].join('\n')
+  };
+}
+
 function buildTrainingCodeGenerationSystemPrompt(): string {
   return `You are authoring notebook code for the training workflow.
 
@@ -496,6 +769,11 @@ HARD RULES:
 - Every cell must be independently runnable after previous cells.
 - Use resolve_dataset_path(filename, datasetId) for loading the dataset.
 - If experiment featureColumns are provided, train on exactly that subset.
+- If the configured task type is regression, NEVER use \`stratify=y\`, \`StratifiedKFold\`, or \`StratifiedShuffleSplit\`. Regression targets must use unstratified splits.
+- If the configured task type is clustering, do not create a supervised target split or supervised metrics block.
+- If the approved modelType names a specific estimator family (for example decision tree, random forest, KNN, logistic regression, linear regression, ridge, SVR, MLP, LightGBM, XGBoost, CatBoost, KMeans), implement that exact family. Do NOT substitute a nearby baseline or proxy estimator.
+- If the approved modelType is tabtransformer, fttransformer, or tabnet, you MUST implement that exact architecture with its real library. Never substitute sklearn MLPClassifier or MLPRegressor as a proxy.
+- Never run pip install, python -m pip, subprocess-based package installation, or any dependency bootstrap logic inside notebook cells. Dependencies are installed via tools before code execution.
 - If you use stratified splitting or stratified CV for classification, guard it: when any class has fewer than 2 rows, fall back to an unstratified split/CV instead of failing.
 - If you parse a column with pd.to_datetime() or otherwise create a datetime64 column, do NOT pass that raw datetime column into numeric imputation/scaling/model input. Convert it to numeric/ordinal first, derive date parts, or drop the raw datetime column before building numeric_features.
 - If date-derived numeric columns already exist (for example date_month/date_year), prefer those and exclude the raw DATE column from numeric preprocessing.
@@ -503,10 +781,16 @@ HARD RULES:
 - Use the configured hyperparameters exactly when they are provided in the request context.
 - If the model is a random forest regressor/classifier and hyperparameters are absent or incomplete, use a runtime-safe baseline for wide tabular data: n_estimators <= 100, max_depth <= 10, min_samples_leaf >= 2, max_features="sqrt", random_state=42. Do NOT use max_depth=None unless the user explicitly requested it.
 - For expensive tree ensembles on medium/large datasets, avoid full train-set predictions unless the user explicitly asked for train metrics. Test-set metrics are sufficient.
-- The FINAL executable cell must print:
-  print("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))
+- The FINAL executable cell MUST do both of these BEFORE printing the marker — never one without the other:
+  1. Save the fitted model/pipeline:  import joblib; joblib.dump(<fitted_model_or_pipeline>, "model.joblib")
+  2. Print the marker:  print("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))
+  register_model fails with ENOENT if model.joblib is not saved, so this is mandatory.
 - Keep runtime lean. Prefer train/test split or light CV unless the request explicitly requires heavier evaluation.
+- For TabTransformer, FT-Transformer, and TabNet on CPU: MUST subsample training to 5000 rows before fit, max_epochs=2, batch_size=1024, no early stopping, no hyperparameter search, compact architecture (input_embed_dim=16, num_attn_blocks=1, num_heads=2). Keep the full test set for evaluation. Target runtime under 3 minutes; the cell timeout is 10 minutes.
 - Save the trained pipeline/model with joblib.dump(..., "model.joblib") before final completion.
+- The object passed to joblib.dump MUST be sklearn-compatible (have .predict) — either the raw fitted estimator or a Pipeline. Do NOT wrap the model in a dict/tuple/list (e.g., {"model": clf, "categorical_columns": [...]}). If you need to carry metadata like categorical columns, bake it into the Pipeline or the estimator's constructor instead.
+- RUNTIME PLATFORM (HARD): Python executes inside a Linux x86_64 Docker container with NO GPU access. Do NOT pass device='cuda' or device='mps'; do NOT call .cuda() or .to('cuda')/.to('mps'); do NOT set accelerator='gpu'/'cuda'/'mps'/'tpu' or devices='auto'/'gpu'. For pytorch_tabular TrainerConfig, omit accelerator and devices (or set accelerator='cpu'). For pytorch_tabnet, omit device_name. torch.cuda.is_available() is fine (it returns False).
+- Each code cell MUST be 80 executable lines or fewer (comments and blank lines count). If one step exceeds 80 lines, split it across additional "# Cell N: <title>" markers (e.g. "# Cell 3a: Model fit", "# Cell 3b: Metrics computation"). Prefer concise idiomatic code over verbose loops; avoid restating imports inside cells.
 `;
 }
 
@@ -521,8 +805,14 @@ HARD RULES:
 - Do NOT emit cell markers like "# Cell 1".
 - Do NOT emit markdown or notebook narration.
 - Keep the cell focused on the failed stage and preserve the training workflow contract.
+- Never run pip, python -m pip, subprocess pip installs, or ad-hoc dependency bootstrap logic inside the notebook cell. Dependency installation belongs to the install_package tool, not notebook code.
 - If the failure mentions datetime64, DTypePromotionError, or numeric imputation/scaling with dates, repair it by converting the raw datetime column to numeric/ordinal values, deriving date parts, or dropping the raw datetime column before numeric preprocessing. Do NOT send raw datetime columns into numeric_features.
+- If the configured task type is regression, remove any \`stratify=y\`, \`StratifiedKFold\`, or \`StratifiedShuffleSplit\` logic from the repaired cell. Regression targets must use unstratified splits.
 - If the failure mentions timeout or the model fit was too slow, simplify the cell by reducing tree-ensemble cost (fewer trees, bounded max_depth, larger min_samples_leaf, max_features="sqrt") and remove full train-set predictions unless the user explicitly asked for them.
+- If the approved model is TabTransformer, FT-Transformer, or TabNet and the failure mentions timeout, shrink the architecture and training budget aggressively: max_epochs <= 5, patience <= 2, compact hidden sizes, and no tuning loops.
+- RUNTIME PLATFORM (HARD): Python executes inside a Linux x86_64 Docker container with NO GPU access. Do NOT pass device='cuda' or device='mps'; do NOT call .cuda() or .to('cuda')/.to('mps'); do NOT set accelerator='gpu'/'cuda'/'mps'/'tpu' or devices='auto'/'gpu'. If the previous error mentioned CUDA/MPS/accelerator, remove those device references entirely and rely on CPU defaults.
+- CELL SIZE (HARD): the repaired cell MUST be <= 80 executable lines. The workflow rejects any cell with more than 100 lines. If the repair is close to the limit, drop non-essential comments, helper prints, defensive try/except, and verbose docstrings. Do NOT re-implement earlier successful cells in this repair; rely on their already-defined variables/imports.
+- If the failure mentions "got multiple values for keyword argument" (typical for pytorch_tabular TrainerConfig), REMOVE any "logger", "enable_progress_bar", or other conflicting keys from trainer_kwargs that collide with pytorch_tabular's internal pl.Trainer call. Use native TrainerConfig fields instead: progress_bar="none" to silence the bar, checkpoints=None to skip checkpoint writing. Leave trainer_kwargs={} or only include kwargs NOT already handled by TrainerConfig.
 - If this is the final training/evaluation cell, it must still print:
   print("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))
 `;
@@ -546,6 +836,8 @@ async function buildTrainingCodeGenerationAction(
     ? experiment.featureColumns.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     : [];
   const hyperparameters = asRecord(experiment.hyperparameters) ?? {};
+  const modelType = asString(experiment.modelType) ?? 'unknown';
+  const specificModelGuidance = getSpecificTrainingModelGuidance(modelType);
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
   const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
   const lastRunCell = getLastToolResult(currentTurnResults, 'run_cell');
@@ -554,6 +846,25 @@ async function buildTrainingCodeGenerationAction(
   const stdout = asString(lastRunOutput?.stdout) ?? '';
   const latestDraft = extractLatestTrainingDraftMetadata(state);
   const missingDependencyRecovery = getTrainingMissingDependencyRecovery(state);
+  const requiredRuntimeDependencies = getRequiredTrainingRuntimeDependencies(modelType);
+  const installedRuntimeDependencies = getInstalledTrainingRuntimeDependencies(state);
+  const missingRuntimeDependencies = requiredRuntimeDependencies.filter((requirement) =>
+    !hasRuntimeDependency(installedRuntimeDependencies, requirement),
+  );
+
+  if (!latestDraft && missingRuntimeDependencies.length > 0) {
+    const parsedInstallBundle = ToolCallSchema.safeParse({
+      id: `wf-call-auto-install-training-bundle-${randomUUID()}`,
+      tool: 'install_package',
+      args: {
+        packageName: missingRuntimeDependencies.join(', '),
+      },
+      rationale: `Install the runtime dependency bundle required for the approved ${modelType} training flow before writing notebook cells.`,
+    });
+    if (parsedInstallBundle.success) {
+      return [parsedInstallBundle.data];
+    }
+  }
 
   if (
     missingDependencyRecovery
@@ -586,16 +897,39 @@ async function buildTrainingCodeGenerationAction(
       return [];
     }
 
+    // Bound repair attempts per turn so validator rejections (oversized cell,
+    // forbidden device, inline pip) can't push the LangGraph runner into its
+    // 152-iteration recursion cap. Each repair attempt adds an auto-rewrite
+    // call to history; after MAX_TRAINING_REPAIR_ATTEMPTS we surrender the
+    // turn cleanly with the last error intact for the user.
+    const priorRepairAttempts = currentTurnCalls.filter((call) =>
+      typeof call.id === 'string' && call.id.startsWith('wf-call-auto-rewrite-training-')
+    ).length;
+    if (priorRepairAttempts >= MAX_TRAINING_REPAIR_ATTEMPTS) {
+      return [];
+    }
+
+    const repairTargetColumn = state.turn.targetColumn
+      ? dataset.columns.find((column) => column.name === state.turn.targetColumn) ?? null
+      : null;
+    const repairTargetProfileLine = formatTargetProfileForPrompt(repairTargetColumn);
+    const repairExperimentTaskType = asString(experiment.taskType);
+
     const repairPrompt = [
+      'Runtime environment (authoritative): Linux x86_64 Docker container, CPU only, no GPU, no MPS, no CUDA. Do not emit device=/accelerator=/devices= arguments targeting GPU.',
       `Selected dataset (authoritative): ${dataset.filename} [${dataset.datasetId}]`,
       state.turn.targetColumn ? `Selected target column (authoritative): ${state.turn.targetColumn}` : null,
+      repairTargetProfileLine,
+      repairExperimentTaskType ? `Configured task type (authoritative): ${repairExperimentTaskType} — the fitted estimator variant MUST match this.` : null,
       `User request: ${state.turn.prompt ?? 'Continue the training workflow.'}`,
-      `Configured experiment: ${asString(experiment.experimentName) ?? 'Unnamed experiment'}`,
-      Object.keys(hyperparameters).length > 0
-        ? `Configured hyperparameters (authoritative): ${JSON.stringify(hyperparameters)}`
-        : 'Configured hyperparameters: none provided — choose runtime-safe defaults for the selected model type.',
+    `Configured experiment: ${asString(experiment.experimentName) ?? 'Unnamed experiment'}`,
+    `Model type: ${modelType}`,
+    Object.keys(hyperparameters).length > 0
+      ? `Configured hyperparameters (authoritative): ${JSON.stringify(hyperparameters)}`
+      : 'Configured hyperparameters: none provided — choose runtime-safe defaults for the selected model type.',
       `Failed segment title: ${failingSegment.title}`,
       `Failed segment index: ${failingSegmentIndex + 1} of ${latestDraft.segments.length}`,
+      specificModelGuidance ? `Architecture requirement: ${specificModelGuidance}` : null,
       featureColumns.length > 0
         ? `Feature columns: ${featureColumns.join(', ')}`
         : 'Feature columns: use the selected dataset columns, excluding the target column.',
@@ -614,11 +948,32 @@ async function buildTrainingCodeGenerationAction(
       reasoningEffort: 'low'
     });
 
-    const cleanedRepair = repairedCode
+    let cleanedRepair = repairedCode
       .replace(/^```(?:python)?\s*\n?/i, '')
       .replace(/\n?```\s*$/i, '')
       .trim();
+    if (containsInlinePackageInstall(cleanedRepair)) {
+      const retryRepair = await client.complete({
+        messages: [
+          { role: 'system', content: buildTrainingRepairSystemPrompt() },
+          {
+            role: 'user',
+            content: `${repairPrompt}\n\nRepair constraint: remove all inline pip/subprocess dependency installation logic. Assume dependencies are installed outside the notebook.`,
+          }
+        ],
+        temperature: 0.1,
+        maxOutputTokens: 3000,
+        reasoningEffort: 'low'
+      });
+      cleanedRepair = retryRepair
+        .replace(/^```(?:python)?\s*\n?/i, '')
+        .replace(/\n?```\s*$/i, '')
+        .trim();
+    }
     if (!cleanedRepair) {
+      return [];
+    }
+    if (containsInlinePackageInstall(cleanedRepair)) {
       return [];
     }
 
@@ -644,13 +999,23 @@ async function buildTrainingCodeGenerationAction(
     return parsedRepair.success ? [parsedRepair.data] : [];
   }
 
+  const targetColumnForPrompt = state.turn.targetColumn
+    ? dataset.columns.find((column) => column.name === state.turn.targetColumn) ?? null
+    : null;
+  const targetProfileLine = formatTargetProfileForPrompt(targetColumnForPrompt);
+  const experimentTaskType = asString(experiment.taskType);
+
   const prompt = [
+    'Runtime environment (authoritative): Linux x86_64 Docker container, CPU only, no GPU, no MPS, no CUDA. Do not emit device=/accelerator=/devices= arguments targeting GPU.',
     `Selected dataset (authoritative): ${dataset.filename} [${dataset.datasetId}]`,
     state.turn.targetColumn ? `Selected target column (authoritative): ${state.turn.targetColumn}` : null,
+    targetProfileLine,
+    experimentTaskType ? `Configured task type (authoritative): ${experimentTaskType} — the fitted estimator variant MUST match this.` : null,
     `User request: ${state.turn.prompt ?? 'Continue the training workflow.'}`,
     `Configured experiment: ${asString(experiment.experimentName) ?? 'Unnamed experiment'}`,
-    `Model type: ${asString(experiment.modelType) ?? 'unknown'}`,
+    `Model type: ${modelType}`,
     `Split strategy: ${asString(experiment.splitStrategy) ?? 'train_test'}`,
+    specificModelGuidance ? `Architecture requirement: ${specificModelGuidance}` : null,
     Object.keys(hyperparameters).length > 0
       ? `Configured hyperparameters (authoritative): ${JSON.stringify(hyperparameters)}`
       : 'Configured hyperparameters: none provided — choose runtime-safe defaults for the selected model type.',
@@ -672,10 +1037,26 @@ async function buildTrainingCodeGenerationAction(
     reasoningEffort: 'low'
   });
 
-  const cleaned = rawCode
-    .replace(/^```(?:python)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '')
-    .trim();
+  let cleaned = sanitizeGeneratedPython(rawCode);
+  const specificImplementationFailure = getSpecificTrainingImplementationFailure(modelType, experimentTaskType, cleaned);
+  if (specificImplementationFailure) {
+    const retryPrompt = [
+      prompt,
+      `Retry requirement: ${specificImplementationFailure}`,
+      specificModelGuidance ? `Use this implementation guidance exactly: ${specificModelGuidance}` : null,
+      'Return replacement raw Python code only.'
+    ].filter(Boolean).join('\n\n');
+    const retryCode = await client.complete({
+      messages: [
+        { role: 'system', content: buildTrainingCodeGenerationSystemPrompt() },
+        { role: 'user', content: retryPrompt }
+      ],
+      temperature: 0.1,
+      maxOutputTokens: 5000,
+      reasoningEffort: 'low'
+    });
+    cleaned = sanitizeGeneratedPython(retryCode);
+  }
   const segments = splitTrainingGeneratedCode(cleaned).slice(0, 4);
   if (segments.length === 0) {
     return [];
@@ -713,40 +1094,51 @@ async function buildTrainingCodeGenerationAction(
 function extractLatestTrainingDraftMetadata(
   state: WorkflowGraphState
 ): TrainingDraftMetadata | null {
-  const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
-  for (let index = currentTurnCalls.length - 1; index >= 0; index -= 1) {
-    const call = currentTurnCalls[index];
-    if (!['write_cell', 'edit_cell', 'insert_cell'].includes(call.tool)) {
-      continue;
-    }
-    const metadata = asRecord(call.args?.metadata);
-    const trainingDraft = asRecord(metadata?.trainingDraft);
-    const rawSegments = Array.isArray(trainingDraft?.segments) ? trainingDraft.segments : null;
-    if (!trainingDraft || !rawSegments || rawSegments.length === 0) {
-      continue;
-    }
+  const latestExperimentId = extractLatestExperimentIdFromHistory(state);
+  const callSources = [
+    state.toolCallHistory.slice(state.turnStartToolCallCount),
+    state.toolCallHistory,
+  ];
 
-    const segments = rawSegments
-      .map((value) => asRecord(value))
-      .filter((value): value is Record<string, unknown> => Boolean(value))
-      .map((segment, segmentIndex) => ({
-        title: asString(segment.title) ?? `Training Step ${segmentIndex + 1}`,
-        content: asString(segment.content) ?? ''
-      }))
-      .filter((segment) => segment.content.trim().length > 0);
-    if (segments.length === 0) {
-      continue;
-    }
+  for (const calls of callSources) {
+    for (let index = calls.length - 1; index >= 0; index -= 1) {
+      const call = calls[index];
+      if (!['write_cell', 'edit_cell', 'insert_cell'].includes(call.tool)) {
+        continue;
+      }
+      const metadata = asRecord(call.args?.metadata);
+      const trainingDraft = asRecord(metadata?.trainingDraft);
+      const rawSegments = Array.isArray(trainingDraft?.segments) ? trainingDraft.segments : null;
+      if (!trainingDraft || !rawSegments || rawSegments.length === 0) {
+        continue;
+      }
+      const experimentId = asString(trainingDraft.experimentId) ?? undefined;
+      if (latestExperimentId && experimentId && experimentId !== latestExperimentId) {
+        continue;
+      }
 
-    return {
-      draftId: asString(trainingDraft.draftId) ?? `training-draft-${randomUUID()}`,
-      experimentId: asString(trainingDraft.experimentId) ?? undefined,
-      datasetId: asString(trainingDraft.datasetId) ?? undefined,
-      datasetFilename: asString(trainingDraft.datasetFilename) ?? undefined,
-      targetColumn: asString(trainingDraft.targetColumn) ?? undefined,
-      segmentIndex: typeof trainingDraft.segmentIndex === 'number' ? trainingDraft.segmentIndex : 0,
-      segments
-    };
+      const segments = rawSegments
+        .map((value) => asRecord(value))
+        .filter((value): value is Record<string, unknown> => Boolean(value))
+        .map((segment, segmentIndex) => ({
+          title: asString(segment.title) ?? `Training Step ${segmentIndex + 1}`,
+          content: asString(segment.content) ?? ''
+        }))
+        .filter((segment) => segment.content.trim().length > 0);
+      if (segments.length === 0) {
+        continue;
+      }
+
+      return {
+        draftId: asString(trainingDraft.draftId) ?? `training-draft-${randomUUID()}`,
+        experimentId,
+        datasetId: asString(trainingDraft.datasetId) ?? undefined,
+        datasetFilename: asString(trainingDraft.datasetFilename) ?? undefined,
+        targetColumn: asString(trainingDraft.targetColumn) ?? undefined,
+        segmentIndex: typeof trainingDraft.segmentIndex === 'number' ? trainingDraft.segmentIndex : 0,
+        segments
+      };
+    }
   }
   return null;
 }
@@ -765,12 +1157,12 @@ function collectTrainingDraftNotebookActivity(
   const seen = new Set<string>();
   const notebookResults: import('../../../types/llm.js').ToolResult[] = [];
   const runResults: import('../../../types/llm.js').ToolResult[] = [];
-  const currentTurnCalls = state.toolCallHistory.slice(state.turnStartToolCallCount);
-  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  const allCalls = state.toolCallHistory;
+  const allResults = state.toolResultHistory;
 
-  for (let index = 0; index < currentTurnResults.length; index += 1) {
-    const call = currentTurnCalls[index];
-    const result = currentTurnResults[index];
+  for (let index = 0; index < allResults.length; index += 1) {
+    const call = allCalls[index];
+    const result = allResults[index];
     if (!call || !result) {
       continue;
     }
@@ -861,7 +1253,16 @@ async function buildTrainingWriteCodeAction(
   if (isFailedToolResult(lastNotebookResult)) {
     return [];
   }
-  if (draftActivity.runResults.some(isCompletedTrainingRunCell)) {
+  // Training is only "complete" when BOTH the __TRAIN_COMPLETE__ marker was
+  // printed AND the model artifact was actually saved by a prior segment.
+  // If the marker fired but no segment called joblib.dump, we still need to
+  // emit the completion footer so register_model can find model.joblib —
+  // otherwise register_model fails with ENOENT and the repair loop churns.
+  const hasCompletedRunMarker = draftActivity.runResults.some(isCompletedTrainingRunCell);
+  const anySegmentSavesArtifact = draft.segments.some((segment) =>
+    typeof segment.content === 'string' && /joblib\.dump\s*\(/.test(segment.content)
+  );
+  if (hasCompletedRunMarker && anySegmentSavesArtifact) {
     return [];
   }
   if (isFailedToolResult(draftActivity.runResults.at(-1) ?? null)) {
@@ -881,7 +1282,43 @@ async function buildTrainingWriteCodeAction(
     return parsedRun.success ? [parsedRun.data] : [];
   }
 
-  if (writtenCellIds.length >= draft.segments.length) {
+  if (writtenCellIds.length >= draft.segments.length && runStatuses.length >= draft.segments.length) {
+    // Only skip the completion footer if a prior segment actually saves the
+    // artifact (joblib.dump) AND emits the __TRAIN_COMPLETE__ marker. The LLM
+    // sometimes prints the marker without saving model.joblib, which makes
+    // register_model fail with ENOENT. Treating marker presence as proof of
+    // artifact save was the root cause of that failure.
+    const completionFooterAlreadyExists = draft.segments.some((segment) => {
+      if (segment.title === 'Finalize Model Artifact and Metrics') return true;
+      const content = segment.content;
+      const hasMarker = content.includes('__TRAIN_COMPLETE__|');
+      const hasArtifactSave = /joblib\.dump\s*\(/.test(content);
+      return hasMarker && hasArtifactSave;
+    });
+    if (!completionFooterAlreadyExists) {
+      const completionSegment = buildTrainingCompletionFooterSegment();
+      const completionDraft: TrainingDraftMetadata = {
+        ...draft,
+        segmentIndex: draft.segments.length,
+        segments: [...draft.segments, completionSegment]
+      };
+      const parsedFooterWrite = ToolCallSchema.safeParse({
+        id: `wf-call-auto-write-training-${draft.draftId}-${completionDraft.segmentIndex}`,
+        tool: 'write_cell',
+        args: {
+          title: completionSegment.title,
+          cellType: 'code',
+          content: completionSegment.content,
+          metadata: {
+            phase: 'training',
+            source: 'training-lifecycle',
+            trainingDraft: completionDraft
+          }
+        },
+        rationale: 'Append a finalization cell so the training workflow saves the artifact and emits the completion marker.'
+      });
+      return parsedFooterWrite.success ? [parsedFooterWrite.data] : [];
+    }
     return [];
   }
 
@@ -1196,17 +1633,56 @@ function resolveNextTrainingStage(
   current: string,
   toolResults: import('../../../types/llm.js').ToolResult[]
 ): string | null {
+  if (current === 'configure_experiment') {
+    const lastConfigure = getLastToolResult(toolResults, 'configure_experiment');
+    if (!lastConfigure || isFailedToolResult(lastConfigure)) {
+      return current;
+    }
+    return 'propose_model';
+  }
+
+  if (current === 'propose_model') {
+    const lastProposal = getLastToolResult(toolResults, 'propose_training_plan');
+    if (!lastProposal || isFailedToolResult(lastProposal)) {
+      return current;
+    }
+    // Approval is handled via pause state plus phaseRequestBuilder's
+    // approved-experiment routing. Do not auto-advance into codegen from
+    // stage order alone, or rejected/missing proposals can leak into
+    // notebook execution within the same turn.
+    return current;
+  }
+
   if (current === 'generate_code') {
-    const lastNotebookFailure = [...toolResults].reverse().find((result) =>
+    // Repair mode is triggered only when the MOST RECENT notebook call is a
+    // failure — scanning history for any past failure would keep this branch
+    // active even after repair succeeded, causing the generator to discard
+    // the existing draft and loop on fresh drafts until MAX_ITERATIONS.
+    const lastNotebookResult = [...toolResults].reverse().find((result) =>
       ['write_cell', 'edit_cell', 'insert_cell', 'run_cell'].includes(result.tool)
-      && isFailedToolResult(result)
     ) ?? null;
-    if (lastNotebookFailure) {
+    const latestNotebookIsFailure = lastNotebookResult !== null && isFailedToolResult(lastNotebookResult);
+    if (latestNotebookIsFailure) {
       const lastInstall = getLastToolResult(toolResults, 'install_package');
       if (lastInstall && !isFailedToolResult(lastInstall)) {
         return 'write_code';
       }
       return 'generate_code';
+    }
+    // Install-only turn (no notebook failure, no draft yet): stay at
+    // generate_code so the next tick drafts the first cell. Advancing to
+    // write_code here would hit DETERMINISTIC_ACTION_EMPTY because the write
+    // stage has no draft to extend.
+    const lastInstall = getLastToolResult(toolResults, 'install_package');
+    if (lastInstall) {
+      const hasSuccessfulDraftWrite = toolResults.some((result) =>
+        ['write_cell', 'edit_cell', 'insert_cell'].includes(result.tool)
+        && !isFailedToolResult(result)
+        && typeof getOutputRecord(result)?.cellId === 'string'
+      );
+      if (!hasSuccessfulDraftWrite) {
+        return 'generate_code';
+      }
     }
   }
 

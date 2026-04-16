@@ -53,6 +53,26 @@ function broadcast(notebookId: string, type: string, data: Record<string, unknow
   }
 }
 
+function ensureVisibleExecutionOutputs(result: ExecutionResult): RichOutput[] {
+  if (result.status === 'success') {
+    return result.outputs;
+  }
+
+  const existing = Array.isArray(result.outputs) ? result.outputs : [];
+  const hasErrorOutput = existing.some((output) => output?.type === 'error');
+
+  const errorText = result.error?.trim() || result.stderr?.trim();
+  if (hasErrorOutput || !errorText) {
+    return existing.length > 0 ? existing : [{ type: 'error', content: errorText || 'Execution failed without an error message.' }];
+  }
+
+  // Append the error message so failures like WebSocket close / kernel death
+  // don't silently drop the error text when the cell already produced partial
+  // rich outputs (e.g., a pytorch_lightning model summary table rendered just
+  // before the kernel died).
+  return [...existing, { type: 'error', content: errorText }];
+}
+
 async function recoverKernelAfterTimeout(container: Container, cellId: string): Promise<void> {
   try {
     await kernelManager.interruptKernel(container);
@@ -172,7 +192,8 @@ export async function executeCell(
     const executionMs = Date.now() - startTime;
 
     // Process outputs (inline vs external storage)
-    const { inlineOutputs, outputRefs } = await processOutputs(cellId, result.outputs);
+    const visibleOutputs = ensureVisibleExecutionOutputs(result);
+    const { inlineOutputs, outputRefs } = await processOutputs(cellId, visibleOutputs);
 
     // Determine final status
     const executionStatus = result.status === 'success' ? 'success' : 'error';

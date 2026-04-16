@@ -21,6 +21,17 @@ export interface EvaluationResult {
     test_scores_mean: number[]; test_scores_std: number[];
   };
   cross_validation?: { scores: number[]; mean: number; std: number; scoring: string };
+  clustering_metrics?: {
+    n_clusters: number;
+    cluster_sizes: Record<string, number>;
+    silhouette?: number | null;
+    davies_bouldin?: number | null;
+    calinski_harabasz?: number | null;
+    projection?: {
+      points: number[][];
+      labels: number[];
+    };
+  };
 }
 
 // ── SHAP ──

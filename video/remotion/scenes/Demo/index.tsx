@@ -4,7 +4,6 @@ import {
   delayRender,
   Easing,
   interpolate,
-  OffthreadVideo,
   staticFile,
   useCurrentFrame,
   useVideoConfig,
@@ -19,6 +18,7 @@ import { capturesPath, mainVideoPath } from "../../helpers/paths";
 import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { useTimelineRunner } from "../../hooks/useTimelineRunner";
 import { ClickRipple } from "../../primitives/ClickRipple";
+import { PreviewCompatibleVideo } from "../../primitives/PreviewCompatibleVideo";
 import { SfxTrigger } from "../../primitives/SfxTrigger";
 import {
   SyntheticCursor,
@@ -45,9 +45,10 @@ const COMP_H = 1080;
  * Demo scene: plays a Playwright-captured screen recording inside an optional
  * window chrome, with synthetic cursor + click-ripple + zoom + sfx overlays.
  *
- * Capture output lives in `public/captures/<beat>.{webm,cursor.json,meta.json}`
- * (see `scripts/capture-demo.ts`). Legacy Open-Recorder clips still work via
- * `videoRoot: "main"`.
+ * Capture output lives in `public/captures/<beat>.{webm,mp4,cursor.json,meta.json}`
+ * (see `scripts/capture-demo.ts`). Studio preview prefers the `.mp4` mirror for
+ * cross-browser playback while renders keep the authored source. Legacy
+ * Open-Recorder clips still work via `videoRoot: "main"`.
  *
  * When `chromeDismissAt` is set, the chrome frame fades out over
  * `chromeDismissDurationFrames` while the video wrapper transforms from the
@@ -89,7 +90,7 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
       outerBackground={getChromeGradient(theme)}
     >
       <TimelineOverlay scene={scene} meta={meta}>
-        <OffthreadVideo
+        <PreviewCompatibleVideo
           src={videoSrc}
           startFrom={startFrom}
           muted
@@ -198,7 +199,7 @@ const DemoWithDismiss: React.FC<DismissProps> = ({
         }}
       >
         <TimelineOverlay scene={scene} meta={meta}>
-          <OffthreadVideo
+          <PreviewCompatibleVideo
             src={videoSrc}
             startFrom={startFrom}
             muted

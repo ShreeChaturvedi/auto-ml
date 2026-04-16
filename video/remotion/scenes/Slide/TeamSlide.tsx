@@ -4,7 +4,7 @@ import { MONOSPACE_FONT, REGULAR_FONT, TITLE_FONT } from "../../../config/fonts"
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
-import { MotionLine } from "../../primitives/MotionLine";
+import { FlourishUnderline } from "../../primitives/FlourishUnderline";
 import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
 import type { StaggeredItem } from "../../primitives/useStaggeredFadeIn";
@@ -47,8 +47,34 @@ const AVATAR_BORDER = 3;
 const COL_WIDTH = 540;
 const COL_GAP = 120;
 
-const DIVIDER_WIDTH = 72;
-const DIVIDER_FRAMES = 28;
+const DIVIDER_WIDTH = 248;
+const DIVIDER_HEIGHT = 18;
+
+// Per-member flourish variants. Both are gentler re-shapings of the HookSlide
+// canonical path (peak `y=5` vs the default `y=1`) so the squiggles read as
+// hand-drawn accents rather than dramatic rhetorical flourishes. The loop
+// position differs between the two so adjacent columns don't look stamped.
+const FLOURISH_PATH_A =
+  "M 0 14 C 22 15, 52 13, 80 14 " +
+  "C 88 15, 92 13, 94 11 " +
+  "C 96 7, 100 5, 103 8 " +
+  "C 106 13, 102 15, 98 12 " +
+  "C 94 10, 98 7, 104 10 " +
+  "C 125 13, 165 15, 200 13";
+const FLOURISH_PATH_B =
+  "M 0 14 C 16 15, 40 12, 72 13 " +
+  "C 108 14, 130 12, 135 13 " +
+  "C 138 8, 142 5, 145 8 " +
+  "C 148 13, 144 15, 140 12 " +
+  "C 136 10, 140 7, 146 10 " +
+  "C 165 14, 185 15, 200 13";
+const FLOURISH_PATHS: readonly string[] = [FLOURISH_PATH_A, FLOURISH_PATH_B];
+
+// Vertical column divider — a 1-px rule that fades in between the two team
+// cards. Peak opacity is deliberately low so the divider reads as structural
+// scaffolding, not a feature, against the near-black foreground color.
+const COLUMN_DIVIDER_DELAY = 70;
+const COLUMN_DIVIDER_PEAK_OPACITY = 0.16;
 
 // Column-local frame offsets (added to each column's `base` frame).
 const MAJORS_AFTER = 20;
@@ -194,6 +220,10 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   }) as TwoCols;
 
   const heading = useFadeIn({ translateY: 8, delay: 0 });
+  const columnDivider = useFadeIn({
+    delay: COLUMN_DIVIDER_DELAY,
+    damping: 200,
+  });
 
   return (
     <SlideShell theme={theme} eyebrow="BUILT BY" pageNumber="03">
@@ -208,7 +238,32 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
         Engineering Team
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", gap: COL_GAP }}>
+      <div
+        style={{
+          position: "relative",
+          display: "flex",
+          justifyContent: "center",
+          gap: COL_GAP,
+        }}
+      >
+        {/* Subtle 1-px vertical divider between the two cards. Fades in after
+            both columns have risen but before the majors finish typing, so
+            the eye has structural scaffolding once both identities are on
+            screen. */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: "50%",
+            width: 1,
+            transform: "translateX(-0.5px)",
+            background: c.WORD_COLOR_ON_BG_APPEARED,
+            opacity: columnDivider.opacity * COLUMN_DIVIDER_PEAK_OPACITY,
+            pointerEvents: "none",
+          }}
+        />
         {TEAM.map((member, i) => (
           <MemberColumn
             key={member.name}
@@ -216,6 +271,7 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
             member={member}
             enter={cols[i] as StaggeredItem}
             base={pCols.start + i * COL_STAGGER}
+            flourishPath={FLOURISH_PATHS[i] ?? FLOURISH_PATH_A}
           />
         ))}
       </div>
@@ -229,7 +285,10 @@ const MemberColumn: React.FC<{
   enter: StaggeredItem;
   /** Absolute frame at which this column starts entering (phase-2 derived). */
   base: number;
-}> = ({ theme, member, enter, base }) => {
+  /** SVG path data driving this column's flourish divider. Each column uses a
+   *  distinct variant so adjacent squiggles don't look stamped from one mold. */
+  flourishPath: string;
+}> = ({ theme, member, enter, base, flourishPath }) => {
   const c = COLORS[theme];
 
   const bullets = useStaggeredFadeIn(member.bullets.length, {
@@ -304,19 +363,24 @@ const MemberColumn: React.FC<{
         />
       </div>
 
-      {/* Subtle divider: separates identity (above) from role + employer (below). */}
-      <div style={{ marginTop: MAJOR_TO_DIVIDER, marginBottom: DIVIDER_TO_ROLE }}>
-        <MotionLine
-          x1={0}
-          y1={0}
-          x2={DIVIDER_WIDTH}
-          y2={0}
+      {/* Hand-drawn squiggle divider — same draw-in flourish as the HookSlide
+          "training models." underline. `drawOut={false}` so it holds through
+          the slide's 14s runtime instead of retracting. */}
+      <div
+        style={{
+          marginTop: MAJOR_TO_DIVIDER,
+          marginBottom: DIVIDER_TO_ROLE,
+          width: DIVIDER_WIDTH,
+          height: DIVIDER_HEIGHT,
+        }}
+      >
+        <FlourishUnderline
           delay={base + DIVIDER_AFTER}
-          durationInFrames={DIVIDER_FRAMES}
-          color={c.WORD_COLOR_ON_BG_APPEARED}
-          strokeWidth={2}
-          svgWidth={DIVIDER_WIDTH}
-          svgHeight={2}
+          drawOut={false}
+          width={DIVIDER_WIDTH}
+          height={DIVIDER_HEIGHT}
+          strokeWidth={2.5}
+          path={flourishPath}
         />
       </div>
 

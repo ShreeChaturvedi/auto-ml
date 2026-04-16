@@ -29,6 +29,7 @@ import { chromium, type BrowserContext, type Page, type Route } from "playwright
 
 import { FPS } from "../config/fps";
 import { resolveMarks, type AlignmentBlock } from "./resolveMarks";
+import { ScreencastRecorder } from "./capture/screencastRecorder";
 import { drive as driveLanding } from "./capture/landingDriver";
 import { drive as driveSignup } from "./capture/signupDriver";
 import { drive as driveHome } from "./capture/homeDriver";
@@ -517,6 +518,18 @@ function makeCursorRecorder(): CursorRecorder {
 // `__name(...)` helper calls around named inner functions and arrow
 // constants. Those helpers aren't defined inside the page context and crash
 // the evaluate() invocation. A JS-literal body dodges the transform entirely.
+//
+// Snap-at-threshold (CRITICAL for video capture): when the easing approaches
+// `raw=1`, each rAF tick lands a handful of pixels short of `target`
+// (e.g. at `raw=0.97`, ease-in-out quad yields `t≈0.9989`, leaving the
+// compositor ~4 px short of target for one animation frame). At a 25 fps
+// webm sampling rate those last 1-3 frames of "almost settled" scroll
+// snapshot into the recording as a visible 3-6 px jitter that cuts the
+// footer wordmark's letter ascenders. The snap-threshold short-circuits
+// once the eased position is within 0.5 px of target: we jump to the exact
+// target, resolve the promise, and queue a double-rAF so the compositor
+// commits the settled paint before the next driver action unblocks. This
+// guarantees the webm never captures a "near-target" scroll frame.
 const RAF_SCROLL_FN = `
 async (target, dur) => {
   await new Promise((resolve) => {
@@ -526,12 +539,18 @@ async (target, dur) => {
     function frame(now) {
       const raw = Math.min(1, (now - start) / dur);
       const t = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2;
-      window.scrollTo({ top: startY + delta * t, behavior: "instant" });
-      if (raw < 1) requestAnimationFrame(frame);
-      else resolve();
+      const y = startY + delta * t;
+      if (raw >= 1 || Math.abs(target - y) < 0.5) {
+        window.scrollTo({ top: target, behavior: "instant" });
+        resolve();
+      } else {
+        window.scrollTo({ top: y, behavior: "instant" });
+        requestAnimationFrame(frame);
+      }
     }
     requestAnimationFrame(frame);
   });
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
 `;
 
@@ -607,6 +626,8 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
   await mkdir(CAPTURES_DIR, { recursive: true });
   const videoTmpDir = path.join(CAPTURES_DIR, `.${cfg.name}-tmp`);
   await mkdir(videoTmpDir, { recursive: true });
+  const useCustomLandingRecorder = cfg.name === "landing";
+  const landingRawCapturePath = path.join(videoTmpDir, `${cfg.name}.raw.mkv`);
 
   // Reset per-beat mock state so reruns start from a known baseline. Beats
   // with `seedAuth` short-circuit the verification flow by pretending the
@@ -621,17 +642,36 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
   // calls it and both no-op on an already-closed instance.
   cleanupFns.push(() => browser.close().catch(() => {}));
   let context: BrowserContext | null = null;
+  let screencastRecorder: ScreencastRecorder | null = null;
   try {
-    // Anchor `__captureStart` to *context-creation* wall time rather than
-    // document-init time. The webm recording begins at `newContext`; pinning
-    // the page's capture origin there keeps cursor `t_ms` values and the
-    // video's t=0 in lockstep, instead of drifting by the ~1-2s pre-nav gap.
-    const contextStartWall = performance.now();
+    // Anchor `__captureStart` to the moment the active recorder starts, not to
+    // document init. The built-in Playwright recorder starts at `newContext`;
+    // the landing-only custom screencast starts immediately after `newPage()`
+    // and before the first navigation. In both cases this keeps cursor `t_ms`
+    // values and video t=0 in lockstep across the pre-nav gap.
+    const contextCreatedWall = performance.now();
+    let captureStartWall = contextCreatedWall;
     context = await browser.newContext({
       viewport: cfg.viewport,
-      recordVideo: { dir: videoTmpDir, size: cfg.viewport },
+      ...(useCustomLandingRecorder ? {} : { recordVideo: { dir: videoTmpDir, size: cfg.viewport } }),
       deviceScaleFactor: 1,
     });
+    let page!: Page;
+    if (useCustomLandingRecorder) {
+      page = await context.newPage();
+      screencastRecorder = await ScreencastRecorder.start({
+        page,
+        outputPath: landingRawCapturePath,
+        size: cfg.viewport,
+      });
+      captureStartWall = screencastRecorder.startedAtWallMs;
+      cleanupFns.push(() =>
+        screencastRecorder
+          ? screencastRecorder.stop().then(() => {}).catch(() => {})
+          : undefined,
+      );
+    }
+
     await context.addInitScript({ content: DETERMINISM_SCRIPT });
 
     // Pre-navigate: disable Hero's 3.2 s auto-scroll BEFORE the page loads.
@@ -644,16 +684,12 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
         ).__heroAutoScrollDisabled = true;
       });
     }
-    // Second init script re-pins `__captureStart` using the elapsed driver
-    // time since context creation. When this runs in the page, the driver's
-    // wall clock has advanced by `offsetMs`; telling the page to subtract
-    // that much from its own `performance.now()` yields the context-creation
-    // moment in page-clock space. IPC latency is single-digit ms — negligible
-    // versus the 1-2s pre-nav gap this removes.
+    // Re-pin `__captureStart` using the elapsed driver time since the active
+    // recorder started so page-clock measurements line up with video t=0.
     await context.addInitScript((offsetMs: number) => {
       (window as Window & { __captureStart?: number }).__captureStart =
         performance.now() - offsetMs;
-    }, performance.now() - contextStartWall);
+    }, performance.now() - captureStartWall);
     if (cfg.seedAuth) {
       await context.addInitScript({ content: AUTH_SEED_SCRIPT });
     }
@@ -665,7 +701,9 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       await context.route("http://localhost:4000/api/**", mockApi);
     }
 
-    const page = await context.newPage();
+    if (!useCustomLandingRecorder) {
+      page = await context.newPage();
+    }
 
     const pacer = await makeMarkPacer(cfg, page);
     const cursor = makeCursorRecorder();
@@ -700,7 +738,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       // Multi-tab driver support. Lightweight enough to pass unconditionally
       // — single-tab drivers just ignore these fields.
       makeCursor: makeCursorRecorder,
-      contextMs: () => performance.now() - contextStartWall,
+      contextMs: () => performance.now() - captureStartWall,
     };
     let driverResult: DriverResult | void;
     if (cfg.name === "landing") {
@@ -720,48 +758,81 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
     const cursorEntries = cursor.entries();
     const extraPages = driverResult?.extraPages ?? [];
     await page.waitForTimeout(250); // small post-drive tail so last frame is clean
-    const videoWallMs = performance.now() - contextStartWall;
-    // Capture video handles BEFORE context.close() — the Video object is
-    // stable (`.path()` resolves post-close), but calling `.video()` on a
-    // closed page throws.
-    const videoHandle = page.video();
-    const extraVideos = extraPages.map((extra) => ({
-      handle: extra.page.video(),
-      entries: extra.entries,
-      openedAtMs: extra.openedAtMs,
-      labelSuffix: extra.labelSuffix,
-      url: extra.url,
-    }));
-    await context.close();
-    context = null;
-
-    // Claim each webm from the tmp dir. Playwright writes randomly-named
-    // files; we match each page to its own file via `video().path()`.
     const finalWebm = path.join(CAPTURES_DIR, `${cfg.name}.webm`);
-    await claimWebm(videoHandle, videoTmpDir, finalWebm);
-    await polishWebm(finalWebm);
-
+    const videoWallMs = performance.now() - captureStartWall;
     const extraFiles: Array<{ file: string; openedAtMs: number; url?: string }> = [];
-    for (const extra of extraVideos) {
-      const suffixed = path.join(
-        CAPTURES_DIR,
-        `${cfg.name}-${extra.labelSuffix}.webm`,
-      );
-      await claimWebm(extra.handle, videoTmpDir, suffixed);
-      await polishWebm(suffixed);
-      const cursorName = `${cfg.name}-${extra.labelSuffix}.cursor.json`;
-      await writeFile(
-        path.join(CAPTURES_DIR, cursorName),
-        JSON.stringify(extra.entries, null, 2) + "\n",
-      );
-      extraFiles.push({
-        file: `${cfg.name}-${extra.labelSuffix}.webm`,
-        openedAtMs: Math.round(extra.openedAtMs),
-        ...(extra.url ? { url: extra.url } : {}),
-      });
-      console.log(
-        `[capture] ${cfg.name}-${extra.labelSuffix}: ${extra.entries.length} cursor waypoints`,
-      );
+
+    if (screencastRecorder) {
+      if (extraPages.length > 0) {
+        throw new Error("[capture] landing custom recorder does not support extra pages");
+      }
+      const rawCapturePath = await screencastRecorder.stop();
+      screencastRecorder = null;
+      await context.close();
+      context = null;
+      await polishWebm(rawCapturePath, finalWebm);
+      await writePreviewMp4(finalWebm);
+      await rm(rawCapturePath, { force: true }).catch(() => {});
+    } else {
+      // Capture video handles BEFORE context.close() — the Video object is
+      // stable (`.path()` resolves post-close), but calling `.video()` on a
+      // closed page throws.
+      const videoHandle = page.video();
+      const extraVideos = extraPages.map((extra) => ({
+        handle: extra.page.video(),
+        entries: extra.entries,
+        openedAtMs: extra.openedAtMs,
+        labelSuffix: extra.labelSuffix,
+        url: extra.url,
+      }));
+      await context.close();
+      context = null;
+
+      // Claim each webm from the tmp dir. Playwright writes randomly-named
+      // files; we match each page to its own file via `video().path()`.
+      await claimWebm(videoHandle, videoTmpDir, finalWebm);
+      await polishWebm(finalWebm);
+      await writePreviewMp4(finalWebm);
+
+      for (const extra of extraVideos) {
+        const suffixed = path.join(
+          CAPTURES_DIR,
+          `${cfg.name}-${extra.labelSuffix}.webm`,
+        );
+        await claimWebm(extra.handle, videoTmpDir, suffixed);
+        await polishWebm(suffixed);
+        await writePreviewMp4(suffixed);
+        const cursorName = `${cfg.name}-${extra.labelSuffix}.cursor.json`;
+        await writeFile(
+          path.join(CAPTURES_DIR, cursorName),
+          JSON.stringify(extra.entries, null, 2) + "\n",
+        );
+        const extraDurationMs = await probeDurationMs(
+          suffixed,
+          Math.max(1, videoWallMs - extra.openedAtMs),
+        );
+        const extraMeta: CaptureMeta = {
+          fps: FPS,
+          width: cfg.viewport.width,
+          height: cfg.viewport.height,
+          durationMs: Math.round(extraDurationMs),
+        };
+        await writeFile(
+          path.join(
+            CAPTURES_DIR,
+            `${cfg.name}-${extra.labelSuffix}.meta.json`,
+          ),
+          JSON.stringify(extraMeta, null, 2) + "\n",
+        );
+        extraFiles.push({
+          file: `${cfg.name}-${extra.labelSuffix}.webm`,
+          openedAtMs: Math.round(extra.openedAtMs),
+          ...(extra.url ? { url: extra.url } : {}),
+        });
+        console.log(
+          `[capture] ${cfg.name}-${extra.labelSuffix}: ${extra.entries.length} cursor waypoints`,
+        );
+      }
     }
 
     // Remove tmp dir + any remaining orphan files.
@@ -798,6 +869,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       `[capture] ${cfg.name}: ${(st.size / 1e6).toFixed(2)} MB, ${(meta.durationMs / 1000).toFixed(2)}s, ${cursorEntries.length} cursor waypoints`,
     );
   } finally {
+    if (screencastRecorder) await screencastRecorder.stop().catch(() => {});
     if (context) await context.close().catch(() => {});
     await browser.close().catch(() => {});
     // Ensure the tmp dir is gone even if we errored before cleanup above.
@@ -836,17 +908,30 @@ async function claimWebm(
  * Re-encode a Playwright VP8 webm with VP9 at dramatically higher quality.
  * Playwright's VP8 encoder is hardcoded at ~1 Mbps — unusable for 1080p60
  * (produces visible flicker, banding, mosquito noise). VP9 CRF 22 with
- * temporal denoising produces clean output at ~4-6 Mbps.
+ * a lightly-tuned denoise + unsharp chain produces clean output at ~8-9 Mbps.
+ *
+ * Filter chain rationale (order matters — denoise BEFORE sharpen so we don't
+ * amplify compression noise):
+ *   1. `hqdn3d=1.5:1:2:1.5` — a gentler spatial/temporal denoise than the
+ *      previous `3:2:4:3`. The old values were aggressive enough to soften
+ *      1-2 px stroke details (e.g. the 1.5 px metallic-outline on the footer
+ *      "AGENT" watermark), creating a halo/blur at letter edges that read
+ *      visually as "clipping" of the letter tops. Lighter params still kill
+ *      VP8 mosquito noise without eating sub-pixel strokes.
+ *   2. `unsharp=5:5:0.5:5:5:0.0` — restores perceived stroke sharpness on
+ *      the thin details Playwright's VP8 encoder blurs. Luma-only (chroma
+ *      amount = 0.0) to avoid color ringing. Mild amount (0.5) avoids a
+ *      halo of its own — we want "as crisp as the DOM", not oversharpened.
  *
  * Falls back silently to the raw VP8 if ffmpeg isn't available.
  */
-async function polishWebm(webmPath: string): Promise<void> {
-  const tmpOut = webmPath + ".tmp.webm";
+async function polishWebm(inputPath: string, outputPath = inputPath): Promise<void> {
+  const tmpOut = outputPath + ".tmp.webm";
   try {
     execFileSync("ffmpeg", [
       "-y",
-      "-i", webmPath,
-      "-vf", "hqdn3d=3:2:4:3",
+      "-i", inputPath,
+      "-vf", "hqdn3d=1.5:1:2:1.5,unsharp=5:5:0.5:5:5:0.0",
       "-c:v", "libvpx-vp9",
       "-crf", "22",
       "-b:v", "0",
@@ -855,11 +940,57 @@ async function polishWebm(webmPath: string): Promise<void> {
       "-row-mt", "1",
       tmpOut,
     ], { timeout: 180_000, stdio: "pipe" });
-    await rename(tmpOut, webmPath);
-    console.log(`[capture] polished ${path.basename(webmPath)} → VP9 + denoise`);
+    await rename(tmpOut, outputPath);
+    console.log(`[capture] polished ${path.basename(outputPath)} → VP9 + denoise + unsharp`);
   } catch {
-    console.warn(`[capture] ffmpeg polish skipped for ${path.basename(webmPath)} (ffmpeg unavailable or failed)`);
+    console.warn(`[capture] ffmpeg polish skipped for ${path.basename(outputPath)} (ffmpeg unavailable or failed)`);
     await rm(tmpOut, { force: true }).catch(() => {});
+    if (inputPath !== outputPath) {
+      const inputExt = path.extname(inputPath).toLowerCase();
+      const outputExt = path.extname(outputPath).toLowerCase();
+      if (inputExt !== outputExt) {
+        await rm(outputPath, { force: true }).catch(() => {});
+        throw new Error(
+          `[capture] ffmpeg polish failed for ${path.basename(outputPath)} — refusing to relabel ${path.basename(inputPath)} as ${outputExt || "the requested output format"}`,
+        );
+      }
+      await rename(inputPath, outputPath).catch(async () => {
+        // If a stale output exists or the rename races, best-effort replace it.
+        await rm(outputPath, { force: true }).catch(() => {});
+        await rename(inputPath, outputPath);
+      });
+    }
+  }
+}
+
+/**
+ * Emit an H.264 MP4 mirror beside the authoritative webm for browser-preview
+ * compatibility. Studio preview prefers the `.mp4`; if this step fails we
+ * delete any stale mirror so preview cleanly falls back to the fresh webm.
+ */
+async function writePreviewMp4(webmPath: string): Promise<void> {
+  const mp4Path = webmPath.replace(/\.webm$/i, ".mp4");
+  if (mp4Path === webmPath) return;
+
+  const tmpOut = mp4Path + ".tmp.mp4";
+  try {
+    execFileSync("ffmpeg", [
+      "-y",
+      "-i", webmPath,
+      "-an",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "18",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      tmpOut,
+    ], { timeout: 180_000, stdio: "pipe" });
+    await rename(tmpOut, mp4Path);
+    console.log(`[capture] wrote ${path.basename(mp4Path)} preview mirror`);
+  } catch {
+    console.warn(`[capture] mp4 preview mirror skipped for ${path.basename(webmPath)} (ffmpeg unavailable or failed)`);
+    await rm(tmpOut, { force: true }).catch(() => {});
+    await rm(mp4Path, { force: true }).catch(() => {});
   }
 }
 

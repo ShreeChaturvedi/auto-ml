@@ -39,6 +39,7 @@ const DIORAMA_META: Record<PhaseSceneData['dioramaId'], { label: string; phase: 
 
 interface PhaseSceneProps {
   scene: PhaseSceneData;
+  autoplayDiorama?: boolean;
   preloadAllDioramaPhases?: boolean;
 }
 
@@ -47,6 +48,7 @@ interface PhaseSceneProps {
 // identical (counter + headline + diorama).
 function PhaseScene({
   scene,
+  autoplayDiorama = true,
   preloadAllDioramaPhases = true,
 }: PhaseSceneProps) {
   const diorama = DIORAMA_META[scene.dioramaId];
@@ -64,6 +66,7 @@ function PhaseScene({
         <WorkspaceDiorama
           label={diorama.label}
           phase={diorama.phase}
+          autoplay={autoplayDiorama}
           preloadAll={preloadAllDioramaPhases}
         />
       </div>
@@ -159,7 +162,11 @@ export default function HowItWorks() {
             <li key={scene.code} className={styles.fallbackItem}>
               <span className={styles.fallbackCode}>{scene.code}</span>
               <figure className={styles.fallbackFigure}>
-                <PhaseScene scene={scene} preloadAllDioramaPhases={false} />
+                <PhaseScene
+                  scene={scene}
+                  autoplayDiorama={false}
+                  preloadAllDioramaPhases={false}
+                />
               </figure>
             </li>
           ))}

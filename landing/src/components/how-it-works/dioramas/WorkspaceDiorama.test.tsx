@@ -1,66 +1,63 @@
-import { act, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { render } from '@testing-library/react';
 
-import { WORKSPACE_PREVIEW_READY_MESSAGE_TYPE } from '@/lib/workspacePreviewMessaging';
 import { WorkspaceDiorama } from './WorkspaceDiorama';
 
 describe('WorkspaceDiorama', () => {
-  it('keeps how-it-works pinned mode on a single iframe preview', () => {
-    const { container } = render(
-      <WorkspaceDiorama
-        label="1.0 INGEST — real workspace preview"
-        phase="upload"
-        preloadAll
-      />,
+  it('renders the ingest preview loop for the upload phase without an iframe', () => {
+    const { container, getByTestId } = render(
+      <WorkspaceDiorama label="1.0 INGEST — real workspace preview" phase="upload" />,
     );
 
-    expect(container.querySelectorAll('iframe')).toHaveLength(1);
-    expect(container.querySelector('iframe')).toHaveAttribute(
-      'src',
-      '/workspace-preview?phase=upload',
+    expect(container.querySelectorAll('iframe')).toHaveLength(0);
+    expect(getByTestId('ingest-preview-loop')).toHaveAttribute(
+      'data-preview-id',
+      'ingest',
     );
   });
 
-  it('posts a phase-change message into the existing iframe after it is ready', () => {
-    const { container, rerender } = render(
-      <WorkspaceDiorama
-        label="1.0 INGEST — real workspace preview"
-        phase="upload"
-        preloadAll
-      />,
+  it('swaps to the matching preview loop when the phase prop changes', () => {
+    const { container, getByTestId, queryByTestId, rerender } = render(
+      <WorkspaceDiorama label="1.0 INGEST — real workspace preview" phase="upload" />,
     );
 
-    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe, 'contentWindow', {
-      configurable: true,
-      value: { postMessage },
-    });
-
-    act(() => {
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          source: iframe.contentWindow as MessageEventSource,
-          data: { type: WORKSPACE_PREVIEW_READY_MESSAGE_TYPE },
-        }),
-      );
-    });
+    expect(getByTestId('ingest-preview-loop')).toBeInTheDocument();
 
     rerender(
       <WorkspaceDiorama
-        label="1.0 INGEST — real workspace preview"
+        label="6.0 EXPERIMENTS — real leaderboard workspace"
         phase="experiments"
-        preloadAll
       />,
     );
 
-    expect(container.querySelectorAll('iframe')).toHaveLength(1);
-    expect(postMessage).toHaveBeenCalledWith(
-      {
-        type: 'landing-workspace-preview:set-phase',
-        phase: 'experiments',
-      },
-      '*',
+    expect(container.querySelectorAll('iframe')).toHaveLength(0);
+    expect(queryByTestId('ingest-preview-loop')).toBeNull();
+    expect(getByTestId('experiments-preview-loop')).toHaveAttribute(
+      'data-preview-id',
+      'experiments',
     );
+  });
+
+  it('renders a preview loop for every workflow phase', () => {
+    const cases: Array<[
+      'upload' | 'data-viewer' | 'preprocessing' | 'feature-engineering' | 'training' | 'experiments' | 'deployment',
+      string,
+    ]> = [
+      ['upload',              'ingest-preview-loop'],
+      ['data-viewer',         'explore-preview-loop'],
+      ['preprocessing',       'preprocess-preview-loop'],
+      ['feature-engineering', 'engineer-preview-loop'],
+      ['training',            'train-preview-loop'],
+      ['experiments',         'experiments-preview-loop'],
+      ['deployment',          'deploy-preview-loop'],
+    ];
+
+    for (const [phase, testId] of cases) {
+      const { getByTestId, unmount } = render(
+        <WorkspaceDiorama label={`${phase} scene`} phase={phase} />,
+      );
+      expect(getByTestId(testId)).toBeInTheDocument();
+      unmount();
+    }
   });
 });

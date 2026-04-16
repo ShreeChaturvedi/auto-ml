@@ -108,7 +108,7 @@ const TIMELINE_MARKERS: readonly TimelineMarker[] = [
   },
 ] as const;
 
-const LEFT_PANEL_HEADER = "What AutoML automated";
+const LEFT_PANEL_HEADER = "What Previous Tools Automated";
 const LEFT_PANEL_ITEMS = [
   "model search",
   "hyperparameter tuning",
@@ -116,7 +116,7 @@ const LEFT_PANEL_ITEMS = [
   "metric evaluation",
 ] as const;
 
-const RIGHT_PANEL_HEADER = "What it didn't";
+const RIGHT_PANEL_HEADER = "What they didn't";
 const RIGHT_PANEL_ITEMS = [
   "domain framing",
   "data profiling",

@@ -135,6 +135,16 @@ declare module '@frontend/components/notebook/NotebookCellOutput' {
   }>;
 }
 
+declare module '@frontend/components/training/CellOutputRenderer' {
+  import type { ComponentType } from 'react';
+  import type { RichOutput } from '@frontend/lib/api/execution';
+
+  export const CellOutputRenderer: ComponentType<{
+    outputs: RichOutput[];
+    className?: string;
+  }>;
+}
+
 declare module '@frontend/components/ui/tooltip' {
   import type { ComponentType, ReactNode } from 'react';
 
@@ -142,6 +152,106 @@ declare module '@frontend/components/ui/tooltip' {
     children?: ReactNode;
     delayDuration?: number;
   }>;
+}
+
+declare module '@frontend/components/ui/card' {
+  import type { ForwardRefExoticComponent, HTMLAttributes, RefAttributes } from 'react';
+  type CardPart = ForwardRefExoticComponent<
+    HTMLAttributes<HTMLDivElement> & RefAttributes<HTMLDivElement>
+  >;
+  export const Card: CardPart;
+  export const CardHeader: CardPart;
+  export const CardTitle: CardPart;
+  export const CardDescription: CardPart;
+  export const CardContent: CardPart;
+  export const CardFooter: CardPart;
+}
+
+declare module '@frontend/components/ui/button' {
+  import type {
+    ButtonHTMLAttributes,
+    ForwardRefExoticComponent,
+    RefAttributes,
+  } from 'react';
+  export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+    variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
+    size?: 'default' | 'sm' | 'lg' | 'icon' | 'icon-sm' | 'icon-xs';
+    asChild?: boolean;
+  }
+  export const Button: ForwardRefExoticComponent<
+    ButtonProps & RefAttributes<HTMLButtonElement>
+  >;
+}
+
+declare module '@frontend/components/ui/badge' {
+  import type { ComponentType, HTMLAttributes } from 'react';
+  export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
+    variant?: 'default' | 'secondary' | 'destructive' | 'outline';
+  }
+  export const Badge: ComponentType<BadgeProps>;
+}
+
+declare module '@frontend/components/ui/progress' {
+  import type {
+    ComponentPropsWithoutRef,
+    ComponentRef,
+    ForwardRefExoticComponent,
+    RefAttributes,
+  } from 'react';
+  import type * as ProgressPrimitive from '@radix-ui/react-progress';
+  export interface ProgressProps
+    extends ComponentPropsWithoutRef<typeof ProgressPrimitive.Root> {
+    /** Optional Tailwind class for the indicator bg. */
+    indicatorClassName?: string;
+  }
+  export const Progress: ForwardRefExoticComponent<
+    ProgressProps & RefAttributes<ComponentRef<typeof ProgressPrimitive.Root>>
+  >;
+}
+
+declare module '@frontend/components/ui/separator' {
+  import type { ForwardRefExoticComponent, HTMLAttributes, RefAttributes } from 'react';
+  export interface SeparatorProps extends HTMLAttributes<HTMLDivElement> {
+    orientation?: 'horizontal' | 'vertical';
+    decorative?: boolean;
+  }
+  export const Separator: ForwardRefExoticComponent<
+    SeparatorProps & RefAttributes<HTMLDivElement>
+  >;
+}
+
+declare module '@frontend/components/ui/table' {
+  import type {
+    ForwardRefExoticComponent,
+    HTMLAttributes,
+    RefAttributes,
+    TdHTMLAttributes,
+    ThHTMLAttributes,
+  } from 'react';
+  export const Table: ForwardRefExoticComponent<
+    HTMLAttributes<HTMLTableElement> & RefAttributes<HTMLTableElement>
+  >;
+  export const TableHeader: ForwardRefExoticComponent<
+    HTMLAttributes<HTMLTableSectionElement> & RefAttributes<HTMLTableSectionElement>
+  >;
+  export const TableBody: ForwardRefExoticComponent<
+    HTMLAttributes<HTMLTableSectionElement> & RefAttributes<HTMLTableSectionElement>
+  >;
+  export const TableFooter: ForwardRefExoticComponent<
+    HTMLAttributes<HTMLTableSectionElement> & RefAttributes<HTMLTableSectionElement>
+  >;
+  export const TableRow: ForwardRefExoticComponent<
+    HTMLAttributes<HTMLTableRowElement> & RefAttributes<HTMLTableRowElement>
+  >;
+  export const TableHead: ForwardRefExoticComponent<
+    ThHTMLAttributes<HTMLTableCellElement> & RefAttributes<HTMLTableCellElement>
+  >;
+  export const TableCell: ForwardRefExoticComponent<
+    TdHTMLAttributes<HTMLTableCellElement> & RefAttributes<HTMLTableCellElement>
+  >;
+  export const TableCaption: ForwardRefExoticComponent<
+    HTMLAttributes<HTMLTableCaptionElement> & RefAttributes<HTMLTableCaptionElement>
+  >;
 }
 
 declare module '@frontend/lib/api/client' {

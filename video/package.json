@@ -11,6 +11,7 @@
     "render:lambda": "tsx scripts/render-lambda.mts",
     "voiceover": "tsx scripts/voiceover.mts",
     "capture:demo": "tsx scripts/capture-demo.ts",
+    "capture:landing-previews": "tsx scripts/capture-landing-previews.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

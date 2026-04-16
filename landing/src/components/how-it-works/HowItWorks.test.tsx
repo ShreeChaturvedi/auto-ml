@@ -57,16 +57,23 @@ describe('HowItWorks (reduced-motion fallback)', () => {
 
   it('renders an ordered list with 7 list items (stacked, not pinned)', () => {
     const { container } = render(<HowItWorks />);
-    const ol = container.querySelector('ol');
-    expect(ol).not.toBeNull();
-    const items = container.querySelectorAll('ol > li');
-    expect(items).toHaveLength(PHASE_SCENES.length);
+    const fallbackOl = container.querySelector('ol');
+    expect(fallbackOl).not.toBeNull();
+    // Some mocks have their own inner <ol> (plan preview, deploy stages), so
+    // descendant `ol > li` over-counts. Scope to direct children of the
+    // outermost fallback list only.
+    const directItems = Array.from(fallbackOl?.children ?? []).filter(
+      (el) => el.tagName === 'LI',
+    );
+    expect(directItems).toHaveLength(PHASE_SCENES.length);
   });
 
-  it('renders only one workspace preview iframe per fallback scene', () => {
+  it('renders one poster-backed phase preview per fallback scene (no autoplaying videos)', () => {
     const { container } = render(<HowItWorks />);
-    const iframes = container.querySelectorAll('iframe');
-    expect(iframes).toHaveLength(PHASE_SCENES.length);
+    expect(container.querySelectorAll('iframe')).toHaveLength(0);
+    const posterRoots = container.querySelectorAll('[data-preview-mode="poster"]');
+    expect(posterRoots).toHaveLength(PHASE_SCENES.length);
+    expect(container.querySelectorAll('video')).toHaveLength(0);
   });
 
   it('does not render pinned scroll scaffolding (no progressbar, no tabs)', () => {

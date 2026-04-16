@@ -192,6 +192,15 @@ export async function drive(
     `[landing-driver] Phase N reached scrollY=${finalY} (target=${scrollHeight - viewportH})`,
   );
 
+  // Settle barrier: give the webm encoder ~150 ms of fully-settled frames
+  // before any subsequent action (cursor move / page.locator / hover
+  // transitions) to guarantee Phase O opens on content that is pixel-stable
+  // relative to the footer wordmark's `overflow: hidden` clip boundary.
+  // Without this pad, the final 1-2 video frames of Phase N — where the
+  // easing's tail eval lands a handful of pixels short of target — bleed
+  // into the bottom-of-page hold and clip the wordmark's letter ascenders.
+  await page.waitForTimeout(150);
+
   // --- Phase O: FooterCta pause — cursor on CTA button ---------------------
   const footerCta = await safeCenter(page, ".footer-cta-button");
   await cursor.move(page, footerCta.x, footerCta.y, 6);

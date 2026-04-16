@@ -10,7 +10,11 @@ import type {
 } from "../../config/scenes";
 import { FPS } from "../../config/fps";
 import { DIMENSIONS } from "../../config/layout";
-import { voiceoverPath } from "../helpers/paths";
+import {
+  captureMetaFileForVideo,
+  getCaptureMediaDurationFrames,
+} from "../helpers/demoMedia";
+import { capturesPath, voiceoverPath } from "../helpers/paths";
 
 const hasVoiceover = (
   scene: SelectableScene,
@@ -63,9 +67,35 @@ const loadDuration = async (
     return Math.max(1, Math.ceil(seconds * FPS));
   } catch (err) {
     console.warn(
-      `[calc-metadata] Failed to read voiceover "${voiceoverFile}" — falling back to scene.durationInFrames. Cause:`,
+      `[calc-metadata] Failed to read voiceover "${voiceoverFile}" — falling back to capture metadata or scene.durationInFrames. Cause:`,
       err,
     );
+    return null;
+  }
+};
+
+type CaptureMeta = {
+  durationMs?: number;
+};
+
+const loadCaptureDuration = async (
+  scene: SelectableScene,
+): Promise<number | null> => {
+  if (scene.type !== "demo") return null;
+
+  const metaFile = captureMetaFileForVideo(scene.videoFile);
+  const url = staticFile(capturesPath(metaFile));
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const meta = (await res.json()) as CaptureMeta;
+    return getCaptureMediaDurationFrames({
+      durationMs: meta.durationMs ?? Number.NaN,
+      startOffsetSeconds: scene.startOffset,
+      fps: FPS,
+    });
+  } catch {
     return null;
   }
 };
@@ -73,29 +103,32 @@ const loadDuration = async (
 /**
  * Resolve a scene's duration (in frames) and its optional alignment sidecar.
  *
- * Duration priority: voiceover MP3 length → scene.durationInFrames.
- * VO durations drive total composition length so scene content determines
- * pacing rather than hardcoded numbers. Every scene variant defines
- * `durationInFrames` with a default (see config/scenes.ts), so the
- * fallback branch is always safe.
+ * Duration priority: voiceover MP3 length → capture meta duration →
+ * scene.durationInFrames. VO durations drive total composition length so scene
+ * content determines pacing rather than hardcoded numbers. When a capture beat
+ * exists but the MP3 does not, `.meta.json` keeps demo scenes aligned to the
+ * trimmed clip length instead of holding on a dead last frame.
  *
- * MP3 duration and alignment JSON are loaded **in parallel** per scene, so
- * metadata resolution across many scenes parallelises fully via the
- * outer `Promise.all` in computeScenesWithMetadata.
+ * MP3 duration, alignment JSON, and capture metadata are loaded **in parallel**
+ * per scene, so metadata resolution across many scenes parallelises fully via
+ * the outer `Promise.all` in computeScenesWithMetadata.
  */
 const resolveSceneData = async (
   scene: SelectableScene,
 ): Promise<SceneTimingData> => {
-  if (!hasVoiceover(scene)) {
-    return { durationInFrames: scene.durationInFrames, voiceoverAvailable: false };
-  }
-  const [duration, alignment] = await Promise.all([
-    loadDuration(scene.voiceoverFile),
-    loadAlignment(scene.voiceoverFile),
+  const [voiceoverDuration, alignment, captureDuration] = await Promise.all([
+    hasVoiceover(scene) ? loadDuration(scene.voiceoverFile) : Promise.resolve(null),
+    hasVoiceover(scene)
+      ? loadAlignment(scene.voiceoverFile)
+      : Promise.resolve(undefined),
+    loadCaptureDuration(scene),
   ]);
+
   return {
-    durationInFrames: duration ?? scene.durationInFrames,
-    voiceoverAvailable: duration !== null,
+    durationInFrames:
+      voiceoverDuration ?? captureDuration ?? scene.durationInFrames,
+    voiceoverAvailable:
+      hasVoiceover(scene) && voiceoverDuration !== null,
     ...(alignment ? { alignment } : {}),
   };
 };

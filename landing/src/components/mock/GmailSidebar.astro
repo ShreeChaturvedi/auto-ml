@@ -1,0 +1,144 @@
+---
+// Gmail left-rail lookalike — Compose button + Inbox/Starred/Sent folder list.
+// Inbox is the active folder on both the inbox list page and the email-
+// detail page, since the thread we're reading lives in the inbox.
+interface Props {
+  activeLabel?: 'inbox' | 'starred' | 'sent' | 'drafts';
+}
+const { activeLabel = 'inbox' } = Astro.props;
+
+type Item = { key: 'inbox' | 'starred' | 'sent' | 'drafts'; label: string; count?: number };
+const ITEMS: Item[] = [
+  { key: 'inbox',   label: 'Inbox',    count: 1 },
+  { key: 'starred', label: 'Starred'  },
+  { key: 'sent',    label: 'Sent'     },
+  { key: 'drafts',  label: 'Drafts'   },
+];
+---
+
+<aside class="gm-sidebar">
+  <button class="gm-compose">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#3C4043" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 20h9"></path>
+      <path d="M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+    </svg>
+    Compose
+  </button>
+
+  <nav aria-label="Mailboxes">
+    <ul class="gm-labels">
+      {ITEMS.map((item) => (
+        <li>
+          <a
+            href={item.key === 'inbox' ? '/mock-gmail' : '#'}
+            class:list={['gm-label-row', item.key === activeLabel && 'gm-label-active']}
+            aria-current={item.key === activeLabel ? 'page' : undefined}
+          >
+            <span class="gm-label-icon" aria-hidden="true">
+              {item.key === 'inbox' && (
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 12l-6-6H8l-6 6v7a2 2 0 002 2h16a2 2 0 002-2v-7z"></path>
+                  <path d="M2 12h5l2 3h6l2-3h5"></path>
+                </svg>
+              )}
+              {item.key === 'starred' && (
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+                  <polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9 12 2"></polygon>
+                </svg>
+              )}
+              {item.key === 'sent' && (
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              )}
+              {item.key === 'drafts' && (
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+                  <path d="M14 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-9"></path>
+                  <path d="M18.5 2.5a2.12 2.12 0 113 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+              )}
+            </span>
+            <span class="gm-label-text">{item.label}</span>
+            {item.count ? <span class="gm-label-count">{item.count}</span> : null}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+</aside>
+
+<style>
+  .gm-sidebar {
+    width: 256px;
+    flex-shrink: 0;
+    padding: 12px 12px 24px;
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .gm-compose {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px;
+    height: 56px;
+    background: #C2E7FF;
+    border: 0;
+    border-radius: 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #001D35;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    transition: box-shadow 120ms ease-out;
+  }
+  .gm-compose:hover {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.04);
+  }
+
+  .gm-labels {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .gm-label-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 24px;
+    height: 32px;
+    border-radius: 0 16px 16px 0;
+    color: #202124;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 400;
+    transition: background-color 120ms ease-out;
+  }
+  .gm-label-row:hover {
+    background: rgba(32,33,36,0.06);
+  }
+  .gm-label-active {
+    background: #D3E3FD;
+    font-weight: 600;
+    color: #001D35;
+  }
+  .gm-label-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #5F6368;
+  }
+  .gm-label-active .gm-label-icon { color: #001D35; }
+  .gm-label-text { flex: 1; }
+  .gm-label-count {
+    font-size: 12px;
+    color: #5F6368;
+  }
+  .gm-label-active .gm-label-count { color: #001D35; }
+</style>

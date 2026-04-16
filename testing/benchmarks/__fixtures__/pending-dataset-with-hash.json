@@ -4,7 +4,7 @@
   "kind": "public",
   "slug": "adult-income",
   "version": 1,
-  "status": "staged",
+  "status": "pending",
   "task": {
     "type": "classification",
     "targetColumn": "income",
@@ -12,13 +12,14 @@
   },
   "storage": {
     "root": "testing/benchmarks/data/public/adult-income/v1",
-    "canonicalFile": "wrong.csv"
+    "canonicalFile": "canonical/data.csv"
   },
   "integrity": {
-    "canonicalSha256": "not-a-real-hash"
+    "canonicalSha256": "1111111111111111111111111111111111111111111111111111111111111111"
   },
   "provenance": {
+    "upstreamUrl": "https://example.com/adult-income",
     "acquisition": "scripted-open",
-    "license": "CC BY 4.0"
+    "license": "See upstream terms"
   }
 }

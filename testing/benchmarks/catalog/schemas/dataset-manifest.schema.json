@@ -10,6 +10,7 @@
     "kind",
     "slug",
     "version",
+    "status",
     "task",
     "storage",
     "integrity",
@@ -21,6 +22,7 @@
     "kind": { "enum": ["public", "derived", "poison"] },
     "slug": { "type": "string" },
     "version": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["pending", "staged"] },
     "task": {
       "type": "object",
       "additionalProperties": false,
@@ -46,8 +48,15 @@
       "required": ["canonicalSha256"],
       "properties": {
         "canonicalSha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

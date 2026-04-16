@@ -4,6 +4,7 @@
   "kind": "public",
   "slug": "adult-income",
   "version": 1,
+  "status": "staged",
   "task": {
     "type": "classification",
     "targetColumn": "income",

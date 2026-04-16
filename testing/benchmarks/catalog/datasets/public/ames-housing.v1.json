@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "public.ames-housing.v1",
+  "kind": "public",
+  "slug": "ames-housing",
+  "version": 1,
+  "status": "pending",
+  "task": {
+    "type": "regression",
+    "targetColumn": "sale_price",
+    "primaryMetric": "rmse"
+  },
+  "storage": {
+    "root": "testing/benchmarks/data/public/ames-housing/v1",
+    "canonicalFile": "canonical/data.csv"
+  },
+  "integrity": {
+    "canonicalSha256": null
+  },
+  "provenance": {
+    "upstreamUrl": "https://www.kaggle.com/c/house-prices-advanced-regression-techniques",
+    "acquisition": "manual-stage",
+    "license": "See upstream terms"
+  },
+  "suiteRefs": ["expo-public-p0.v1"]
+}

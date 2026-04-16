@@ -92,7 +92,7 @@ function validateDatasetManifest(file: string, value: JsonValue): ValidationIssu
 
   expectExactKeys(
     value,
-    ['schemaVersion', 'id', 'kind', 'slug', 'version', 'task', 'storage', 'integrity', 'provenance', 'splitContract', 'suiteRefs', 'lineage'],
+    ['schemaVersion', 'id', 'kind', 'slug', 'version', 'status', 'task', 'storage', 'integrity', 'provenance', 'splitContract', 'suiteRefs', 'lineage'],
     file,
     'dataset manifest',
     issues,
@@ -102,21 +102,27 @@ function validateDatasetManifest(file: string, value: JsonValue): ValidationIssu
     issues.push({ file, message: 'schemaVersion must equal 1' });
   }
 
-  if (!['public', 'derived', 'poison'].includes(String(value.kind))) {
+  if (typeof value.kind === 'string' && !['public', 'derived', 'poison'].includes(value.kind)) {
     issues.push({ file, message: 'kind must be public, derived, or poison' });
   }
 
   expectNonEmptyString(value, 'id', file, issues);
   expectNonEmptyString(value, 'kind', file, issues);
   expectNonEmptyString(value, 'slug', file, issues);
+  expectNonEmptyString(value, 'status', file, issues);
 
   if (typeof value.version !== 'number' || !Number.isInteger(value.version) || value.version < 1) {
     issues.push({ file, message: 'version must be a positive integer' });
   }
 
+  if (typeof value.status === 'string' && !['pending', 'staged'].includes(value.status)) {
+    issues.push({ file, message: 'status must be pending or staged' });
+  }
+
   const kind = typeof value.kind === 'string' ? value.kind : '<kind>';
   const slug = typeof value.slug === 'string' ? value.slug : '<slug>';
   const version = typeof value.version === 'number' ? value.version : '<version>';
+  const status = typeof value.status === 'string' ? value.status : '<status>';
   const expectedId = `${kind}.${slug}.v${version}`;
   if (value.id !== expectedId) {
     issues.push({ file, message: `id must match "${expectedId}"` });
@@ -127,7 +133,7 @@ function validateDatasetManifest(file: string, value: JsonValue): ValidationIssu
     issues.push({ file, message: 'task must be an object' });
   } else {
     expectExactKeys(task, ['type', 'targetColumn', 'primaryMetric'], file, 'task', issues);
-    if (!['classification', 'regression'].includes(String(task.type))) {
+    if (typeof task.type === 'string' && !['classification', 'regression'].includes(task.type)) {
       issues.push({ file, message: 'task.type must be classification or regression' });
     }
     expectNonEmptyString(task, 'targetColumn', file, issues);
@@ -160,13 +166,23 @@ function validateDatasetManifest(file: string, value: JsonValue): ValidationIssu
     issues.push({ file, message: 'integrity must be an object' });
   } else {
     expectExactKeys(integrity, ['canonicalSha256'], file, 'integrity', issues);
-    if (
-      typeof integrity.canonicalSha256 !== 'string'
-      || !/^[a-f0-9]{64}$/.test(integrity.canonicalSha256)
+    if (status === 'pending') {
+      if (integrity.canonicalSha256 !== null) {
+        issues.push({
+          file,
+          message: 'integrity.canonicalSha256 must be null when status is pending',
+        });
+      }
+    } else if (
+      status === 'staged'
+      && (
+        typeof integrity.canonicalSha256 !== 'string'
+        || !/^[a-f0-9]{64}$/.test(integrity.canonicalSha256)
+      )
     ) {
       issues.push({
         file,
-        message: 'integrity.canonicalSha256 must be a 64-character lowercase hex string',
+        message: 'integrity.canonicalSha256 must be a 64-character lowercase hex string when status is staged',
       });
     }
   }
@@ -176,7 +192,10 @@ function validateDatasetManifest(file: string, value: JsonValue): ValidationIssu
     issues.push({ file, message: 'provenance must be an object' });
   } else {
     expectExactKeys(provenance, ['upstreamUrl', 'acquisition', 'license'], file, 'provenance', issues);
-    if (!['scripted-open', 'manual-stage', 'derived'].includes(String(provenance.acquisition))) {
+    if (
+      typeof provenance.acquisition === 'string'
+      && !['scripted-open', 'manual-stage', 'derived'].includes(provenance.acquisition)
+    ) {
       issues.push({
         file,
         message: 'provenance.acquisition must be scripted-open, manual-stage, or derived',

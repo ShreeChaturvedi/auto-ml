@@ -8,7 +8,7 @@ import { validateBenchmarkCatalog, validateManifestFile } from './validate.ts';
 const BENCHMARKS_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_ROOT = path.join(BENCHMARKS_ROOT, '__fixtures__');
 
-test('benchmark catalog validates cleanly with schema-only scaffolding', () => {
+test('benchmark catalog validates cleanly with tracked manifests', () => {
   const issues = validateBenchmarkCatalog(path.join(BENCHMARKS_ROOT, 'catalog'));
   assert.deepEqual(issues, []);
 });
@@ -16,6 +16,7 @@ test('benchmark catalog validates cleanly with schema-only scaffolding', () => {
 test('valid manifest fixtures validate cleanly', () => {
   const validFiles = [
     path.join(FIXTURES_ROOT, 'valid-dataset-manifest.json'),
+    path.join(FIXTURES_ROOT, 'valid-pending-dataset-manifest.json'),
     path.join(FIXTURES_ROOT, 'valid-suite-manifest.json'),
     path.join(FIXTURES_ROOT, 'valid-poison-variant.json'),
   ];
@@ -36,7 +37,8 @@ test('invalid dataset fixture reports the expected issues', () => {
 test('missing required dataset structure is rejected', () => {
   const issues = validateManifestFile(path.join(FIXTURES_ROOT, 'missing-required-dataset-manifest.json'));
 
-  assert.equal(issues.length, 3);
+  assert.equal(issues.length, 4);
+  assert.ok(issues.some((issue) => issue.message.includes('Expected non-empty string at "status"')));
   assert.ok(issues.some((issue) => issue.message.includes('task must be an object')));
   assert.ok(issues.some((issue) => issue.message.includes('storage.root must start')));
   assert.ok(issues.some((issue) => issue.message.includes('storage.root must equal')));
@@ -66,4 +68,11 @@ test('dataset identity must match storage root', () => {
 
   assert.equal(issues.length, 1);
   assert.ok(issues[0]?.message.includes('storage.root must equal'));
+});
+
+test('pending datasets require a null checksum', () => {
+  const issues = validateManifestFile(path.join(FIXTURES_ROOT, 'pending-dataset-with-hash.json'));
+
+  assert.equal(issues.length, 1);
+  assert.ok(issues[0]?.message.includes('must be null when status is pending'));
 });

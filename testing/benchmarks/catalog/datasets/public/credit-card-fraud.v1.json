@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "public.credit-card-fraud.v1",
+  "kind": "public",
+  "slug": "credit-card-fraud",
+  "version": 1,
+  "status": "pending",
+  "task": {
+    "type": "classification",
+    "targetColumn": "class",
+    "primaryMetric": "roc_auc"
+  },
+  "storage": {
+    "root": "testing/benchmarks/data/public/credit-card-fraud/v1",
+    "canonicalFile": "canonical/data.csv"
+  },
+  "integrity": {
+    "canonicalSha256": null
+  },
+  "provenance": {
+    "upstreamUrl": "https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud",
+    "acquisition": "manual-stage",
+    "license": "See upstream terms"
+  },
+  "suiteRefs": ["expo-public-p0.v1"]
+}

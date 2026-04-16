@@ -135,6 +135,31 @@ export function buildStandardImports(extras?: string[]): string[] {
   }
 
   lines.push('');
+  lines.push('def _sanitize_json_value(value):');
+  lines.push('    if value is None:');
+  lines.push('        return None');
+  lines.push('    if isinstance(value, dict):');
+  lines.push('        return {str(key): _sanitize_json_value(val) for key, val in value.items()}');
+  lines.push('    if isinstance(value, (list, tuple)):');
+  lines.push('        return [_sanitize_json_value(item) for item in value]');
+  lines.push('    if isinstance(value, np.ndarray):');
+  lines.push('        return _sanitize_json_value(value.tolist())');
+  lines.push('    if isinstance(value, pd.Series):');
+  lines.push('        return _sanitize_json_value(value.tolist())');
+  lines.push('    if isinstance(value, pd.Index):');
+  lines.push('        return _sanitize_json_value(value.tolist())');
+  lines.push('    if isinstance(value, pd.Timestamp):');
+  lines.push('        return value.isoformat()');
+  lines.push('    if isinstance(value, (np.bool_, bool)):');
+  lines.push('        return bool(value)');
+  lines.push('    if isinstance(value, (np.integer, int)):');
+  lines.push('        return int(value)');
+  lines.push('    if isinstance(value, (np.floating, float)):');
+  lines.push('        return None if not np.isfinite(value) else float(value)');
+  lines.push('    if isinstance(value, np.generic):');
+  lines.push('        return _sanitize_json_value(value.item())');
+  lines.push('    return value');
+  lines.push('');
 
   return lines;
 }
@@ -185,7 +210,7 @@ export function buildResultSaving(outputDirVar: string = 'output_dir', options?:
   return [
     "# Save result",
     `with open(os.path.join(${outputDirVar}, ${JSON.stringify(filename)}), 'w') as f:`,
-    `    json.dump(${resultVar}, f)`,
+    `    json.dump(_sanitize_json_value(${resultVar}), f, allow_nan=False)`,
     '',
   ];
 }

@@ -169,7 +169,10 @@ describe('preview source guardrails', () => {
     );
 
     expect(planSource).toContain('PlanViewerPane');
-    expect(planSource).toContain('className="dark"');
+    // Plan viewer wrapper now mirrors the document theme instead of hardcoding
+    // `dark`, so the nested shadcn/prose styles track light-mode toggles.
+    expect(planSource).toContain('className={resolvedTheme}');
+    expect(planSource).toContain('useHtmlThemeClass');
     expect(planSource).toContain('name: \'Retention Recovery\'');
     expect(planSource).not.toContain('Project Plan: Retention Recovery');
     expect(planSource).toContain('className={styles.questionStage}');

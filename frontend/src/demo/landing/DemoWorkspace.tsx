@@ -45,7 +45,7 @@ export function DemoWorkspace({ initialPhase = DEFAULT_PHASE, phase }: DemoWorks
   }
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="landing-demo-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="automl-ui-theme">
       <TooltipProvider delayDuration={300}>
         <MemoryRouter initialEntries={initialEntries}>
           <div

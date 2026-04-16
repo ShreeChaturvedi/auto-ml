@@ -129,7 +129,7 @@
 }
 .sceneHeadlineBright { color: var(--text); display: block; }
 .sceneHeadlineMuted  { color: var(--text-muted); display: block; }
-.sceneDiorama { max-width: 760px; }
+.sceneDiorama { max-width: 920px; }
 
 /* Fallback static stack (reduced motion) */
 .fallbackList {

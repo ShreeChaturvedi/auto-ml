@@ -8,13 +8,39 @@ interface Props {
 
 const {
   title = 'Agentic AutoML Platform — The fastest way to build production ML models, agentically.',
-  description = 'Upload a CSV. Describe your goal. Walk away. Come back to deployed models, ranked experiments, and a notebook that explains every decision.',
+  description = 'Upload your data. Describe your goal. Walk away. Come back to deployed models, ranked experiments, and a notebook that explains every decision.',
 } = Astro.props;
 ---
 
 <!doctype html>
 <html lang="en" class="dark">
   <head>
+    <!-- Pre-hydration theme bootstrap: runs before any stylesheet / meta so
+         there is no FOUC. Shared storage key with the main app
+         ("automl-ui-theme") keeps landing / embedded preview / open app tabs
+         in sync. Defaults to dark on first visit (ignoring OS preference,
+         per product decision). -->
+    <script is:inline>
+      (() => {
+        try {
+          const key = 'automl-ui-theme';
+          const stored = localStorage.getItem(key);
+          const resolved = stored === 'light' ? 'light' : 'dark';
+          const html = document.documentElement;
+          html.classList.remove('light', 'dark');
+          html.classList.add(resolved);
+          const meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute(
+              'content',
+              resolved === 'light' ? '#FFFFFF' : '#0A0A0B',
+            );
+          }
+        } catch {
+          /* first visit or LS disabled — fall through to static class="dark" */
+        }
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/automl-logo.svg" />

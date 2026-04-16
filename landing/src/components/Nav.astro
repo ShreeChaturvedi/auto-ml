@@ -3,6 +3,7 @@
 // Brand: logo + wordmark that loads as "Agentic AutoML ToolChain"
 // and collapses to "AutoML" after 1.6s. The brand's width is reserved
 // to the long form so nav links / CTA on the right never shift.
+import ThemeToggleIsland from './ThemeToggleIsland';
 ---
 
 <header class="nav-root">
@@ -27,7 +28,7 @@
     </a>
 
     <nav class="nav-links" aria-label="Primary">
-      <a href="#product">Product</a>
+      <a href="#product">Quick Look</a>
       <a href="#features">Features</a>
       <a href="#how-it-works">How it works</a>
     </nav>
@@ -35,6 +36,7 @@
     <div class="nav-right">
       <a href="/login" class="nav-signin">Sign In</a>
       <a href="/login" class="nav-cta">Get Started</a>
+      <ThemeToggleIsland client:only="react" />
     </div>
   </div>
 </header>
@@ -48,8 +50,8 @@
     z-index: 100;
     height: 72px;
     background-image: linear-gradient(
-      rgba(10, 10, 11, 0.80) 0%,
-      rgba(10, 10, 11, 0.76) 100%
+      var(--nav-glass-1) 0%,
+      var(--nav-glass-2) 100%
     );
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -137,18 +139,20 @@
 
   .nav-links a {
     font-family: 'Geist Mono Variable', ui-monospace, monospace;
-    font-size: 13px;
-    font-weight: 400;
-    color: var(--text-muted);
+    font-size: 14.5px;
+    font-weight: 450;
+    color: var(--text);
     text-decoration: none;
     padding: 0 12px;
     height: 32px;
     display: inline-flex;
     align-items: center;
     border-radius: 4px;
-    transition: color var(--dur-fast) var(--ease-linear-default);
+    opacity: 0.82;
+    transition: opacity var(--dur-fast) var(--ease-linear-default),
+                color var(--dur-fast) var(--ease-linear-default);
   }
-  .nav-links a:hover { color: var(--text); }
+  .nav-links a:hover { opacity: 1; }
 
   /* ── Right-side cluster: Sign In + CTA ── */
   .nav-right {
@@ -178,9 +182,9 @@
     font-family: 'Inter Variable', sans-serif;
     font-size: 14px;
     font-weight: 510;
-    color: #0A0A0B;
+    color: var(--cta-text);
     text-decoration: none;
-    background: linear-gradient(180deg, #F7F8F8 0%, #E6E6E6 100%);
+    background: var(--cta-bg-grad);
     padding: 0 16px;
     height: 32px;
     display: inline-flex;

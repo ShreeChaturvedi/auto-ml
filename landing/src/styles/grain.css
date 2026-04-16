@@ -48,3 +48,11 @@ body.landing-grain::after {
 @media (prefers-reduced-motion: reduce) {
   body.landing-grain::after { display: none; }
 }
+
+/* Light theme: drop the viewport-wide body grain. The noise texture was tuned
+   for a near-black surface; on white it reads as visual chatter rather than
+   filmic warmth. The AppPreviewFrame's inner grain is preserved — it still
+   sits on a dark card regardless of page theme. */
+.light body.landing-grain::after {
+  display: none;
+}

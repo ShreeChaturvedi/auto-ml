@@ -28,6 +28,16 @@
   100% { background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%; }
 }
 
+/* Light-theme override: replace the deep teal gradient with a cooled mint wash
+   so the fluid motion still reads without darkening the surrounding page. */
+:global(.light) .root {
+  background:
+    radial-gradient(ellipse 60% 50% at 25% 20%, rgba(190, 235, 215, 0.60) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 75% 85%, rgba(180, 225, 210, 0.55) 0%, transparent 70%),
+    radial-gradient(ellipse 55% 45% at 50% 50%, rgba(200, 240, 220, 0.55) 0%, transparent 60%),
+    #EFFBF5;
+}
+
 .host {
   position: absolute;
   inset: 0;
@@ -141,6 +151,16 @@
   color: #f8fafc;
   fill: #0a0a0a;
   stroke: #f8fafc;
+}
+
+:global(.light) .cursorIcon {
+  color: #0a0a0a;
+  fill: #f8fafc;
+  stroke: #0a0a0a;
+}
+:global(.light) .cursorWrap {
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
 .cursorWrapGlided {

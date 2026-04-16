@@ -1,15 +1,41 @@
 /* Agentic AutoML Platform — Landing page theme tokens
- * Grayscale discipline. No accent hue outside the app preview.
- * All surface layering, text hierarchy, borders, and motion curves live here. */
+ *
+ * Dual-theme: `.dark` (default) and `.light`. The bootstrap script in
+ * `Root.astro` toggles the class on <html> pre-hydration to avoid FOUC.
+ * Storage key `automl-ui-theme` is shared with the main app so landing /
+ * app / embedded preview stay in sync.
+ *
+ * Each block overrides BOTH the landing marketing tokens and the shadcn
+ * "app surface contract" tokens — the latter are consumed by the embedded
+ * preview, Radix portals, and any frontend components imported into this
+ * bundle (via surfaces.css / ui-utilities.css / content-effects.css). */
 
 :root {
+  /* ── Motion ── */
+  --ease-out-quart:      cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-out-expo:       cubic-bezier(0.19,  1,    0.22, 1);
+  --ease-in-out-quint:   cubic-bezier(0.86,  0,    0.07, 1);
+  /* PLAN deep-dive: markdown rAF scroll — quint-like in/out, less peak than --ease-in-out-quint */
+  --ease-plan-markdown-scroll: cubic-bezier(0.77, 0, 0.16, 1);
+  --ease-in-out-expo:    cubic-bezier(1,     0,    0,    1);
+  --ease-linear-default: cubic-bezier(0.25,  0.46, 0.45, 0.94);
+
+  --dur-fast: 0.16s;
+  --dur-med:  0.35s;
+  --dur-slow: 0.60s;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Dark theme (default)
+ * ──────────────────────────────────────────────────────────────────────── */
+.dark {
   color-scheme: dark;
 
   /* Surfaces */
-  --bg:          #0A0A0B;   /* page background */
-  --surface-0:   #0F1011;   /* elevated card */
-  --surface-1:   #131416;   /* inner panel */
-  --surface-2:   #1A1B1D;   /* raised element */
+  --bg:          #0A0A0B;
+  --surface-0:   #0F1011;
+  --surface-1:   #131416;
+  --surface-2:   #1A1B1D;
 
   /* Borders */
   --border: 0 0% 18%;
@@ -41,19 +67,80 @@
   --ring: 0 0% 55%;
   --radius: 0.5rem;
 
-  /* Motion — easing tokens (single source of truth) */
-  --ease-out-quart:      cubic-bezier(0.165, 0.84, 0.44, 1);
-  --ease-out-expo:       cubic-bezier(0.19,  1,    0.22, 1);
-  --ease-in-out-quint:   cubic-bezier(0.86,  0,    0.07, 1);
-  /* PLAN deep-dive: markdown rAF scroll — quint-like in/out, less peak than --ease-in-out-quint */
-  --ease-plan-markdown-scroll: cubic-bezier(0.77, 0, 0.16, 1);
-  --ease-in-out-expo:    cubic-bezier(1,     0,    0,    1);
-  --ease-linear-default: cubic-bezier(0.25,  0.46, 0.45, 0.94);
+  /* ── Themed semantic tokens (A.5) ── */
+  --nav-glass-1:      rgba(10, 10, 11, 0.80);
+  --nav-glass-2:      rgba(10, 10, 11, 0.76);
+  --cta-text:         #0A0A0B;
+  --cta-bg-grad:      linear-gradient(180deg, #F7F8F8 0%, #E6E6E6 100%);
+  --shimmer-peak:     #E2E6ED;
+  --wordmark-base-0:  #4d5056;
+  --wordmark-base-1:  #74777c;
+  --wordmark-base-peak: #9ea1a6;
+  --wordmark-shine:   #F7F8F8;
+  --logo-filter-base: brightness(0) saturate(100%) invert(55%);
+  --logo-filter-hover: brightness(0) saturate(100%) invert(95%);
+  --selection-bg:     rgba(255, 255, 255, 0.18);
+}
 
-  /* Motion — durations */
-  --dur-fast: 0.16s;
-  --dur-med:  0.35s;
-  --dur-slow: 0.60s;
+/* ─────────────────────────────────────────────────────────────────────────
+ * Light theme
+ * Values for --text-muted / --text-dim were chosen for WCAG AA ≥ 4.5:1
+ * contrast against the light --bg (see landing/src/tests/contrast.test.ts).
+ * ──────────────────────────────────────────────────────────────────────── */
+.light {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg:          #FFFFFF;
+  --surface-0:   #F7F8F8;
+  --surface-1:   #F0F1F2;
+  --surface-2:   #E8E9EB;
+
+  /* Borders */
+  --border: 0 0% 88%;
+  --border-strong: 0 0% 0% / 0.20;
+
+  /* Text — tuned so every fg × bg pair in the light-theme surface matrix
+     clears WCAG AA 4.5:1. See landing/src/tests/contrast.test.ts for the
+     assertion matrix that guards these values. */
+  --text:       #0A0A0B;
+  --text-muted: #4A4E54;
+  --text-dim:   #5A5D64;
+
+  /* App surface contract — mirrors frontend/src/styles/theme.css:19-50 light values */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
+  --card: 0 0% 98%;
+  --card-foreground: 0 0% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --input: 0 0% 90%;
+  --ring: 0 0% 45%;
+  --radius: 0.5rem;
+
+  /* ── Themed semantic tokens (A.5) ── */
+  --nav-glass-1:      rgba(255, 255, 255, 0.80);
+  --nav-glass-2:      rgba(255, 255, 255, 0.76);
+  --cta-text:         #FFFFFF;
+  --cta-bg-grad:      linear-gradient(180deg, #1A1B1D 0%, #0A0A0B 100%);
+  --shimmer-peak:     #1C1F24;
+  --wordmark-base-0:  #6d7075;
+  --wordmark-base-1:  #55585d;
+  --wordmark-base-peak: #3a3b3f;
+  --wordmark-shine:   #1a1b1f;
+  --logo-filter-base: brightness(0) saturate(100%) invert(45%);
+  --logo-filter-hover: brightness(0) saturate(100%) invert(5%);
+  --selection-bg:     rgba(0, 0, 0, 0.15);
 }
 
 html {
@@ -62,6 +149,8 @@ html {
   font-family: 'Inter Variable', Inter, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color var(--dur-med) var(--ease-linear-default),
+              color var(--dur-med) var(--ease-linear-default);
 }
 
 body {
@@ -82,7 +171,7 @@ body {
 
 /* Selection */
 ::selection {
-  background-color: rgba(255, 255, 255, 0.18);
+  background-color: var(--selection-bg);
   color: var(--text);
 }
 

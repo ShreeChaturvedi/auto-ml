@@ -53,7 +53,9 @@
   top: 100%;
   width: 16px;
   height: 16px;
-  /* Lucide defaults to stroke-only (fill none); solid fill + light stroke keeps the pointer visible on white controls. */
+  /* Lucide defaults to stroke-only (fill none); solid fill + stroke combination
+     reads on both the rose-tinted dark gradient and the muted-rose light wash.
+     Light theme inverts the fill/stroke pair via :global(.light) below. */
   color: #f8fafc;
   fill: #0a0a0a;
   stroke: #f8fafc;
@@ -151,7 +153,8 @@
   min-height: 0;
 }
 
-.planContent > :global(.dark) {
+.planContent > :global(.dark),
+.planContent > :global(.light) {
   display: flex;
   flex: 1;
   min-height: 0;
@@ -202,6 +205,21 @@
 @keyframes plan-result-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Light-theme override: replace the deep rose gradient with a soft blush wash
+   that survives on a white page without producing a dark block. */
+:global(.light) .root {
+  background:
+    radial-gradient(ellipse 55% 55% at 80% 20%, rgba(255, 205, 215, 0.60) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(250, 200, 220, 0.50) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 70% at 50% 10%, rgba(255, 210, 210, 0.55) 0%, transparent 60%),
+    #FFF0F2;
+}
+:global(.light) .cursorSprite {
+  color: #0a0a0a;
+  fill: #f8fafc;
+  stroke: #0a0a0a;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,3 +1,27 @@
+declare module '@frontend/components/theme-provider' {
+  import type { FC, ReactNode } from 'react';
+
+  export const ThemeProvider: FC<{
+    children: ReactNode;
+    defaultTheme?: 'dark' | 'light' | 'system';
+    storageKey?: string;
+  }>;
+  export const useTheme: () => {
+    theme: 'dark' | 'light' | 'system';
+    resolvedTheme: 'dark' | 'light';
+    setTheme: (t: 'dark' | 'light' | 'system') => void;
+  };
+}
+
+declare module '@frontend/components/theme-toggle' {
+  import type { FC } from 'react';
+  export const ThemeToggle: FC;
+}
+
+declare module '@frontend/hooks/useHtmlThemeClass' {
+  export function useHtmlThemeClass(): 'dark' | 'light';
+}
+
 declare module '@frontend/types/llmUi' {
   export interface AskUserQuestionOption {
     label: string;

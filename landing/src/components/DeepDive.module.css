@@ -49,9 +49,9 @@
   color: var(--text-muted);
 }
 .kbdBadge {
-  background: #1C1C1F;
-  color: #D0D6E0;
-  border: 0.8px solid #34343A;
+  background: var(--surface-1);
+  color: var(--text);
+  border: 0.8px solid hsl(var(--border));
   border-radius: 4.5px;
   padding: 2px 6px;
   font-size: 11px;

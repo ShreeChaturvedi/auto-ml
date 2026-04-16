@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MousePointer2, Search, List, Copy, Download } from 'lucide-react';
 import { QuestionCards } from '@frontend/components/upload/QuestionCards';
 import { PlanViewerPane } from '@frontend/components/upload/PlanViewerPane';
+import { useHtmlThemeClass } from '@frontend/hooks/useHtmlThemeClass';
 import type { AskUserQuestion } from '@frontend/types/llmUi';
 import { cn } from '@/lib/cn';
 import { getCssVarCubicBezierEase } from '@/lib/cssCubicBezierEase';
@@ -147,6 +148,11 @@ const EASE_PLAN_MARKDOWN_SCROLL: readonly [number, number, number, number] = [
 
 function PlanDeepDiveVisual() {
   const reduced = usePrefersReducedMotion();
+  // Mirror the current document theme onto the plan viewer's wrapper. The
+  // PlanViewerPane (and its nested shadcn/prose styles) scope their CSS
+  // vars to a `.dark` / `.light` ancestor, so without this the viewer
+  // would stay stuck on whatever class was hardcoded here at build time.
+  const resolvedTheme = useHtmlThemeClass();
   const { ref: rootRef, hasPlayed } = useScrollPlayOnce<HTMLDivElement>(0.35);
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -352,7 +358,7 @@ function PlanDeepDiveVisual() {
           </div>
           <div className={styles.planBody}>
             <div className={styles.planContent}>
-              <div className="dark">
+              <div className={resolvedTheme}>
                 <PlanViewerPane plan={PLAN_RESULT} searchQuery="" />
               </div>
             </div>

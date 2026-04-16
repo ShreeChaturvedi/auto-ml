@@ -52,14 +52,14 @@ const looped = [...logos, ...logos];
     flex-shrink: 0;
     height: var(--brand-h, 32px);
     opacity: 0.6;
-    filter: brightness(0) saturate(100%) invert(55%);
+    filter: var(--logo-filter-base);
     transition:
       filter 280ms cubic-bezier(0.165, 0.84, 0.44, 1),
       opacity 280ms cubic-bezier(0.165, 0.84, 0.44, 1);
   }
   .brand-mark:hover {
     opacity: 1;
-    filter: brightness(0) saturate(100%) invert(95%);
+    filter: var(--logo-filter-hover);
   }
 
   /* Inline SVGs: override the file's intrinsic width/height. */

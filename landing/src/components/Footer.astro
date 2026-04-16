@@ -112,11 +112,11 @@ const resourceLinks = [
            so the moving shine visibly pops against the base everywhere. -->
       <linearGradient id="agentic-base-grad" gradientUnits="userSpaceOnUse"
                       x1="0" y1="0" x2="1200" y2="0">
-        <stop offset="0%"   stop-color="#4d5056" />
-        <stop offset="25%"  stop-color="#74777c" />
-        <stop offset="50%"  stop-color="#9ea1a6" />
-        <stop offset="75%"  stop-color="#74777c" />
-        <stop offset="100%" stop-color="#4d5056" />
+        <stop class="agentic-stop-0"     offset="0%" />
+        <stop class="agentic-stop-1"     offset="25%" />
+        <stop class="agentic-stop-peak"  offset="50%" />
+        <stop class="agentic-stop-1"     offset="75%" />
+        <stop class="agentic-stop-0"     offset="100%" />
       </linearGradient>
 
       <!-- Bright window for the sweep mask. 16 % band (42–58 %) matches the
@@ -153,13 +153,14 @@ const resourceLinks = [
           textLength="1346.4" lengthAdjust="spacingAndGlyphs"
           fill="var(--surface-0)" stroke="url(#agentic-base-grad)" stroke-width="1.5">AGENT</text>
 
-    <!-- Layer 2: solid bright-white stroke, only visible through the moving mask window.
+    <!-- Layer 2: solid bright-tone stroke, only visible through the moving mask window.
          Punches a consistent highlight through the metallic base gradient.
-         Same fill so the two layers composite identically. -->
+         Stroke is themed (dark metallic in light, silver in dark) so the
+         brushed-metal effect reads the same way against both page backgrounds. -->
     <text class="agentic-shine"
           x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
           textLength="1346.4" lengthAdjust="spacingAndGlyphs"
-          fill="var(--surface-0)" stroke="#F7F8F8" stroke-width="1.5"
+          fill="var(--surface-0)" stroke-width="1.5"
           mask="url(#agentic-shine-mask)">AGENT</text>
   </svg>
 </div>
@@ -313,6 +314,14 @@ const resourceLinks = [
     letter-spacing: -15px;
     paint-order: stroke;
   }
+
+  /* Themed metallic stops: the base gradient + shine stroke flip values between
+     dark/light so the brushed-metal effect survives both themes. CSS custom
+     properties resolve on SVG <stop> via the `stop-color` property. */
+  .agentic-stop-0    { stop-color: var(--wordmark-base-0); }
+  .agentic-stop-1    { stop-color: var(--wordmark-base-1); }
+  .agentic-stop-peak { stop-color: var(--wordmark-base-peak); }
+  .agentic-shine     { stroke: var(--wordmark-shine); }
 
   /* Continuous metallic sheen sweep. ~3s matches the prior animation cadence.
      transform-box: fill-box is LOAD-BEARING — it resolves translateX(%) against

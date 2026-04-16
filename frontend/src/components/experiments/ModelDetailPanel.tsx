@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Dialog, DialogPortal, DialogOverlay, DialogTitle, DialogContent, DialogHeader, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogPortal, DialogOverlay, DialogTitle, DialogContent, DialogHeader, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -79,19 +79,50 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
     }
   }
 
-  useEffect(() => { if (modelId) fetchEvaluation(modelId); }, [modelId, fetchEvaluation]);
+  useEffect(() => {
+    if (!modelId) return;
+    const cacheFailure = model?.evaluationStatus !== 'pending' && model?.evaluationStatus !== 'computing';
+    void fetchEvaluation(modelId, false, cacheFailure);
+  }, [fetchEvaluation, model?.evaluationStatus, modelId]);
   useEffect(() => {
     if (modelId && model?.evaluationStatus === 'ready' && evaluation === null) {
       void fetchEvaluation(modelId, true);
     }
   }, [evaluation, fetchEvaluation, model?.evaluationStatus, modelId]);
+  useEffect(() => {
+    const shouldPollPendingEvaluation =
+      model?.evaluationStatus === 'pending'
+      || model?.evaluationStatus === 'computing'
+      || (model?.evaluationStatus === 'ready' && evaluation === undefined);
+
+    if (!modelId || !model || !shouldPollPendingEvaluation) {
+      return;
+    }
+
+    let cancelled = false;
+    const poll = async () => {
+      await refreshModels(model.projectId);
+      if (cancelled) return;
+      await fetchEvaluation(modelId, true, model.evaluationStatus === 'ready');
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [evaluation, fetchEvaluation, model, modelId, refreshModels]);
   useEffect(() => { if (modelId && !model) onClose(); }, [model, modelId, onClose]);
 
   if (!model || !modelId) return null;
 
   const { Icon: TaskIcon, colorClass } = resolveModelIcon(model.taskType);
   const evalStatus = model.evaluationStatus;
-  const isComputing = evalStatus === 'computing';
+  const isComputing = evalStatus === 'computing' || evalStatus === 'pending';
   const isFailed = evalStatus === 'failed';
   const metricEntries = Object.entries(model.metrics);
   const evalProps = { isComputing, isFailed, evaluationError: model.evaluationError, evaluation };
@@ -113,6 +144,9 @@ export function ModelDetailPanel({ modelId, open, onClose }: ModelDetailPanelPro
             duration-200"
           onOpenAutoFocus={(e) => { e.preventDefault(); }}
         >
+          <DialogDescription className="sr-only">
+            Detailed experiment results, plots, interpretability, error analysis, provenance, and tuning controls for {model.name}.
+          </DialogDescription>
           <div className="flex h-14 items-center gap-3 border-b border-border/40 px-5 shrink-0">
             <TaskIcon className={cn('h-4 w-4 shrink-0', colorClass)} />
             <DialogTitle className="text-sm font-semibold truncate min-w-0">

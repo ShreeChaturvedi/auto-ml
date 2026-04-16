@@ -89,6 +89,14 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
   const apexScale = interpolate(apexSimpleProgress, [0, 1], [0, 1]);
   const apexOpacityBase = interpolate(apexSimpleProgress, [0, 1], [0, 1]);
 
+  // Helper to scale flat 2D targets by 5%
+  const scale2D = (x: number, y: number): [number, number] => {
+    return [
+      16 + (x - 16) * 1.05,
+      16 + (y - 16) * 1.05
+    ];
+  };
+
   if (variant === "simple") {
     const p1 = scale2D(14, 8);
     const p2 = scale2D(5, 26);
@@ -167,14 +175,6 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
       interpolate(morph, [0, 1], [sx_iso, target2D[0]]),
       interpolate(morph, [0, 1], [sy_iso, target2D[1]])
     ] as [number, number];
-  };
-
-  // Helper to scale flat 2D targets by 5%
-  const scale2D = (x: number, y: number): [number, number] => {
-    return [
-      16 + (x - 16) * 1.05,
-      16 + (y - 16) * 1.05
-    ];
   };
 
   const drawBlock = (

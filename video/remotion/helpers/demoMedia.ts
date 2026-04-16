@@ -1,6 +1,7 @@
 type CaptureMediaDurationArgs = {
   durationMs: number;
   startOffsetSeconds: number;
+  endOffsetSeconds: number;
   fps: number;
 };
 
@@ -21,13 +22,16 @@ export const previewMirrorFileForVideo = (videoFile: string): string =>
 export const getCaptureMediaDurationFrames = ({
   durationMs,
   startOffsetSeconds,
+  endOffsetSeconds,
   fps,
 }: CaptureMediaDurationArgs): number | null => {
   if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
   if (!Number.isFinite(startOffsetSeconds) || startOffsetSeconds < 0) return null;
+  if (!Number.isFinite(endOffsetSeconds) || endOffsetSeconds < 0) return null;
   if (!Number.isFinite(fps) || fps <= 0) return null;
 
-  const usableMs = durationMs - startOffsetSeconds * 1000;
+  const usableMs =
+    durationMs - startOffsetSeconds * 1000 - endOffsetSeconds * 1000;
   if (usableMs <= 0) return 1;
 
   return Math.max(1, Math.ceil((usableMs * fps) / 1000));

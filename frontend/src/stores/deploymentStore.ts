@@ -53,7 +53,9 @@ export const useDeploymentStore = create<DeploymentState>((set, get) => ({
       }));
       return deployment;
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : 'Deploy failed', isLoading: false });
+      const error = err instanceof Error ? err.message : 'Deploy failed';
+      await get().refreshDeployments(projectId);
+      set({ error, isLoading: false });
       throw err;
     }
   },

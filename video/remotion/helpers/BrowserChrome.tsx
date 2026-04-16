@@ -14,7 +14,8 @@ import { ChromeAddressBar } from "./ChromeAddressBar";
 export const CONTINUITY = {
   padding: 96,
   radius: 24,
-  border: "1px solid rgba(255,255,255,0.08)",
+  frameBorderPx: 1,
+  headerDividerPx: 1,
   shadow: "0 40px 120px -20px rgba(0,0,0,0.6)",
   titleBarHeight: 40,
   tabStripHeight: 32,
@@ -105,7 +106,7 @@ export const BrowserChrome: React.FC<BrowserChromeProps> = ({
         style={{
           flex: 1,
           borderRadius: CONTINUITY.radius,
-          border: CONTINUITY.border,
+          border: `${CONTINUITY.frameBorderPx}px solid rgba(255,255,255,0.08)`,
           boxShadow: CONTINUITY.shadow,
           overflow: "hidden",
           display: "flex",
@@ -129,7 +130,7 @@ type ChromeTitleBarProps = {
   urlChildren?: ReactNode;
 };
 
-const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
+export const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
   variant,
   url,
   urlChildren,
@@ -149,7 +150,7 @@ const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
         style={{
           height: CONTINUITY.titleBarHeight,
           background: "#F5F5F7",
-          borderBottom: "1px solid rgba(0,0,0,0.08)",
+          borderBottom: `${CONTINUITY.headerDividerPx}px solid rgba(0,0,0,0.08)`,
           display: "flex",
           alignItems: "center",
           padding: "0 16px",
@@ -166,7 +167,7 @@ const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
       style={{
         height: CONTINUITY.titleBarHeight,
         background: "#F5F5F7",
-        borderBottom: "1px solid rgba(0,0,0,0.08)",
+        borderBottom: `${CONTINUITY.headerDividerPx}px solid rgba(0,0,0,0.08)`,
         display: "grid",
         gridTemplateColumns: "auto 1fr auto",
         gap: 12,
@@ -191,13 +192,13 @@ const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
  * Each tab can optionally fade in at `appearFrame` — enabling mid-scene "a
  * new tab opened" animations without re-mounting the component.
  */
-const ChromeTabStrip: React.FC<{ tabs: ReadonlyArray<ChromeTab> }> = ({ tabs }) => {
+export const ChromeTabStrip: React.FC<{ tabs: ReadonlyArray<ChromeTab> }> = ({ tabs }) => {
   return (
     <div
       style={{
         height: CONTINUITY.tabStripHeight,
         background: "#DEE1E6",
-        borderBottom: "1px solid rgba(0,0,0,0.06)",
+        borderBottom: `${CONTINUITY.headerDividerPx}px solid rgba(0,0,0,0.06)`,
         display: "flex",
         alignItems: "flex-end",
         gap: 2,

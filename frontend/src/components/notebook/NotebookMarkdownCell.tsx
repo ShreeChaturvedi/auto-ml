@@ -19,6 +19,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useTheme } from '@/components/theme-provider';
+import { useResolvedEditorTheme } from '@/hooks/useResolvedEditorTheme';
 import { useProjectThemeColor } from '@/hooks/useProjectThemeColor';
 import { cn } from '@/lib/utils';
 import type { LockOwner, NotebookCell } from '@/types/notebook';
@@ -117,7 +118,8 @@ export function NotebookMarkdownCell({
   canMoveUp,
   canMoveDown
 }: NotebookMarkdownCellProps) {
-  const { resolvedTheme } = useTheme();
+  const { theme } = useTheme();
+  const resolvedTheme = useResolvedEditorTheme(theme);
   const { syntaxThemeId } = useProjectThemeColor();
   const globalEditorOpts = useEditorMonacoOptions();
 

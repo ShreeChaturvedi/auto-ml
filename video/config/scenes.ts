@@ -127,12 +127,18 @@ export const demoScene = z.object({
   durationInFrames: z.number().int().positive().default(480),
   /** Trim the start of the video clip (in seconds). */
   startOffset: z.number().default(0),
+  /** Trim the end of the video clip (in seconds). */
+  endOffset: z.number().default(0),
   /** Chrome variant wrapping the capture. Defaults to macOS window. */
   chrome: appChromeVariant.default("mac"),
   /** URL shown in chrome="browser" variant's address bar. */
   url: z.string().optional(),
   /** Optional cursor path JSON, relative to `public/captures/`. */
   cursorFile: z.string().optional(),
+  /** Horizontal anchoring for cover/contain media mapping. */
+  mediaAlignX: z.enum(["left", "center", "right"]).optional(),
+  /** Vertical anchoring for cover/contain media mapping. */
+  mediaAlignY: z.enum(["top", "center", "bottom"]).optional(),
   /** Choreographed overlay events (VO-mark or chain-triggered). */
   timeline: z.array(appTimelineEvent).optional(),
   /**
@@ -145,6 +151,16 @@ export const demoScene = z.object({
    * omitted — kept optional in the schema so existing demo scenes without
    * dismiss don't need to opt in with a field they don't use. */
   chromeDismissDurationFrames: z.number().int().positive().optional(),
+  /**
+   * Restore the chrome frame near the end of the scene, reversing the initial
+   * full-bleed reveal back into browser framing. Used for landing→signup
+   * continuity without clicking an in-page CTA.
+   */
+  chromeRestoreAtEnd: z.boolean().optional(),
+  /** Length of the end-of-scene chrome-restore tween. */
+  chromeRestoreDurationFrames: z.number().int().positive().optional(),
+  /** How long to hold on the restored browser framing before cutting away. */
+  chromeRestoreHoldFrames: z.number().int().nonnegative().optional(),
   /** Optional Chrome-style tab strip above the address bar. */
   tabs: z.array(chromeTab).optional(),
 });
@@ -232,6 +248,11 @@ export type SceneWithMetadata = {
   from: number;
   durationInFrames: number;
   chapter: string | null;
+  /** Source media dimensions from `public/captures/*.meta.json` when available. */
+  captureSize?: {
+    width: number;
+    height: number;
+  };
   /** Populated only when scene has a voiceoverFile and its sidecar .alignment.json exists. */
   alignment?: SceneAlignment;
 };

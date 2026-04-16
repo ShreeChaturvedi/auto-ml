@@ -7,6 +7,7 @@ import { createModelRepository } from '../../../repositories/modelRepository.js'
 import type { DatasetProfileColumn } from '../../../types/dataset.js';
 import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
 import { runEvaluation } from '../../evaluationService.js';
+import { resolveModelTemplateId } from '../../modelTemplates.js';
 import {
   extractSuccessfulRuntimeDependenciesFromHistory,
   inferRuntimeDependenciesFromModelType,
@@ -393,11 +394,12 @@ export const registerModel: TrainingToolHandler = async (
 
   let artifact: ModelArtifact | undefined;
   try {
+    const resolvedTemplateId = resolveModelTemplateId(modelType, taskType) ?? `llm-${modelType}`;
     const record = await modelRepository.create({
       projectId,
       datasetId: datasetId ?? '',
       name: modelName,
-      templateId: `llm-${modelType}`,
+      templateId: resolvedTemplateId,
       taskType,
       library: 'llm-guided',
       algorithm: modelType,

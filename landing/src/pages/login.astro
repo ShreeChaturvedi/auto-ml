@@ -1,3 +1,8 @@
+---
+import { getAppLoginUrl } from '@/lib/appLinks';
+
+const appLoginUrl = getAppLoginUrl();
+---
 <!doctype html>
 <html lang="en">
   <head>
@@ -5,13 +10,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/automl-logo.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Coming Soon</title>
+    <meta http-equiv="refresh" content={`0;url=${appLoginUrl}`} />
+    <title>Redirecting…</title>
   </head>
   <body
     style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0A0A0B;color:#F7F8F8;font-family:Inter,system-ui,sans-serif;"
   >
-    <main style="text-align:center;">
-      <p style="margin:0;font-size:1.25rem;line-height:1.4;">Coming Soon</p>
+    <main style="text-align:center;max-width:32rem;padding:2rem;">
+      <p style="margin:0 0 1rem;font-size:1.25rem;line-height:1.4;">Redirecting to the app login…</p>
+      <a href={appLoginUrl} style="color:#F7F8F8;">Continue to sign in</a>
     </main>
+    <script is:inline define:vars={{ appLoginUrl }}>
+      window.location.replace(appLoginUrl);
+    </script>
   </body>
 </html>

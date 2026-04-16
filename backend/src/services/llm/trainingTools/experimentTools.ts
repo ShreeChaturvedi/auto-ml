@@ -189,7 +189,23 @@ export const configureExperiment: TrainingToolHandler = async (
   const enabledFeatureNames = await loadEnabledFeatureNames(projectId, turn.datasetId ?? undefined);
   let featureColumns: string[] | undefined;
   if (Array.isArray(args.featureColumns)) {
-    featureColumns = args.featureColumns as string[];
+    const rawFeatureColumns = (args.featureColumns as unknown[])
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    // Target-leakage guard: if the LLM slipped and included the target in
+    // featureColumns, strip it. A model trained on its own target produces
+    // meaningless metrics and breaks evaluation (LLM prep code tries to
+    // auto-derive target from `df.columns - features` and finds nothing).
+    if (effectiveTargetColumn && rawFeatureColumns.includes(effectiveTargetColumn)) {
+      appLogger.warn('[configureExperiment] Stripping target from LLM-supplied featureColumns (target leakage guard)', {
+        projectId,
+        experimentId,
+        targetColumn: effectiveTargetColumn,
+        originalFeatureCount: rawFeatureColumns.length,
+      });
+      featureColumns = rawFeatureColumns.filter((name) => name !== effectiveTargetColumn);
+    } else {
+      featureColumns = rawFeatureColumns;
+    }
   } else if (enabledFeatureNames.length > 0) {
     // FE features exist. Use ALL dataset columns (minus target) as features,
     // not just the FE-produced columns — the FE pipeline adds derived columns

@@ -19,8 +19,6 @@ export interface ComputeAnimationSvgProps {
   isComplete: boolean;
   visibleFiles: number;
   visibleResults: number;
-  /** Multiplier applied to all internal animation durations. Default 1.0. */
-  durationScale?: number;
 }
 
 export function ComputeAnimationSvg({
@@ -30,13 +28,12 @@ export function ComputeAnimationSvg({
   isComplete,
   visibleFiles,
   visibleResults,
-  durationScale = 1,
 }: ComputeAnimationSvgProps) {
   const visibleFileSlots = files.slice(0, MAX_VISIBLE_FILE_SLOTS);
 
   return (
     <>
-      <style>{buildComputeAnimationStyles(uid, durationScale)}</style>
+      <style>{buildComputeAnimationStyles(uid)}</style>
 
       <svg
         viewBox="0 0 900 460"
@@ -68,7 +65,6 @@ export function ComputeAnimationSvg({
           visibleFiles={visibleFiles}
           visibleResults={visibleResults}
           isComplete={isComplete}
-          durationScale={durationScale}
         />
         <ComputeCube uid={uid} isComplete={isComplete} />
         <CompletionBadge isComplete={isComplete} />

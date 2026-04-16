@@ -11,6 +11,8 @@ const hoisted = vi.hoisted(() => ({
   mockWriteFile: vi.fn(),
   mockDatasetGetById: vi.fn(),
   mockModelCreate: vi.fn(),
+  mockModelGetById: vi.fn(),
+  mockModelList: vi.fn(),
   mockModelUpdate: vi.fn(),
   mockGetOrCreateContainer: vi.fn(),
   mockIsDockerAvailable: vi.fn(),
@@ -56,9 +58,9 @@ vi.mock('../repositories/datasetRepository.js', () => ({
 vi.mock('../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
     create: hoisted.mockModelCreate,
+    getById: hoisted.mockModelGetById,
+    list: hoisted.mockModelList,
     update: hoisted.mockModelUpdate,
-    getById: vi.fn(),
-    list: vi.fn(),
     delete: vi.fn(),
   }),
 }));
@@ -84,7 +86,7 @@ vi.mock('./tuningService.js', () => ({
   deleteTuningStudiesByModelId: vi.fn(),
 }));
 
-import { buildTrainingScript, trainModel } from './modelTraining.js';
+import { buildTrainingScript, getModelById, listModels, trainModel } from './modelTraining.js';
 
 const {
   mockRandomUUID,
@@ -97,6 +99,8 @@ const {
   mockWriteFile,
   mockDatasetGetById,
   mockModelCreate,
+  mockModelGetById,
+  mockModelList,
   mockModelUpdate,
   mockGetOrCreateContainer,
   mockIsDockerAvailable,
@@ -146,6 +150,8 @@ beforeEach(() => {
   mockSyncWorkspaceDatasets.mockResolvedValue(undefined);
   mockKernelExecute.mockResolvedValue({ status: 'success' });
   mockRunEvaluation.mockResolvedValue(undefined);
+  mockModelGetById.mockResolvedValue(undefined);
+  mockModelList.mockResolvedValue([]);
 });
 
 describe('buildTrainingScript', () => {
@@ -350,5 +356,45 @@ describe('trainModel', () => {
     expect(result.success).toBe(false);
     expect(result.model.evaluationStatus).toBe('failed');
     expect(result.model.evaluationError).toBe('Execution timed out after 30000ms');
+  });
+});
+
+describe('model record reads', () => {
+  it('heals legacy llm template ids when listing models', async () => {
+    mockModelList.mockResolvedValue([
+      makeCreatedRecord({
+        templateId: 'llm-random_forest_regressor',
+      }),
+    ]);
+
+    const models = await listModels('project-1');
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.templateId).toBe('random_forest_regressor');
+  });
+
+  it('heals legacy llm template ids when fetching a single model', async () => {
+    mockModelGetById.mockResolvedValue(makeCreatedRecord({
+      modelId: 'legacy-model-id',
+      templateId: 'llm-logistic_regression',
+      taskType: 'classification',
+      algorithm: 'LogisticRegression',
+    }));
+
+    const model = await getModelById('legacy-model-id');
+
+    expect(model?.templateId).toBe('logistic_regression');
+  });
+
+  it('preserves unsupported synthetic llm template ids on read', async () => {
+    mockModelGetById.mockResolvedValue(makeCreatedRecord({
+      modelId: 'unsupported-model-id',
+      templateId: 'llm-lightgbm',
+      algorithm: 'LGBMRegressor',
+    }));
+
+    const model = await getModelById('unsupported-model-id');
+
+    expect(model?.templateId).toBe('llm-lightgbm');
   });
 });

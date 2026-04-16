@@ -4,12 +4,14 @@
 // and collapses to "AutoML" after 1.6s. The brand's width is reserved
 // to the long form so nav links / CTA on the right never shift.
 import ThemeToggleIsland from './ThemeToggleIsland';
+import { getAppLoginUrl } from '@/lib/appLinks';
 
 const navLinks = [
   { label: 'Quick Look',   href: '#product' },
   { label: 'Features',     href: '#features' },
   { label: 'How it works', href: '#how-it-works' },
 ];
+const appLoginUrl = getAppLoginUrl();
 ---
 
 <header class="nav-root">
@@ -40,8 +42,8 @@ const navLinks = [
     </nav>
 
     <div class="nav-right">
-      <a href="/login" class="nav-signin">Sign In</a>
-      <a href="/login" class="nav-cta">Get Started</a>
+      <a href={appLoginUrl} class="nav-signin">Sign In</a>
+      <a href={appLoginUrl} class="nav-cta">Get Started</a>
     </div>
 
     <button
@@ -75,8 +77,8 @@ const navLinks = [
     </nav>
     <div class="mobile-nav-divider"></div>
     <div class="mobile-nav-actions">
-      <a href="/login" class="mobile-nav-signin">Sign In</a>
-      <a href="/login" class="mobile-nav-cta">Get Started</a>
+      <a href={appLoginUrl} class="mobile-nav-signin">Sign In</a>
+      <a href={appLoginUrl} class="mobile-nav-cta">Get Started</a>
     </div>
     <div class="mobile-nav-theme">
       <span class="mobile-nav-theme-label">Theme</span>

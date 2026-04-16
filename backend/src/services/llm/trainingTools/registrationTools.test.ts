@@ -284,6 +284,41 @@ describe('registerModel', () => {
     expect(result.error).toBeUndefined();
     const createArg = mockCreate.mock.calls[0][0];
     expect(createArg.taskType).toBe('classification');
+    expect(createArg.templateId).toBe('logistic_regression');
+  });
+
+  it('stores canonical template IDs for supported llm workflow families', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'RF Baseline',
+      modelType: 'random_forest',
+      metrics: { accuracy: 0.91, f1: 0.87 },
+      artifactPath: 'model.joblib'
+    }));
+
+    expect(result.error).toBeUndefined();
+    const createArg = mockCreate.mock.calls[0][0];
+    expect(createArg.templateId).toBe('random_forest_classifier');
+  });
+
+  it('keeps llm-prefixed template IDs for unsupported tuning families', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'LightGBM Baseline',
+      modelType: 'lightgbm',
+      metrics: { r2: 0.74 },
+      artifactPath: 'model.joblib'
+    }));
+
+    expect(result.error).toBeUndefined();
+    const createArg = mockCreate.mock.calls[0][0];
+    expect(createArg.templateId).toBe('llm-lightgbm');
   });
 
   it('falls back to evaluate_results metrics when register_model receives an empty metrics object', async () => {

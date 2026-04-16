@@ -32,6 +32,10 @@ const alignmentFileFor = (mp3File: string): string =>
 
 type SceneTimingData = {
   durationInFrames: number;
+  captureSize?: {
+    width: number;
+    height: number;
+  };
   alignment?: SceneAlignment;
   /** False when the scene declared a `voiceoverFile` but the MP3 failed to
    * load — used downstream to strip the filename so `<SceneVoiceover>` stays
@@ -76,27 +80,54 @@ const loadDuration = async (
 
 type CaptureMeta = {
   durationMs?: number;
+  width?: number;
+  height?: number;
 };
 
-const loadCaptureDuration = async (
+const loadCaptureData = async (
   scene: SelectableScene,
-): Promise<number | null> => {
-  if (scene.type !== "demo") return null;
+): Promise<{
+  durationInFrames: number | null;
+  captureSize?: {
+    width: number;
+    height: number;
+  };
+}> => {
+  if (scene.type !== "demo") {
+    return { durationInFrames: null };
+  }
 
   const metaFile = captureMetaFileForVideo(scene.videoFile);
   const url = staticFile(capturesPath(metaFile));
 
   try {
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return { durationInFrames: null };
+    }
     const meta = (await res.json()) as CaptureMeta;
-    return getCaptureMediaDurationFrames({
-      durationMs: meta.durationMs ?? Number.NaN,
-      startOffsetSeconds: scene.startOffset,
-      fps: FPS,
-    });
+    const captureSize =
+      Number.isFinite(meta.width) &&
+      Number.isFinite(meta.height) &&
+      (meta.width ?? 0) > 0 &&
+      (meta.height ?? 0) > 0
+        ? {
+            width: Math.round(meta.width ?? 0),
+            height: Math.round(meta.height ?? 0),
+          }
+        : undefined;
+
+    return {
+      durationInFrames: getCaptureMediaDurationFrames({
+        durationMs: meta.durationMs ?? Number.NaN,
+        startOffsetSeconds: scene.startOffset,
+        endOffsetSeconds: scene.endOffset,
+        fps: FPS,
+      }),
+      ...(captureSize ? { captureSize } : {}),
+    };
   } catch {
-    return null;
+    return { durationInFrames: null };
   }
 };
 
@@ -116,19 +147,20 @@ const loadCaptureDuration = async (
 const resolveSceneData = async (
   scene: SelectableScene,
 ): Promise<SceneTimingData> => {
-  const [voiceoverDuration, alignment, captureDuration] = await Promise.all([
+  const [voiceoverDuration, alignment, captureData] = await Promise.all([
     hasVoiceover(scene) ? loadDuration(scene.voiceoverFile) : Promise.resolve(null),
     hasVoiceover(scene)
       ? loadAlignment(scene.voiceoverFile)
       : Promise.resolve(undefined),
-    loadCaptureDuration(scene),
+    loadCaptureData(scene),
   ]);
 
   return {
     durationInFrames:
-      voiceoverDuration ?? captureDuration ?? scene.durationInFrames,
+      voiceoverDuration ?? captureData.durationInFrames ?? scene.durationInFrames,
     voiceoverAvailable:
       hasVoiceover(scene) && voiceoverDuration !== null,
+    ...(captureData.captureSize ? { captureSize: captureData.captureSize } : {}),
     ...(alignment ? { alignment } : {}),
   };
 };
@@ -165,6 +197,7 @@ const computeScenesWithMetadata = async (
       from,
       durationInFrames: timing.durationInFrames,
       chapter: getChapterTitle(resolvedScene),
+      ...(timing.captureSize ? { captureSize: timing.captureSize } : {}),
       ...(timing.alignment ? { alignment: timing.alignment } : {}),
     };
   });

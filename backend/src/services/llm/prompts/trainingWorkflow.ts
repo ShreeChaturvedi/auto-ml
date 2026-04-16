@@ -196,6 +196,16 @@ function buildTrainingContinuationDirective(
     return 'ACTION REQUIRED: The previous tool call used the wrong experiment identifier. Call configure_experiment now for this request if it has not been configured in this turn. After configure_experiment succeeds, call propose_training_plan and stop for approval. Do NOT compare models or validate results yet.';
   }
 
+  if (lastLifecycleFailure?.tool === 'configure_experiment') {
+    const familyMismatch = lifecycleFailureMessage.match(
+      /implies modeltype="([^"]+)" but configure_experiment requested "([^"]+)"/i
+    );
+    if (familyMismatch) {
+      const requiredModelType = familyMismatch[1];
+      return `ACTION REQUIRED: The previous configure_experiment call substituted the wrong model family. Call configure_experiment AGAIN now with modelType="${requiredModelType}" using the same experiment intent, taskType, split settings, target column, and feature columns. After configure_experiment succeeds, call propose_training_plan and stop for approval. Do NOT write notebook cells yet. Do NOT respond with fallback prose.`;
+    }
+  }
+
   if (lifecycleFailureMessage.includes('evaluate_results requires non-empty numeric metrics') && experimentId) {
     return `ACTION REQUIRED: Call evaluate_results now with experimentId="${experimentId}". Use the numeric metrics already produced by training (RMSE/MAE/R2 or accuracy/F1) instead of comparing models. Do NOT call compare_models unless multiple experiments were actually evaluated.`;
   }

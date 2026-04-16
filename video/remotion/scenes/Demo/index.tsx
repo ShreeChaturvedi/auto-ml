@@ -2,8 +2,11 @@ import React, { useEffect, useState } from "react";
 import {
   continueRender,
   delayRender,
+  Easing,
+  interpolate,
   OffthreadVideo,
   staticFile,
+  useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import type { z } from "zod";
@@ -11,7 +14,7 @@ import { REGULAR_FONT } from "../../../config/fonts";
 import type { demoScene } from "../../../config/scenes";
 import type { Theme } from "../../../config/themes";
 import { COLORS, getChromeGradient } from "../../../config/themes";
-import { BrowserChrome } from "../../helpers/BrowserChrome";
+import { BrowserChrome, CONTINUITY } from "../../helpers/BrowserChrome";
 import { capturesPath, mainVideoPath } from "../../helpers/paths";
 import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { useTimelineRunner } from "../../hooks/useTimelineRunner";
@@ -33,6 +36,11 @@ type Props = {
   meta?: SceneWithMetadata;
 };
 
+// Composition dimensions — video wrappers transform against these when the
+// chrome dismisses. Kept local so Demo doesn't need a full DIMENSIONS import.
+const COMP_W = 1920;
+const COMP_H = 1080;
+
 /**
  * Demo scene: plays a Playwright-captured screen recording inside an optional
  * window chrome, with synthetic cursor + click-ripple + zoom + sfx overlays.
@@ -40,6 +48,11 @@ type Props = {
  * Capture output lives in `public/captures/<beat>.{webm,cursor.json,meta.json}`
  * (see `scripts/capture-demo.ts`). Legacy Open-Recorder clips still work via
  * `videoRoot: "main"`.
+ *
+ * When `chromeDismissAt` is set, the chrome frame fades out over
+ * `chromeDismissDurationFrames` while the video wrapper transforms from the
+ * chrome's inner content rectangle to full-bleed — creating a "zoom out of
+ * the browser" reveal into the capture.
  */
 export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
   const { fps } = useVideoConfig();
@@ -54,10 +67,25 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
 
   const cursorPath = useCursorPath(scene.cursorFile, fps, scene.startOffset);
 
+  if (scene.chromeDismissAt !== undefined) {
+    return (
+      <DemoWithDismiss
+        scene={scene}
+        dismissAt={scene.chromeDismissAt}
+        theme={theme}
+        meta={meta}
+        videoSrc={videoSrc}
+        startFrom={startFrom}
+        cursorPath={cursorPath}
+      />
+    );
+  }
+
   return (
     <BrowserChrome
       variant={scene.chrome}
       url={scene.url}
+      tabs={scene.tabs}
       outerBackground={getChromeGradient(theme)}
     >
       <TimelineOverlay scene={scene} meta={meta}>
@@ -82,6 +110,130 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
 
       <SceneVoiceover file={scene.voiceoverFile} />
     </BrowserChrome>
+  );
+};
+
+/**
+ * Default chrome-dismiss tween length (750 ms @ 60 fps) when a scene sets
+ * `chromeDismissAt` but omits the duration. Keeping the default here rather
+ * than in the Zod schema lets existing demo scenes declare a single-field
+ * dismiss without also populating a duration they don't care about.
+ */
+const DEFAULT_CHROME_DISMISS_DURATION_FRAMES = 45;
+
+/**
+ * Chrome-dismiss variant. Renders the video as a sibling of the chrome and
+ * tweens both:
+ *   1. video wrapper bounds: chrome's inner content rect → full-bleed
+ *   2. chrome opacity: 1 → 0 (dark outer backdrop + card fade together)
+ *
+ * The chrome's card is transparent so the video shows through during the
+ * tween rather than snapping visible at opacity 0.
+ */
+type DismissProps = {
+  scene: DemoSceneType;
+  dismissAt: number;
+  theme: Theme;
+  meta?: SceneWithMetadata;
+  videoSrc: string;
+  startFrom: number | undefined;
+  cursorPath: readonly CursorWaypoint[] | null;
+};
+
+const DemoWithDismiss: React.FC<DismissProps> = ({
+  scene,
+  dismissAt,
+  theme,
+  meta,
+  videoSrc,
+  startFrom,
+  cursorPath,
+}) => {
+  const frame = useCurrentFrame();
+  const dismissDur =
+    scene.chromeDismissDurationFrames ?? DEFAULT_CHROME_DISMISS_DURATION_FRAMES;
+
+  const progress = interpolate(
+    frame,
+    [dismissAt, dismissAt + dismissDur],
+    [0, 1],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+      easing: Easing.inOut(Easing.cubic),
+    },
+  );
+  const chromeOpacity = 1 - progress;
+
+  // Chrome's inner content rectangle — what the video appears to live inside
+  // while the chrome is visible. Derived from CONTINUITY tokens so the bounds
+  // stay in lockstep with the rendered chrome.
+  const startRect = {
+    top: CONTINUITY.padding + CONTINUITY.titleBarHeight,
+    left: CONTINUITY.padding,
+    width: COMP_W - CONTINUITY.padding * 2,
+    height: COMP_H - CONTINUITY.padding * 2 - CONTINUITY.titleBarHeight,
+  };
+  const endRect = { top: 0, left: 0, width: COMP_W, height: COMP_H };
+
+  const videoRect = {
+    top: interpolate(progress, [0, 1], [startRect.top, endRect.top]),
+    left: interpolate(progress, [0, 1], [startRect.left, endRect.left]),
+    width: interpolate(progress, [0, 1], [startRect.width, endRect.width]),
+    height: interpolate(progress, [0, 1], [startRect.height, endRect.height]),
+  };
+
+  return (
+    <>
+      {/* Video wrapper — grows from chrome's inner rect to full-bleed. */}
+      <div
+        style={{
+          position: "absolute",
+          top: videoRect.top,
+          left: videoRect.left,
+          width: videoRect.width,
+          height: videoRect.height,
+          overflow: "hidden",
+          background: "#000",
+        }}
+      >
+        <TimelineOverlay scene={scene} meta={meta}>
+          <OffthreadVideo
+            src={videoSrc}
+            startFrom={startFrom}
+            muted
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        </TimelineOverlay>
+      </div>
+
+      {/* Chrome overlay — transparent card so the video shows through. Outer
+          background fades together with the card via the opacity style. */}
+      <BrowserChrome
+        variant={scene.chrome}
+        url={scene.url}
+        tabs={scene.tabs}
+        outerBackground={getChromeGradient(theme)}
+        cardBackground="transparent"
+        style={{
+          opacity: chromeOpacity,
+          pointerEvents: chromeOpacity === 0 ? "none" : undefined,
+        }}
+      />
+
+      {cursorPath ? <SyntheticCursor path={cursorPath} theme="dark" /> : null}
+
+      {scene.chapter ? (
+        <ChapterBadge theme={theme} text={scene.chapter} />
+      ) : null}
+
+      <SceneVoiceover file={scene.voiceoverFile} />
+    </>
   );
 };
 

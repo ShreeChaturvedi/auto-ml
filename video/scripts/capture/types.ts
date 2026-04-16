@@ -19,6 +19,16 @@ export type CaptureMeta = {
   width: number;
   height: number;
   durationMs: number;
+  /**
+   * Multi-tab beats (e.g. signup → gmail-lookalike) produce one webm per
+   * `context.pages()` entry; `tabs` lists the non-primary tabs so the
+   * Remotion composition can align them on the timeline.
+   */
+  tabs?: ReadonlyArray<{
+    file: string;
+    openedAtMs: number;
+    url?: string;
+  }>;
 };
 
 /** Driver-facing cursor API. `move`/`click` each record one entry. */
@@ -39,4 +49,27 @@ export type RafScroll = (
 export type MarkPacer = {
   hasAlignment: boolean;
   waitForMark: (markName: string) => Promise<void>;
+};
+
+/**
+ * Extra-page descriptor returned by drivers that open additional tabs.
+ * Orchestrator uses it to persist a per-tab webm + cursor JSON with the
+ * `labelSuffix` appended to the beat name (e.g. `signup-gmail.webm`).
+ */
+export type ExtraPage = {
+  page: Page;
+  entries: readonly CursorEntry[];
+  openedAtMs: number;
+  labelSuffix: string;
+  /** Optional URL hint used in meta sidecar (e.g. "mail.google.com"). */
+  url?: string;
+};
+
+/**
+ * Optional driver result. Drivers that only touch the primary page return
+ * `undefined` (or `void`); multi-tab drivers surface their extra pages so
+ * the orchestrator can enumerate them at teardown.
+ */
+export type DriverResult = {
+  extraPages?: ReadonlyArray<ExtraPage>;
 };

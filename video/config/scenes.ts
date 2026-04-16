@@ -96,6 +96,18 @@ export type AppTimelineEvent = z.infer<typeof appTimelineEvent>;
 export const appChromeVariant = z.enum(["mac", "browser", "none"]);
 export type AppChromeVariant = z.infer<typeof appChromeVariant>;
 
+/**
+ * Chrome-style tab strip entry for the `demoScene.tabs` field. Each tab may
+ * optionally fade in at `appearFrame` — enabling the "a second tab just
+ * opened" visual used by the signup→Gmail hand-off.
+ */
+export const chromeTab = z.object({
+  title: z.string(),
+  favicon: z.string().optional(),
+  active: z.boolean(),
+  appearFrame: z.number().int().nonnegative().optional(),
+});
+
 // ---- Demo (Playwright capture + Remotion overlay primitives) ----------------
 
 export const demoScene = z.object({
@@ -123,6 +135,36 @@ export const demoScene = z.object({
   cursorFile: z.string().optional(),
   /** Choreographed overlay events (VO-mark or chain-triggered). */
   timeline: z.array(appTimelineEvent).optional(),
+  /**
+   * Frame at which the chrome frame begins to dismiss (fade out while the
+   * video wrapper transforms from chrome's inner-area rectangle to full-bleed).
+   * Omit to keep the chrome visible for the full scene.
+   */
+  chromeDismissAt: z.number().int().nonnegative().optional(),
+  /** Length of the chrome-dismiss tween. Consumers apply a 45 f default when
+   * omitted — kept optional in the schema so existing demo scenes without
+   * dismiss don't need to opt in with a field they don't use. */
+  chromeDismissDurationFrames: z.number().int().positive().optional(),
+  /** Optional Chrome-style tab strip above the address bar. */
+  tabs: z.array(chromeTab).optional(),
+});
+
+// ---- UrlIntro (Remotion-only new-tab → URL-typing scene) --------------------
+
+/**
+ * Pure-Remotion scene that opens on a painterly new-tab backdrop, zooms into
+ * the URL pill, and animates a URL being typed. Hard-cuts into the landing
+ * demo scene — the chrome continues unchanged so the transition is invisible.
+ */
+export const urlIntroScene = z.object({
+  type: z.literal("urlIntro"),
+  /** URL to type into the address bar (e.g. "agentic-automl.vercel.app"). */
+  url: z.string(),
+  /** Painterly backdrop asset path, relative to `public/` (e.g. "backgrounds/newtab-bg.webp"). */
+  backgroundAsset: z.string().optional(),
+  voiceoverFile,
+  /** Default 270 f — 4.5 s @ 60 fps. */
+  durationInFrames: z.number().int().positive().default(270),
 });
 
 // ---- Title card -------------------------------------------------------------
@@ -157,6 +199,7 @@ export const selectableScenes = z.discriminatedUnion("type", [
   slideScene,
   codeRevealScene,
   demoScene,
+  urlIntroScene,
   titleScene,
   endcardScene,
   tableOfContentsScene,

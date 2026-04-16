@@ -59,8 +59,8 @@ export const ZoomFrame: React.FC<ZoomFrameProps> = ({
 
   const cx = region.x + region.w / 2;
   const cy = region.y + region.h / 2;
-  const tx = -(cx - COMP_WIDTH / 2) * netProgress;
-  const ty = -(cy - COMP_HEIGHT / 2) * netProgress;
+  const tx = (COMP_WIDTH / 2 - cx) * netProgress;
+  const ty = (COMP_HEIGHT / 2 - cy) * netProgress;
 
   return (
     <div
@@ -68,7 +68,7 @@ export const ZoomFrame: React.FC<ZoomFrameProps> = ({
         position: "absolute",
         inset: 0,
         transform: `translate(${tx}px, ${ty}px) scale(${s})`,
-        transformOrigin: "center center",
+        transformOrigin: `${cx}px ${cy}px`,
         willChange: "transform",
       }}
     >

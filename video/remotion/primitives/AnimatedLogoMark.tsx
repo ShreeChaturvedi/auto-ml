@@ -90,6 +90,14 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
   const apexOpacityBase = interpolate(apexSimpleProgress, [0, 1], [0, 1]);
 
   if (variant === "simple") {
+    const p1 = scale2D(14, 8);
+    const p2 = scale2D(5, 26);
+    const p3 = scale2D(9, 18);
+    const p4 = scale2D(19.5, 18);
+    const p5 = scale2D(18, 8);
+    const p6 = scale2D(27, 26);
+    const c = scale2D(16, 4);
+
     return (
       <svg
         width={size}
@@ -97,11 +105,12 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
         viewBox="0 0 32 32"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        style={{ overflow: "visible" }}
       >
-        <path d="M14 8L5 26" stroke={strokeColor} strokeWidth={2.5} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={leftLegOffset} />
-        <path d="M9 18H19.5" stroke={strokeColor} strokeWidth={2.5} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={crossbarOffset} />
-        <path d="M18 8L27 26" stroke={strokeColor} strokeWidth={2.5} strokeLinecap="round" pathLength={1} strokeDasharray={1} opacity={RIGHT_LEG_OPACITY} strokeDashoffset={rightLegOffset} />
-        <circle cx={16} cy={4} r={3} fill={strokeColor} opacity={apexOpacityBase} style={{ transform: `scale(${apexScale})`, transformOrigin: "16px 4px" }} />
+        <path d={`M${p1[0]} ${p1[1]}L${p2[0]} ${p2[1]}`} stroke={strokeColor} strokeWidth={2.5} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={leftLegOffset} />
+        <path d={`M${p3[0]} ${p3[1]}L${p4[0]} ${p4[1]}`} stroke={strokeColor} strokeWidth={2.5} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={crossbarOffset} />
+        <path d={`M${p5[0]} ${p5[1]}L${p6[0]} ${p6[1]}`} stroke={strokeColor} strokeWidth={2.5} strokeLinecap="round" pathLength={1} strokeDasharray={1} opacity={RIGHT_LEG_OPACITY} strokeDashoffset={rightLegOffset} />
+        <circle cx={c[0]} cy={c[1]} r={3 * 1.05} fill={strokeColor} opacity={apexOpacityBase} style={{ transform: `scale(${apexScale})`, transformOrigin: `${c[0]}px ${c[1]}px` }} />
       </svg>
     );
   }
@@ -146,9 +155,10 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
     const rx = x * Math.cos(angle) - y * Math.sin(angle);
     const ry = x * Math.sin(angle) + y * Math.cos(angle);
     
-    // 2. Strict Isometric Projection
-    const sx_iso = 16 + (rx - ry) * 0.866025 * 0.14;
-    const sy_iso = 16 + (rx + ry) * 0.5 * 0.14 - z * 0.14;
+    // 2. Strict Isometric Projection (Scaled up by ~15%)
+    const ISO_SCALE = 0.161; 
+    const sx_iso = 16 + (rx - ry) * 0.866025 * ISO_SCALE;
+    const sy_iso = 16 + (rx + ry) * 0.5 * ISO_SCALE - z * ISO_SCALE;
     
     if (!target2D) return [sx_iso, sy_iso] as [number, number];
     
@@ -157,6 +167,14 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
       interpolate(morph, [0, 1], [sx_iso, target2D[0]]),
       interpolate(morph, [0, 1], [sy_iso, target2D[1]])
     ] as [number, number];
+  };
+
+  // Helper to scale flat 2D targets by 5%
+  const scale2D = (x: number, y: number): [number, number] => {
+    return [
+      16 + (x - 16) * 1.05,
+      16 + (y - 16) * 1.05
+    ];
   };
 
   const drawBlock = (
@@ -281,10 +299,10 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
 
   // Apex Animation targets
   const apexZOffset = (1 - apexProgress) * -40;
-  const apexPt = getPoint(0, 0, 92 + apexZOffset, [16, 4]);
+  const apexPt = getPoint(0, 0, 92 + apexZOffset, scale2D(16, 4));
   const pulseOpacity = 0.4 + 0.6 * ((Math.sin(frame / 15) + 1) / 2);
   const ringOpacity = interpolate(morph, [0, 0.5], [1, 0], { extrapolateRight: "clamp" });
-  const innerR = interpolate(morph, [0, 1], [2.2, 3], { extrapolateRight: "clamp" });
+  const innerR = interpolate(morph, [0, 1], [2.2 * 1.15, 3 * 1.05], { extrapolateRight: "clamp" });
   const innerOpacity = interpolate(morph, [0, 1], [0.8, 1], { extrapolateRight: "clamp" });
 
   return (
@@ -323,12 +341,12 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
       {drawBlock(
         leftLegOpts.bl, leftLegOpts.br, leftLegOpts.tr, leftLegOpts.tl, 
         leftLegOpts.y1, leftLegOpts.y2, leftProgress,
-        { bl: [5, 26], br: [5, 26], tr: [14, 8], tl: [14, 8] }
+        { bl: scale2D(5, 26), br: scale2D(5, 26), tr: scale2D(14, 8), tl: scale2D(14, 8) }
       )}
       
       <MorphLine 
         x1={-35} z1={0} x2={-12} z2={80}
-        target1={[5, 26]} target2={[14, 8]}
+        target1={scale2D(5, 26)} target2={scale2D(14, 8)}
         progress={leftProgress}
         offset={interpolate(frame % 150, [0, 150], [100, -15])}
       />
@@ -336,12 +354,12 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
       {drawBlock(
         crossOpts.bl, crossOpts.br, crossOpts.tr, crossOpts.tl, 
         crossOpts.y1, crossOpts.y2, crossbarProgress,
-        { bl: [9, 18], br: [19.5, 18], tr: [19.5, 18], tl: [9, 18] }
+        { bl: scale2D(9, 18), br: scale2D(19.5, 18), tr: scale2D(19.5, 18), tl: scale2D(9, 18) }
       )}
 
       <MorphLine 
         x1={-13} z1={42.5} x2={13} z2={42.5}
-        target1={[9, 18]} target2={[19.5, 18]}
+        target1={scale2D(9, 18)} target2={scale2D(19.5, 18)}
         progress={crossbarProgress}
         offset={interpolate((frame + 50) % 150, [0, 150], [100, -15])}
       />
@@ -349,12 +367,12 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
       {drawBlock(
         rightLegOpts.bl, rightLegOpts.br, rightLegOpts.tr, rightLegOpts.tl, 
         rightLegOpts.y1, rightLegOpts.y2, rightProgress,
-        { bl: [27, 26], br: [27, 26], tr: [18, 8], tl: [18, 8] }
+        { bl: scale2D(27, 26), br: scale2D(27, 26), tr: scale2D(18, 8), tl: scale2D(18, 8) }
       )}
 
       <MorphLine 
         x1={35} z1={0} x2={12} z2={80}
-        target1={[27, 26]} target2={[18, 8]}
+        target1={scale2D(27, 26)} target2={scale2D(18, 8)}
         progress={rightProgress}
         offset={interpolate((frame + 100) % 150, [0, 150], [100, -15])}
         finalOpacity={RIGHT_LEG_OPACITY}
@@ -363,11 +381,11 @@ export const AnimatedLogoMark: React.FC<AnimatedLogoMarkProps> = ({
       {apexProgress > 0 && (
         <g opacity={apexProgress}>
           {ringOpacity > 0 && (
-            <circle cx={apexPt[0]} cy={apexPt[1]} r={interpolate(morph, [0, 1], [4, 0])} fill={strokeColor} opacity={pulseOpacity * 0.15 * ringOpacity} />
+            <circle cx={apexPt[0]} cy={apexPt[1]} r={interpolate(morph, [0, 1], [4 * 1.15, 0])} fill={strokeColor} opacity={pulseOpacity * 0.15 * ringOpacity} />
           )}
           <circle cx={apexPt[0]} cy={apexPt[1]} r={innerR} fill={strokeColor} opacity={innerOpacity} />
           {ringOpacity > 0 && (
-            <circle cx={apexPt[0]} cy={apexPt[1]} r={interpolate(morph, [0, 1], [4.5, 0])} fill="none" stroke={strokeColor} strokeWidth={0.3} opacity={0.4 * ringOpacity} />
+            <circle cx={apexPt[0]} cy={apexPt[1]} r={interpolate(morph, [0, 1], [4.5 * 1.15, 0])} fill="none" stroke={strokeColor} strokeWidth={0.3} opacity={0.4 * ringOpacity} />
           )}
         </g>
       )}

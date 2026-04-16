@@ -1,13 +1,20 @@
-import React from "react";
+import React, { type ReactNode } from "react";
 
-export type ChromeAddressBarProps = {
-  /** Fully-formed URL string rendered inside the address bar. URL transitions
-   * (crossfade between values) are driven externally by callers via the
-   * Demo scene's timeline — this component stays presentational. */
-  url: string;
-};
+/**
+ * Address bar inside the browser chrome's title bar.
+ *
+ * Accepts either a plain `url` string (presentational — the default case) or
+ * arbitrary `children` for callers that need to drive the pill content with a
+ * frame-driven primitive (e.g. `<AddressBarTyper />` in the UrlIntro scene).
+ *
+ * The discriminated union keeps the default path ergonomic: existing callers
+ * still pass `url="..."` and get the same lock-icon + text layout.
+ */
+export type ChromeAddressBarProps =
+  | { url: string; children?: never }
+  | { url?: undefined; children: ReactNode };
 
-export const ChromeAddressBar: React.FC<ChromeAddressBarProps> = ({ url }) => {
+export const ChromeAddressBar: React.FC<ChromeAddressBarProps> = (props) => {
   return (
     <div
       style={{
@@ -31,7 +38,11 @@ export const ChromeAddressBar: React.FC<ChromeAddressBarProps> = ({ url }) => {
       }}
     >
       <LockIcon />
-      <span>{url}</span>
+      {"children" in props && props.children !== undefined ? (
+        props.children
+      ) : (
+        <span>{props.url ?? ""}</span>
+      )}
     </div>
   );
 };

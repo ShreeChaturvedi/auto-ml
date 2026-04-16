@@ -9,6 +9,7 @@ import { EndCard } from "./EndCard";
 import { Slide } from "./Slide";
 import { TableOfContents } from "./TableOfContents";
 import { Title } from "./Title/Title";
+import { UrlIntro } from "./UrlIntro";
 
 type Props = {
   sceneAndMetadata: SceneWithMetadata;
@@ -36,6 +37,9 @@ export const Scene: React.FC<Props> = ({ sceneAndMetadata, theme, chapters }) =>
 
     case "demo":
       return <Demo scene={scene} theme={theme} meta={sceneAndMetadata} />;
+
+    case "urlIntro":
+      return <UrlIntro scene={scene} theme={theme} />;
 
     case "title":
       return (

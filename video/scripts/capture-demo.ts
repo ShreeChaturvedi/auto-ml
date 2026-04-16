@@ -36,6 +36,7 @@ import type {
   CaptureMeta,
   CursorEntry,
   CursorRecorder,
+  DriverResult,
   MarkPacer,
   RafScroll,
 } from "./capture/types";
@@ -84,6 +85,16 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 
 type BeatName = "landing" | "signup" | "home";
 
+type ServerConfig = {
+  url: string;
+  port: number;
+  cwd: string;
+  /** npm script name (defaults to `dev`). */
+  script: string;
+  /** Label used in log output — e.g. "frontend" / "landing". */
+  label: string;
+};
+
 type BeatConfig = {
   name: BeatName;
   url: string;
@@ -102,6 +113,12 @@ type BeatConfig = {
   /** When true, seeds auth tokens into localStorage before goto. */
   seedAuth: boolean;
   alignmentFile: string;
+  /**
+   * Additional dev servers the beat needs running. signup needs both the
+   * frontend (primary) AND the landing server so the multi-tab verification
+   * flow can open the painterly new-tab + Gmail-lookalike pages.
+   */
+  companionServers?: ReadonlyArray<ServerConfig>;
 };
 
 const BEATS: Record<BeatName, BeatConfig> = {
@@ -126,6 +143,17 @@ const BEATS: Record<BeatName, BeatConfig> = {
     mockApi: true,
     seedAuth: false,
     alignmentFile: "scene-signup.alignment.json",
+    companionServers: [
+      {
+        // Landing serves `/newtab` + `/mock-gmail*` — the second Playwright
+        // tab navigates there for the Gmail-lookalike verification flow.
+        label: "landing",
+        url: "http://localhost:4321/",
+        port: 4321,
+        cwd: path.join(REPO_ROOT, "landing"),
+        script: "dev",
+      },
+    ],
   },
   home: {
     name: "home",
@@ -187,27 +215,35 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<boolean> {
 
 type ServerHandle = { proc: ChildProcess | null; startedByUs: boolean };
 
-async function ensureServer(cfg: BeatConfig): Promise<ServerHandle> {
+/**
+ * Boot (or reuse) a single dev server. Kept as a standalone helper so the
+ * primary beat server and any companion servers share the same probe →
+ * spawn → readiness flow.
+ */
+async function ensureOneServer(
+  spec: ServerConfig,
+  beatName: string,
+): Promise<ServerHandle> {
   // Try the URL directly — a reachable server is a reachable server regardless
   // of which interface it bound to. `net.createServer().listen(port, "127.0.0.1")`
   // doesn't always collide with IPv6-bound processes, so HTTP probing is more
   // reliable than socket-bind testing.
-  const already = await waitForHttp(cfg.url, 1000);
+  const already = await waitForHttp(spec.url, 1000);
   if (already) {
-    console.log(`[capture] reusing server at ${cfg.url}`);
+    console.log(`[capture] reusing ${spec.label} at ${spec.url}`);
     return { proc: null, startedByUs: false };
   }
-  if (!existsSync(path.join(cfg.serverCwd, "node_modules"))) {
+  if (!existsSync(path.join(spec.cwd, "node_modules"))) {
     console.error(
-      `[capture] ${cfg.serverCwd}/node_modules missing. Run: npm --prefix ${path.relative(REPO_ROOT, cfg.serverCwd)} install`,
+      `[capture] ${spec.cwd}/node_modules missing. Run: npm --prefix ${path.relative(REPO_ROOT, spec.cwd)} install`,
     );
     process.exit(1);
   }
-  console.log(`[capture] starting dev server (npm run ${cfg.serverScript}) in ${cfg.serverCwd}...`);
-  const logPath = `/tmp/capture-${cfg.name}-server.log`;
+  console.log(`[capture] starting ${spec.label} (npm run ${spec.script}) in ${spec.cwd}...`);
+  const logPath = `/tmp/capture-${beatName}-${spec.label}-server.log`;
   const logStream = createWriteStream(logPath, { flags: "a" });
-  const proc = spawn("npm", ["run", cfg.serverScript], {
-    cwd: cfg.serverCwd,
+  const proc = spawn("npm", ["run", spec.script], {
+    cwd: spec.cwd,
     env: { ...process.env, FORCE_COLOR: "0" },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -218,14 +254,37 @@ async function ensureServer(cfg: BeatConfig): Promise<ServerHandle> {
   cleanupFns.push(() => {
     if (!proc.killed) proc.kill("SIGTERM");
   });
-  const up = await waitForHttp(cfg.url, 60_000);
+  const up = await waitForHttp(spec.url, 60_000);
   if (!up) {
     proc.kill();
-    console.error(`[capture] dev server didn't respond within 60s. See ${logPath}.`);
+    console.error(`[capture] ${spec.label} didn't respond within 60s. See ${logPath}.`);
     process.exit(1);
   }
-  console.log(`[capture] server up at ${cfg.url}`);
+  console.log(`[capture] ${spec.label} up at ${spec.url}`);
   return { proc, startedByUs: true };
+}
+
+async function ensureServer(cfg: BeatConfig): Promise<ServerHandle[]> {
+  const primary: ServerConfig = {
+    label: cfg.name,
+    url: cfg.url,
+    port: cfg.port,
+    cwd: cfg.serverCwd,
+    script: cfg.serverScript,
+  };
+  const specs: ReadonlyArray<ServerConfig> = [
+    primary,
+    ...(cfg.companionServers ?? []),
+  ];
+  const handles: ServerHandle[] = [];
+  // Boot sequentially — companion servers tend to share `npm install` caches
+  // and hit the same file descriptors; parallel spawns occasionally race on
+  // Vite's dep-cache rebuilds. The 5-10 s overhead is negligible vs capture
+  // lengths (~1 minute).
+  for (const spec of specs) {
+    handles.push(await ensureOneServer(spec, cfg.name));
+  }
+  return handles;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +295,17 @@ async function ensureServer(cfg: BeatConfig): Promise<ServerHandle> {
 const FROZEN_EPOCH_MS = 1776670200000;
 // Seed = sum of char codes for "Ayush".
 const RANDOM_SEED = 546;
+
+/**
+ * Per-beat mutable state — tracks whether the verification email has been
+ * "clicked" yet so `GET /auth/verification-status` returns the right value
+ * as the flow progresses. Reset at the top of every `captureBeat()`.
+ *
+ * The mock verification token (`mock-verify-token-abc123`) is hardcoded in
+ * `landing/src/pages/mock-gmail/email.astro` — the mock accepts any value,
+ * but the Astro page embeds the known string so the link text reads real.
+ */
+let emailVerified = false;
 
 const DETERMINISM_SCRIPT = `
 (() => {
@@ -277,16 +347,22 @@ const DETERMINISM_SCRIPT = `
 // 2026-04-15T19:30Z) so server-issued `created_at`/`updated_at` fields line
 // up with the page's `Date.now()`.
 const FROZEN_ISO = "2026-04-15T19:30:00.000Z";
-const MOCK_USER = {
+const MOCK_USER_BASE = {
   user_id: "ayush-yadav-001",
   email: "yadava5@miamioh.edu",
   name: "Ayush Yadav",
   role: "user" as const,
-  email_verified: true,
   created_at: FROZEN_ISO,
   updated_at: FROZEN_ISO,
   last_login_at: FROZEN_ISO,
 };
+
+/**
+ * Current mock user, reflecting the live `emailVerified` flag. Tabs in the
+ * same context see consistent state because every response is built from
+ * this getter — not a closed-over snapshot.
+ */
+const getMockUser = () => ({ ...MOCK_USER_BASE, email_verified: emailVerified });
 
 // "none"-alg JWT. `isJwtExpired` only inspects the payload (exp claim), so we
 // can skip real signing. Using the page's frozen epoch (not Node's wall clock)
@@ -295,19 +371,13 @@ const MOCK_USER = {
 function fakeJwt(expEpochSeconds: number): string {
   const enc = (s: string) => Buffer.from(s).toString("base64url");
   return `${enc('{"alg":"none"}')}.${enc(
-    JSON.stringify({ sub: MOCK_USER.user_id, exp: expEpochSeconds }),
+    JSON.stringify({ sub: MOCK_USER_BASE.user_id, exp: expEpochSeconds }),
   )}.sig`;
 }
 
 const FROZEN_NOW_S = Math.floor(FROZEN_EPOCH_MS / 1000);
 const MOCK_ACCESS_TOKEN = fakeJwt(FROZEN_NOW_S + 7200); // 2h
 const MOCK_REFRESH_TOKEN = fakeJwt(FROZEN_NOW_S + 86400); // 24h
-
-const AUTH_ENVELOPE = {
-  user: MOCK_USER,
-  accessToken: MOCK_ACCESS_TOKEN,
-  refreshToken: MOCK_REFRESH_TOKEN,
-};
 
 async function mockApi(route: Route): Promise<void> {
   const url = route.request().url();
@@ -325,21 +395,33 @@ async function mockApi(route: Route): Promise<void> {
   switch (key) {
     case "POST /api/auth/register":
     case "POST /api/auth/login":
-      return respond(200, AUTH_ENVELOPE);
+      return respond(200, {
+        user: getMockUser(),
+        accessToken: MOCK_ACCESS_TOKEN,
+        refreshToken: MOCK_REFRESH_TOKEN,
+      });
     case "POST /api/auth/refresh":
       return respond(200, {
         accessToken: MOCK_ACCESS_TOKEN,
         refreshToken: MOCK_REFRESH_TOKEN,
       });
     case "GET /api/auth/me":
-      return respond(200, { user: MOCK_USER });
+      return respond(200, { user: getMockUser() });
     case "GET /api/auth/google":
       // Empty authUrl → SignupForm won't redirect. Important: the form sets
       // `googleLoading=true` before awaiting this call. Return a resolved
       // empty authUrl so the button rearms cleanly.
       return respond(200, { authUrl: "" });
+    case "POST /api/auth/verify-email":
+      // Flip the shared flag so later verification-status polls + /auth/me
+      // reads see the user as verified. Token value is not checked — we own
+      // both sides of the mock and know the link embeds MOCK_VERIFY_TOKEN.
+      emailVerified = true;
+      return respond(200, { message: "Email verified." });
+    case "POST /api/auth/resend-verification":
+      return respond(200, { message: "Verification email sent." });
     case "GET /api/auth/verification-status":
-      return respond(200, { emailVerified: true });
+      return respond(200, { emailVerified });
     case "GET /api/projects":
       // Empty list → HomePage falls into its "No Projects Yet" empty state.
       return respond(200, { projects: [] });
@@ -362,11 +444,14 @@ async function mockApi(route: Route): Promise<void> {
 // Shape matches the `partialize` projection — `{ user, accessToken, refreshToken }`
 // wrapped in `{ state, version }`. The `version` field must match the store's
 // declared version (defaults to 1 in `createPersistedStore`).
+//
+// The seeded user is always verified — `seedAuth` beats skip the signup +
+// verification flow entirely and expect a logged-in, fully-verified session.
 const AUTH_SEED_SCRIPT = `
 (() => {
   const envelope = ${JSON.stringify({
     state: {
-      user: MOCK_USER,
+      user: { ...MOCK_USER_BASE, email_verified: true },
       accessToken: MOCK_ACCESS_TOKEN,
       refreshToken: MOCK_REFRESH_TOKEN,
     },
@@ -403,7 +488,22 @@ function makeCursorRecorder(): CursorRecorder {
       await page.mouse.move(x, y, { steps: 20 });
       await mark(page, x, y, false);
       await page.mouse.click(x, y);
-      await mark(page, x, y, true);
+      try {
+        await mark(page, x, y, true);
+      } catch {
+        // Navigation may destroy the execution context before the post-click
+        // mark can evaluate. Synthesize a click entry from the pre-click
+        // timestamp so cursor JSON always records the click event.
+        const lastEntry = entries[entries.length - 1];
+        if (lastEntry) {
+          entries.push({
+            t_ms: lastEntry.t_ms + 50,
+            x: Math.round(x),
+            y: Math.round(y),
+            click: true,
+          });
+        }
+      }
     },
     entries: () => entries,
   };
@@ -508,6 +608,11 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
   const videoTmpDir = path.join(CAPTURES_DIR, `.${cfg.name}-tmp`);
   await mkdir(videoTmpDir, { recursive: true });
 
+  // Reset per-beat mock state so reruns start from a known baseline. Beats
+  // with `seedAuth` short-circuit the verification flow by pretending the
+  // user has already verified — everything else starts unverified.
+  emailVerified = cfg.seedAuth;
+
   const server = await ensureServer(cfg);
   const browser = await chromium.launch({ headless: true });
   // Register browser cleanup so Ctrl+C doesn't leave a headless Chromium alive.
@@ -528,6 +633,17 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       deviceScaleFactor: 1,
     });
     await context.addInitScript({ content: DETERMINISM_SCRIPT });
+
+    // Pre-navigate: disable Hero's 3.2 s auto-scroll BEFORE the page loads.
+    // Driver also sets this post-load for belt-and-suspenders, but doing it
+    // pre-navigate guarantees the flag exists when Hero's useEffect runs.
+    if (cfg.name === "landing") {
+      await context.addInitScript(() => {
+        (
+          window as Window & { __heroAutoScrollDisabled?: boolean }
+        ).__heroAutoScrollDisabled = true;
+      });
+    }
     // Second init script re-pins `__captureStart` using the elapsed driver
     // time since context creation. When this runs in the page, the driver's
     // wall clock has advanced by `offsetMs`; telling the page to subtract
@@ -541,12 +657,15 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
     if (cfg.seedAuth) {
       await context.addInitScript({ content: AUTH_SEED_SCRIPT });
     }
+    if (cfg.mockApi) {
+      // Context-scoped route so any additional pages a driver opens (e.g. the
+      // second tab that drives the Gmail-lookalike verification flow) also
+      // route `/api/**` through the mock. Must be installed BEFORE the first
+      // `goto` so first-mount fetches get routed.
+      await context.route("http://localhost:4000/api/**", mockApi);
+    }
 
     const page = await context.newPage();
-    if (cfg.mockApi) {
-      // Must be installed BEFORE `goto` so first-mount fetches get routed.
-      await page.route("http://localhost:4000/api/**", mockApi);
-    }
 
     const pacer = await makeMarkPacer(cfg, page);
     const cursor = makeCursorRecorder();
@@ -578,13 +697,18 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       rafScroll,
       waitForMark: pacer.waitForMark,
       hasAlignment: pacer.hasAlignment,
+      // Multi-tab driver support. Lightweight enough to pass unconditionally
+      // — single-tab drivers just ignore these fields.
+      makeCursor: makeCursorRecorder,
+      contextMs: () => performance.now() - contextStartWall,
     };
+    let driverResult: DriverResult | void;
     if (cfg.name === "landing") {
-      await driveLanding(driverArgs);
+      driverResult = await driveLanding(driverArgs);
     } else if (cfg.name === "signup") {
-      await driveSignup(driverArgs);
+      driverResult = await driveSignup(driverArgs);
     } else if (cfg.name === "home") {
-      await driveHome(driverArgs);
+      driverResult = await driveHome(driverArgs);
     } else {
       // Exhaustiveness guard — `cfg.name` is a BeatName union, so reaching
       // the default here means a new beat was added without a driver.
@@ -594,27 +718,56 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
 
     // Persist cursor + derive wall-clock duration; context.close flushes webm.
     const cursorEntries = cursor.entries();
+    const extraPages = driverResult?.extraPages ?? [];
     await page.waitForTimeout(250); // small post-drive tail so last frame is clean
     const videoWallMs = performance.now() - contextStartWall;
+    // Capture video handles BEFORE context.close() — the Video object is
+    // stable (`.path()` resolves post-close), but calling `.video()` on a
+    // closed page throws.
     const videoHandle = page.video();
+    const extraVideos = extraPages.map((extra) => ({
+      handle: extra.page.video(),
+      entries: extra.entries,
+      openedAtMs: extra.openedAtMs,
+      labelSuffix: extra.labelSuffix,
+      url: extra.url,
+    }));
     await context.close();
     context = null;
 
-    // Find the produced webm inside videoTmpDir and rename it.
-    const producedPath = videoHandle ? await videoHandle.path() : null;
+    // Claim each webm from the tmp dir. Playwright writes randomly-named
+    // files; we match each page to its own file via `video().path()`.
     const finalWebm = path.join(CAPTURES_DIR, `${cfg.name}.webm`);
-    if (producedPath && existsSync(producedPath)) {
-      await rename(producedPath, finalWebm);
-    } else {
-      const files = await readdir(videoTmpDir);
-      const webm = files.find((f) => f.endsWith(".webm"));
-      if (!webm) throw new Error(`[capture] no .webm produced in ${videoTmpDir}`);
-      await rename(path.join(videoTmpDir, webm), finalWebm);
+    await claimWebm(videoHandle, videoTmpDir, finalWebm);
+    await polishWebm(finalWebm);
+
+    const extraFiles: Array<{ file: string; openedAtMs: number; url?: string }> = [];
+    for (const extra of extraVideos) {
+      const suffixed = path.join(
+        CAPTURES_DIR,
+        `${cfg.name}-${extra.labelSuffix}.webm`,
+      );
+      await claimWebm(extra.handle, videoTmpDir, suffixed);
+      await polishWebm(suffixed);
+      const cursorName = `${cfg.name}-${extra.labelSuffix}.cursor.json`;
+      await writeFile(
+        path.join(CAPTURES_DIR, cursorName),
+        JSON.stringify(extra.entries, null, 2) + "\n",
+      );
+      extraFiles.push({
+        file: `${cfg.name}-${extra.labelSuffix}.webm`,
+        openedAtMs: Math.round(extra.openedAtMs),
+        ...(extra.url ? { url: extra.url } : {}),
+      });
+      console.log(
+        `[capture] ${cfg.name}-${extra.labelSuffix}: ${extra.entries.length} cursor waypoints`,
+      );
     }
+
     // Remove tmp dir + any remaining orphan files.
     await rm(videoTmpDir, { recursive: true, force: true }).catch(() => {});
 
-    // Write cursor JSON.
+    // Write primary cursor JSON.
     const cursorPath = path.join(CAPTURES_DIR, `${cfg.name}.cursor.json`);
     await writeFile(cursorPath, JSON.stringify(cursorEntries, null, 2) + "\n");
 
@@ -625,6 +778,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       width: cfg.viewport.width,
       height: cfg.viewport.height,
       durationMs: Math.round(durationMs),
+      ...(extraFiles.length > 0 ? { tabs: extraFiles } : {}),
     };
     const metaPath = path.join(CAPTURES_DIR, `${cfg.name}.meta.json`);
     await writeFile(metaPath, JSON.stringify(meta, null, 2) + "\n");
@@ -648,9 +802,64 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
     await browser.close().catch(() => {});
     // Ensure the tmp dir is gone even if we errored before cleanup above.
     await rm(videoTmpDir, { recursive: true, force: true }).catch(() => {});
-    if (server.startedByUs && server.proc && !server.proc.killed) {
-      server.proc.kill("SIGTERM");
+    for (const handle of server) {
+      if (handle.startedByUs && handle.proc && !handle.proc.killed) {
+        handle.proc.kill("SIGTERM");
+      }
     }
+  }
+}
+
+/**
+ * Move the webm produced by `videoHandle` (or any orphan .webm in
+ * `tmpDir` if the handle is missing) to `dest`. Used for both the primary
+ * page's video and any secondary-tab videos so each lands at a stable
+ * `<beat>[-<suffix>].webm` path inside `public/captures/`.
+ */
+async function claimWebm(
+  videoHandle: ReturnType<Page["video"]>,
+  tmpDir: string,
+  dest: string,
+): Promise<void> {
+  const producedPath = videoHandle ? await videoHandle.path() : null;
+  if (producedPath && existsSync(producedPath)) {
+    await rename(producedPath, dest);
+    return;
+  }
+  const files = await readdir(tmpDir);
+  const webm = files.find((f) => f.endsWith(".webm"));
+  if (!webm) throw new Error(`[capture] no .webm for ${dest} in ${tmpDir}`);
+  await rename(path.join(tmpDir, webm), dest);
+}
+
+/**
+ * Re-encode a Playwright VP8 webm with VP9 at dramatically higher quality.
+ * Playwright's VP8 encoder is hardcoded at ~1 Mbps — unusable for 1080p60
+ * (produces visible flicker, banding, mosquito noise). VP9 CRF 22 with
+ * temporal denoising produces clean output at ~4-6 Mbps.
+ *
+ * Falls back silently to the raw VP8 if ffmpeg isn't available.
+ */
+async function polishWebm(webmPath: string): Promise<void> {
+  const tmpOut = webmPath + ".tmp.webm";
+  try {
+    execFileSync("ffmpeg", [
+      "-y",
+      "-i", webmPath,
+      "-vf", "hqdn3d=3:2:4:3",
+      "-c:v", "libvpx-vp9",
+      "-crf", "22",
+      "-b:v", "0",
+      "-deadline", "good",
+      "-cpu-used", "2",
+      "-row-mt", "1",
+      tmpOut,
+    ], { timeout: 180_000, stdio: "pipe" });
+    await rename(tmpOut, webmPath);
+    console.log(`[capture] polished ${path.basename(webmPath)} → VP9 + denoise`);
+  } catch {
+    console.warn(`[capture] ffmpeg polish skipped for ${path.basename(webmPath)} (ffmpeg unavailable or failed)`);
+    await rm(tmpOut, { force: true }).catch(() => {});
   }
 }
 

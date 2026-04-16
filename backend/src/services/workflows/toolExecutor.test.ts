@@ -1069,6 +1069,97 @@ describe('executeToolsNode', () => {
     ]);
   });
 
+  it('rejects training code using GPU device acceleration (cuda/mps) in the CPU-only runtime', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-gpu',
+      tool: 'write_cell',
+      args: {
+        title: 'GPU training',
+        cellType: 'code',
+        content: "model = build_model(device='cuda')\nmodel.fit(X_train, y_train)"
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringMatching(/GPU\/MPS device acceleration|device='cuda'/)
+      })
+    ]);
+  });
+
+  it('rejects training code calling .cuda() or .to("mps") in the CPU-only runtime', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-to-cuda',
+      tool: 'write_cell',
+      args: {
+        title: 'Accelerator',
+        cellType: 'code',
+        content: "model.to('cuda')\noutput = model(batch)"
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    expect(result.nextStep).toBe('prepare');
+    expect(result.toolResultHistory).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        error: expect.stringMatching(/GPU\/MPS device acceleration/)
+      })
+    ]);
+  });
+
+  it('does not falsely reject torch.cuda.is_available() (non-execution probe)', async () => {
+    const phaseConfig = createTrainingPhaseConfig();
+    const state = createState();
+    state.turn.phase = 'training';
+    state.run.phase = 'training';
+    state.run.currentNode = 'write_code';
+    // Oversized on purpose so validation short-circuits before tool execution;
+    // we assert the error is the size message, NOT a GPU/MPS message, proving
+    // torch.cuda.is_available() didn't trip the device validator.
+    const body = [
+      'import torch',
+      'use_gpu = torch.cuda.is_available()',
+      ...Array.from({ length: 140 }, (_, i) => `print(${i})`),
+    ].join('\n');
+    state.pendingToolCalls = [{
+      id: 'wf-call-write-training-cpu-probe',
+      tool: 'write_cell',
+      args: {
+        title: 'CPU probe',
+        cellType: 'code',
+        content: body
+      }
+    }];
+
+    const result = await executeToolsNode(state, {
+      configurable: { phaseConfig }
+    } as never);
+
+    const entry = (result.toolResultHistory ?? [])[0];
+    expect(entry?.error).toMatch(/Training code cell is too large/);
+    expect(entry?.error ?? '').not.toMatch(/GPU\/MPS device acceleration/);
+  });
+
   it('rejects training code that references a dataset different from the selected dataset', async () => {
     const phaseConfig = createTrainingPhaseConfig();
     const state = createState();

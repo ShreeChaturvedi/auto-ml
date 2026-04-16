@@ -6,7 +6,7 @@ import { describeRouteSuite } from '../tests/describeRouteSuite.js';
 import type { EvaluationResult, ShapResult } from '../types/experiments.js';
 
 // Mock fs/promises and repositories at the module level
-const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRunEvaluation, mockRequestStructuredJson, mockListModels, mockGetModelById, mockGetProjectRepository } = vi.hoisted(() => ({
+const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnalysis, mockRunEvaluation, mockRequestStructuredJson, mockListModels, mockGetModelById, mockUpdateModelRecord, mockGetProjectRepository } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
   mockRunTuningStudy: vi.fn(),
   mockCreateLlmClient: vi.fn(),
@@ -15,6 +15,7 @@ const { mockReadFile, mockRunTuningStudy, mockCreateLlmClient, mockRunErrorAnaly
   mockRequestStructuredJson: vi.fn(),
   mockListModels: vi.fn(),
   mockGetModelById: vi.fn(),
+  mockUpdateModelRecord: vi.fn(),
   mockGetProjectRepository: vi.fn(() => ({
     getById: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Test Project', userId: null }),
     getByIdAndUser: vi.fn().mockResolvedValue({ id: 'project-1', name: 'Test Project', userId: 'user-1' }),
@@ -48,6 +49,7 @@ vi.mock('../services/nlToSql/structuredRequest.js', () => ({
 vi.mock('../services/modelTraining.js', () => ({
   getModelById: mockGetModelById,
   listModels: mockListModels,
+  updateModelRecord: mockUpdateModelRecord,
 }));
 
 vi.mock('../repositories/projectRepository.js', () => ({
@@ -108,6 +110,13 @@ describeRouteSuite('experiments routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetModelById.mockResolvedValue(null);
+    mockUpdateModelRecord.mockImplementation(async (_modelId: string, updater: (current: Record<string, unknown>) => Record<string, unknown>) => (
+      updater({
+        modelId: _modelId,
+        projectId: 'project-1',
+        evaluationStatus: 'ready',
+      })
+    ));
   });
 
   it('GET /experiments/:modelId/evaluation returns 200 with EvaluationResult when file exists', async () => {
@@ -131,6 +140,42 @@ describeRouteSuite('experiments routes', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe('Evaluation not found');
+  });
+
+  it('GET /experiments/:modelId/evaluation returns 202 while evaluation is still pending', async () => {
+    mockGetModelById.mockResolvedValueOnce({
+      modelId: 'model-pending',
+      projectId: 'project-1',
+      evaluationStatus: 'pending',
+    });
+    mockReadFile.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
+
+    const app = createTestApp();
+    const response = await request(app).get('/api/experiments/model-pending/evaluation');
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({
+      status: 'pending',
+      message: 'Evaluation is still being generated.',
+    });
+  });
+
+  it('GET /experiments/:modelId/evaluation returns computing when status says ready but evaluation.json is missing', async () => {
+    mockGetModelById.mockResolvedValueOnce({
+      modelId: 'model-ready',
+      projectId: 'project-1',
+      evaluationStatus: 'ready',
+    });
+    mockReadFile.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
+
+    const app = createTestApp();
+    const response = await request(app).get('/api/experiments/model-ready/evaluation');
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({
+      status: 'computing',
+      message: 'Evaluation artifacts are still being finalized.',
+    });
   });
 
   it('GET /experiments/:modelId/shap returns 200 with ShapResult when file exists', async () => {
@@ -175,6 +220,33 @@ describeRouteSuite('experiments routes', () => {
 
     expect(response.status).toBe(200);
     expect(mockRunEvaluation).toHaveBeenCalledWith('model-abc');
+    expect(response.body).toEqual({ ok: true, evaluationStatus: 'ready' });
+  });
+
+  it('POST /experiments/:modelId/evaluation/retry keeps clustering evaluations ready without rerunning the evaluator', async () => {
+    mockGetModelById
+      .mockResolvedValueOnce({
+        modelId: 'cluster-abc',
+        projectId: 'project-1',
+        taskType: 'clustering',
+        evaluationStatus: 'failed',
+      })
+      .mockResolvedValueOnce({
+        modelId: 'cluster-abc',
+        projectId: 'project-1',
+        taskType: 'clustering',
+        evaluationStatus: 'ready',
+      });
+    mockReadFile.mockResolvedValueOnce(JSON.stringify({
+      taskType: 'clustering',
+      clustering_metrics: { n_clusters: 3, cluster_sizes: { '0': 5, '1': 4, '2': 6 } },
+    }));
+
+    const app = createTestApp();
+    const response = await request(app).post('/api/experiments/cluster-abc/evaluation/retry');
+
+    expect(response.status).toBe(200);
+    expect(mockRunEvaluation).not.toHaveBeenCalled();
     expect(response.body).toEqual({ ok: true, evaluationStatus: 'ready' });
   });
 

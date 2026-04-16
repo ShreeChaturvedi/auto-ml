@@ -157,6 +157,67 @@ describe('configureExperiment — Feature Engineering pipeline handoff', () => {
     expect(experiments[experimentId].featureColumns).toEqual(['feat_a']);
   });
 
+  it('preserves a specific neural architecture when the planner supplied generic neural_network', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {}
+    });
+
+    const run = buildRun();
+    const result = await configureExperiment(buildCtx(run, {
+      experimentName: 'TabTransformer_TimeAware_Candidate',
+      modelType: 'neural_network',
+      splitStrategy: 'time_series',
+      targetColumn: 'is_power_user'
+    }));
+
+    expect(result.error).toBeUndefined();
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    const experimentId = Object.keys(experiments)[0];
+    expect(experiments[experimentId].modelType).toBe('tabtransformer');
+    expect((result.output as Record<string, unknown>).modelType).toBe('tabtransformer');
+  });
+
+  it('rejects proxy-model substitution when experimentName encodes a specific family', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {}
+    });
+
+    const run = buildRun();
+    const result = await configureExperiment(buildCtx(run, {
+      experimentName: 'MLP classifier churn prediction',
+      modelType: 'logistic_regression',
+      splitStrategy: 'stratified_kfold',
+      targetColumn: 'churned'
+    }));
+
+    expect(result.output).toBeUndefined();
+    expect(result.error).toContain('Experiment name "MLP classifier churn prediction" implies modelType="mlp_classifier"');
+    expect(result.error).toContain('do not substitute a proxy model');
+    expect(run.metadata?.experiments).toBeUndefined();
+  });
+
+  it('rejects proxy substitution for suffixed experiment names used in live workflow runs', async () => {
+    mockGetProjectById.mockResolvedValue({
+      projectId: '14be1dad-05cd-439b-a708-027b0447baf5',
+      metadata: {}
+    });
+
+    const run = buildRun();
+    const result = await configureExperiment(buildCtx(run, {
+      experimentName: 'mlp_regressor_time_series_usage_count',
+      modelType: 'catboost_regressor',
+      splitStrategy: 'time_series',
+      targetColumn: 'usage_count'
+    }));
+
+    expect(result.output).toBeUndefined();
+    expect(result.error).toContain('implies modelType="mlp_regressor"');
+    expect(result.error).toContain('requested "catboost"');
+    expect(run.metadata?.experiments).toBeUndefined();
+  });
+
   it('leaves featureColumns undefined when the project has no engineered features', async () => {
     mockGetProjectById.mockResolvedValue({
       projectId: '14be1dad-05cd-439b-a708-027b0447baf5',

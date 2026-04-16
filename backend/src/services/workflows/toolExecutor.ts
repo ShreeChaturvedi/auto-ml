@@ -20,6 +20,24 @@ const MAX_TOOL_RESULT_CHARS = 50_000;
 const MAX_TRAINING_CODE_CELL_LINES = 100;
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
+const FORBIDDEN_DEVICE_PATTERNS: Array<{ pattern: RegExp; hint: string }> = [
+  { pattern: /device\s*=\s*['"](?:cuda|mps)(?::\d+)?['"]/i, hint: "device='cuda'/'mps' is not available — omit device or set device='cpu'." },
+  { pattern: /(?<![A-Za-z_0-9])torch\.device\s*\(\s*['"](?:cuda|mps)(?::\d+)?['"]/i, hint: "torch.device('cuda'/'mps') is not available — use 'cpu' or omit device selection." },
+  { pattern: /(?<![A-Za-z_0-9.])\.cuda\s*\(/, hint: ".cuda() is not available — remove it (the runtime is CPU-only)." },
+  { pattern: /\.to\s*\(\s*['"](?:cuda|mps)(?::\d+)?['"]/i, hint: ".to('cuda'/'mps') is not available — remove it or pass 'cpu'." },
+  { pattern: /accelerator\s*=\s*['"](?:gpu|cuda|mps|tpu)['"]/i, hint: "accelerator='gpu'/'cuda'/'mps'/'tpu' is not available — omit accelerator or set 'cpu'." },
+  { pattern: /devices\s*=\s*['"]?(?:auto|gpu)['"]?/i, hint: "devices='auto'/'gpu' is not available — omit devices or set it to 1." },
+];
+
+function detectForbiddenDeviceUsage(content: string): string | null {
+  for (const { pattern, hint } of FORBIDDEN_DEVICE_PATTERNS) {
+    if (pattern.test(content)) {
+      return hint;
+    }
+  }
+  return null;
+}
+
 function extractTrainingDatasetFilename(content: string): string | undefined {
   const match = content.match(/resolve_dataset_path\(\s*["']([^"']+)["']/);
   return match?.[1];
@@ -178,6 +196,15 @@ async function executeWorkflowToolCall(
         id: call.id,
         tool: call.tool,
         error: `Training code cell is too large (${lineCount} lines). Split training into smaller code cells by step: imports/config, dataset prep, model fit/evaluation, artifact save.`
+      };
+    }
+
+    const forbiddenDeviceHint = content ? detectForbiddenDeviceUsage(content) : null;
+    if (forbiddenDeviceHint) {
+      return {
+        id: call.id,
+        tool: call.tool,
+        error: `Training code uses GPU/MPS device acceleration which is not available in the Linux CPU-only runtime. ${forbiddenDeviceHint}`
       };
     }
 

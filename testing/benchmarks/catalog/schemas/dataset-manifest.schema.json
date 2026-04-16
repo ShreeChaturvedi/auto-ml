@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-automl.local/benchmark/dataset-manifest.schema.json",
+  "title": "BenchmarkDatasetManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "kind",
+    "slug",
+    "version",
+    "task",
+    "storage",
+    "integrity",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string" },
+    "kind": { "enum": ["public", "derived", "poison"] },
+    "slug": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "targetColumn", "primaryMetric"],
+      "properties": {
+        "type": { "enum": ["classification", "regression"] },
+        "targetColumn": { "type": "string", "minLength": 1 },
+        "primaryMetric": { "type": "string", "minLength": 1 }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "canonicalFile"],
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "canonicalFile": { "const": "canonical/data.csv" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalSha256"],
+      "properties": {
+        "canonicalSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acquisition", "license"],
+      "properties": {
+        "upstreamUrl": { "type": "string" },
+        "acquisition": {
+          "enum": ["scripted-open", "manual-stage", "derived"]
+        },
+        "license": { "type": "string", "minLength": 1 }
+      }
+    },
+    "splitContract": { "type": "object" },
+    "suiteRefs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "lineage": { "type": "object" }
+  }
+}

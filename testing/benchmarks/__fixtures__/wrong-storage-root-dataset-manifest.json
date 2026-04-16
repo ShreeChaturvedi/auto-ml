@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "public.adult-income.v1",
+  "kind": "public",
+  "slug": "adult-income",
+  "version": 1,
+  "task": {
+    "type": "classification",
+    "targetColumn": "income",
+    "primaryMetric": "accuracy"
+  },
+  "storage": {
+    "root": "testing/benchmarks/data/public/some-other-dataset/v99",
+    "canonicalFile": "canonical/data.csv"
+  },
+  "integrity": {
+    "canonicalSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "provenance": {
+    "upstreamUrl": "https://example.com/adult-income",
+    "acquisition": "scripted-open",
+    "license": "CC BY 4.0"
+  }
+}

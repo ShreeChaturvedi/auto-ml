@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runId": "expo-p0-v1--2026-04-16T04-41-48Z--sprint11--abc1234",
+  "suiteId": "expo-p0-v1",
+  "git": {
+    "branch": "sprint11",
+    "commit": "abc1234",
+    "dirty": false
+  },
+  "artifacts": {
+    "datasetLock": "dataset-lock.json",
+    "cases": "cases.jsonl",
+    "summary": "summary.json"
+  }
+}

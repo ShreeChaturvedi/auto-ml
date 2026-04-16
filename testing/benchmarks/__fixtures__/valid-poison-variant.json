@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "variantId": "poison.novacraft-customer-health-clean--hidden-missing.v1",
+  "baseDatasetRef": "derived.novacraft-customer-health-clean.v1",
+  "issueFamily": "hidden-missing",
+  "seed": 101,
+  "patches": [
+    {
+      "op": "rewrite_values",
+      "column": "annual_revenue_usd",
+      "pattern": "sentinel"
+    }
+  ],
+  "scoringContract": {
+    "postconditions": ["sentinel_count_equals"]
+  }
+}

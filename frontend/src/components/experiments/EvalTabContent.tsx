@@ -8,6 +8,8 @@ interface EvalTabContentProps {
   evaluationError?: string;
   evaluation: EvaluationResult | null | undefined;
   failedLabel: string;
+  loadingTitle?: string;
+  loadingLabel?: string;
   children: (evaluation: EvaluationResult) => React.ReactNode;
 }
 
@@ -35,10 +37,20 @@ export function EvalTabContent({
   evaluationError,
   evaluation,
   failedLabel,
+  loadingTitle = 'Evaluation is still being prepared',
+  loadingLabel = 'This model was just trained. Experiments is generating plots and analysis now.',
   children,
 }: EvalTabContentProps) {
   if (isComputing) {
-    return <SkeletonGrid />;
+    return (
+      <div className="space-y-5 p-5">
+        <div className="rounded-lg border border-border/40 bg-muted/20 p-4">
+          <p className="text-sm font-medium text-foreground">{loadingTitle}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{loadingLabel}</p>
+        </div>
+        <SkeletonGrid />
+      </div>
+    );
   }
 
   if (isFailed) {
@@ -57,7 +69,17 @@ export function EvalTabContent({
   }
 
   if (evaluation === undefined) {
-    return <SkeletonGrid />;
+    return (
+      <div className="space-y-5 p-5">
+        <div className="rounded-lg border border-border/40 bg-muted/20 p-4">
+          <p className="text-sm font-medium text-foreground">Loading evaluation results</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The model is registered. Experiments is fetching the latest plots and metrics now.
+          </p>
+        </div>
+        <SkeletonGrid />
+      </div>
+    );
   }
 
   if (evaluation === null) {

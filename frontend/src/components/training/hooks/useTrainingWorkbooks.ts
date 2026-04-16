@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { archivePhaseNotebook } from '@/lib/notebook/archivePhaseNotebook';
-import { interruptWorkflowRun } from '@/lib/api/llm';
+import { interruptWorkflowRun, listWorkflowRuns } from '@/lib/api/llm';
 import { nextWorkbookName, createWorkbookId } from '@/components/preprocessing/preprocessingTabUtils';
 import { useWorkbookRegistryStore } from '@/stores/workbookRegistryStore';
 import { buildWorkflowSessionKey, useWorkflowSessionStore } from '@/stores/workflowSessionStore';
@@ -75,36 +75,92 @@ export function useTrainingWorkbooks(
     syncWorkbookParam?.(workbookId, replace);
   }, [syncWorkbookParam]);
 
+  const findWorkbookSessionKeys = useCallback((workbookId: string): string[] => {
+    if (!projectId) {
+      return [];
+    }
+
+    const storageKey = buildTrainingWorkbookMessageKey(workbookId, projectId);
+    const baseSessionKey = buildWorkflowSessionKey(projectId, storageKey);
+    return Object.keys(useWorkflowSessionStore.getState().sessions).filter((sessionKey) =>
+      sessionKey === baseSessionKey || sessionKey.startsWith(`${baseSessionKey}:`)
+    );
+  }, [projectId]);
+
+  const clearWorkbookSessions = useCallback((workbookId: string) => {
+    for (const sessionKey of findWorkbookSessionKeys(workbookId)) {
+      useWorkflowSessionStore.getState().clearSession(sessionKey);
+    }
+  }, [findWorkbookSessionKeys]);
+
   const interruptWorkbookWorkflow = useCallback(async (
     workbookId: string,
-    reason: string
+    reason: string,
+    notebookId?: string | null
   ) => {
     if (!projectId) return;
-    const storageKey = buildTrainingWorkbookMessageKey(workbookId, projectId);
-    const sessionKey = buildWorkflowSessionKey(projectId, storageKey);
-    const session = useWorkflowSessionStore.getState().getSession(sessionKey);
-    if (!session?.runId || !session.state) {
-      useWorkflowSessionStore.getState().clearSession(sessionKey);
-      return;
+    const sessionStore = useWorkflowSessionStore.getState();
+    const matchingSessionKeys = findWorkbookSessionKeys(workbookId);
+    let interruptedRunIds = new Set<string>();
+
+    for (const sessionKey of matchingSessionKeys) {
+      const session = sessionStore.getSession(sessionKey);
+      if (!session?.runId || !session.state) {
+        sessionStore.clearSession(sessionKey);
+        continue;
+      }
+
+      if (session.state.status !== 'running' && session.state.status !== 'paused') {
+        sessionStore.clearSession(sessionKey);
+        continue;
+      }
+
+      try {
+        await interruptWorkflowRun(session.runId, reason);
+        interruptedRunIds.add(session.runId);
+      } catch (error) {
+        console.warn('[useTrainingWorkbooks] Failed to interrupt workbook workflow', {
+          workbookId,
+          runId: session.runId,
+          error
+        });
+      } finally {
+        sessionStore.clearSession(sessionKey);
+      }
     }
 
-    if (session.state.status !== 'running' && session.state.status !== 'paused') {
-      useWorkflowSessionStore.getState().clearSession(sessionKey);
-      return;
+    if (notebookId) {
+      try {
+        const { runs } = await listWorkflowRuns(projectId, 'training');
+        const activeRuns = runs.filter((run) =>
+          (run.status === 'running' || run.status === 'paused')
+          && run.activeNotebookId === notebookId
+          && !interruptedRunIds.has(run.runId)
+        );
+        for (const run of activeRuns) {
+          try {
+            await interruptWorkflowRun(run.runId, reason);
+            interruptedRunIds.add(run.runId);
+          } catch (error) {
+            console.warn('[useTrainingWorkbooks] Failed to interrupt workbook workflow from backend run list', {
+              workbookId,
+              notebookId,
+              runId: run.runId,
+              error
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('[useTrainingWorkbooks] Failed to list active training workflows for workbook cleanup', {
+          workbookId,
+          notebookId,
+          error
+        });
+      }
     }
 
-    try {
-      await interruptWorkflowRun(session.runId, reason);
-    } catch (error) {
-      console.warn('[useTrainingWorkbooks] Failed to interrupt workbook workflow', {
-        workbookId,
-        runId: session.runId,
-        error
-      });
-    } finally {
-      useWorkflowSessionStore.getState().clearSession(sessionKey);
-    }
-  }, [projectId]);
+    clearWorkbookSessions(workbookId);
+  }, [clearWorkbookSessions, findWorkbookSessionKeys, projectId]);
 
   useEffect(() => {
     if (!projectId || hydratedRef.current === projectId) return;
@@ -190,20 +246,23 @@ export function useTrainingWorkbooks(
     toast.success(`${newWorkbook.name} created`);
   }, [syncRequestedWorkbookParam, workbooks]);
 
-  const handleDelete = useCallback(() => {
-    if (workbooks.length <= 1) {
+  const deleteWorkbookById = useCallback((workbookId: string) => {
+    const currentWorkbooks = workbooks;
+    if (currentWorkbooks.length <= 1) {
       toast.error('Cannot delete the last workbook');
-      return;
+      return undefined;
     }
-    const current = workbooks.find((workbook) => workbook.id === activeWorkbookId);
-    if (!current) return;
-    const idx = workbooks.indexOf(current);
-    const fallback = workbooks[idx - 1] ?? workbooks[idx + 1];
-    if (!fallback) return;
+    const current = currentWorkbooks.find((workbook) => workbook.id === workbookId);
+    if (!current) return undefined;
+    const idx = currentWorkbooks.indexOf(current);
+    const fallback = current.id === activeWorkbookId
+      ? (currentWorkbooks[idx - 1] ?? currentWorkbooks[idx + 1])
+      : (currentWorkbooks.find((workbook) => workbook.id === activeWorkbookId) ?? currentWorkbooks[idx - 1] ?? currentWorkbooks[idx + 1]);
+    if (!fallback) return undefined;
 
     void (async () => {
       if (projectId) {
-        await interruptWorkbookWorkflow(current.id, 'Training workbook deleted by user.');
+        await interruptWorkbookWorkflow(current.id, 'Training workbook deleted by user.', current.notebookId);
         localStorage.removeItem(buildTrainingWorkbookMessageKey(current.id, projectId));
         if (current.notebookId) {
           await archivePhaseNotebook({
@@ -221,11 +280,19 @@ export function useTrainingWorkbooks(
         }
       }
       setWorkbooks((prev) => prev.filter((workbook) => workbook.id !== current.id));
-      setActiveWorkbookId(fallback.id);
-      syncRequestedWorkbookParam(fallback.id, true);
+      if (current.id === activeWorkbookId) {
+        setActiveWorkbookId(fallback.id);
+        syncRequestedWorkbookParam(fallback.id, true);
+      }
       toast.success(`${current.name} deleted`);
     })();
+
+    return fallback.id;
   }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, syncRequestedWorkbookParam, workbooks]);
+
+  const handleDelete = useCallback(() => {
+    deleteWorkbookById(activeWorkbookId);
+  }, [activeWorkbookId, deleteWorkbookById]);
 
   const setWorkbookNotebookId = useCallback(
     (workbookId: string, notebookId: string | null) => {
@@ -309,13 +376,17 @@ export function useTrainingWorkbooks(
     if (!projectId) return;
     void (async () => {
       let resetWarning: string | null = null;
-      await interruptWorkbookWorkflow(activeWorkbookId, 'Training workbook reset by user.');
+      const current = workbooks.find((workbook) => workbook.id === activeWorkbookId);
+      if (!current) {
+        return;
+      }
+
+      await interruptWorkbookWorkflow(activeWorkbookId, 'Training workbook reset by user.', current.notebookId);
 
       const storageKey = buildTrainingWorkbookMessageKey(activeWorkbookId, projectId);
       localStorage.removeItem(storageKey);
       localStorage.removeItem(`${storageKey}-${projectId}`);
 
-      const current = workbooks.find((workbook) => workbook.id === activeWorkbookId);
       if (current?.notebookId) {
         await archivePhaseNotebook({
           projectId,
@@ -340,6 +411,17 @@ export function useTrainingWorkbooks(
       );
     })();
   }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, workbooks]);
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+
+    useWorkbookRegistryStore.getState().setDeleteHandler('training', deleteWorkbookById);
+    return () => {
+      useWorkbookRegistryStore.getState().setDeleteHandler('training', null);
+    };
+  }, [deleteWorkbookById, ready]);
 
   return {
     workbooks,

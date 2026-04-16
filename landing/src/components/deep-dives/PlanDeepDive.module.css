@@ -237,3 +237,12 @@
     opacity: 0;
   }
 }
+
+@media (max-width: 768px) {
+  .root {
+    height: 400px;
+    min-height: 320px;
+    max-height: 400px;
+    padding: 16px;
+  }
+}

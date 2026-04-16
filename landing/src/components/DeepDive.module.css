@@ -73,3 +73,22 @@
     opacity: 1;
   }
 }
+
+/* ── Responsive: stack at 1024px, tighter padding at 768px ── */
+@media (max-width: 1024px) {
+  .section {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    min-height: auto;
+  }
+  /* When reversed, reset explicit grid placement so copy stays above visual */
+  .section[data-reversed='true'] > .copy   { grid-column: auto; grid-row: auto; }
+  .section[data-reversed='true'] > .visual { grid-column: auto; grid-row: auto; }
+  .copy { max-width: none; }
+  .visual { min-height: 380px; }
+}
+
+@media (max-width: 768px) {
+  .section { padding: 40px 16px; }
+  .visual { min-height: 320px; }
+}

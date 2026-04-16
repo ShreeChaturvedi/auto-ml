@@ -262,3 +262,13 @@
   letter-spacing: 0.08em;
   margin-bottom: 10px;
 }
+
+/* ── Mobile (≤768px) ── */
+@media (max-width: 768px) {
+  .frame {
+    height: 340px;
+  }
+  .workspaceViewport {
+    height: 300px;
+  }
+}

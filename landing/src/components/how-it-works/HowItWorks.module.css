@@ -154,3 +154,84 @@
   color: var(--text-dim);
   text-transform: uppercase;
 }
+
+/* ── Tablet (769px–1024px) ── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .pinGrid {
+    grid-template-columns: 180px 1fr;
+    gap: 24px;
+    padding: 48px 24px;
+  }
+  .tocItem {
+    font-size: 13px;
+  }
+}
+
+/* ── Mobile (≤768px) ── */
+@media (max-width: 768px) {
+  .intro {
+    padding: 40px 16px 24px;
+  }
+
+  .pinGrid {
+    grid-template-columns: 1fr;
+    padding: 24px 16px;
+    gap: 16px;
+  }
+  /* Both grid children (nav + sceneWrap) need min-width:0 so the 1fr
+     track respects the container width instead of inflating to the
+     intrinsic width of the 7 horizontal pills (~700px). */
+  .pinGrid > * {
+    min-width: 0;
+  }
+
+  .toc {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 8px;
+    align-self: stretch;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;          /* Firefox */
+  }
+  .toc::-webkit-scrollbar {
+    display: none;                  /* Chrome / Safari */
+  }
+
+  .tocItem {
+    font-size: 12px;
+    padding: 6px 12px;
+    white-space: nowrap;
+    border-radius: 6px;
+    transition:
+      color var(--dur-fast) var(--ease-linear-default),
+      background var(--dur-fast) var(--ease-linear-default);
+  }
+  .tocItemActive {
+    background: var(--surface-1);
+  }
+  .tocItemActive::before {
+    display: none;
+  }
+
+  .tocProgressWrap {
+    display: none;
+  }
+
+  .sceneWrap {
+    min-height: 400px;
+    min-width: 0;
+  }
+
+  .sceneDiorama {
+    max-width: none;
+  }
+
+  /* Fallback (reduced motion) */
+  .fallbackList {
+    padding: 32px 16px;
+    gap: 48px;
+  }
+  .fallbackItem {
+    grid-template-columns: 1fr;
+  }
+}

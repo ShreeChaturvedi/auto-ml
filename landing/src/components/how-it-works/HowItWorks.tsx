@@ -74,9 +74,20 @@ function PhaseScene({
 export default function HowItWorks() {
   const reducedMotion = usePrefersReducedMotion();
   const pinRef = useRef<HTMLDivElement>(null);
+  const tocRef = useRef<HTMLOListElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const prevIdxRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // Auto-scroll the horizontal pill strip to keep the active item visible.
+  // Only fires when the strip is actually scrollable (mobile), avoiding
+  // unnecessary scroll-geometry computation on desktop's vertical TOC.
+  useEffect(() => {
+    const toc = tocRef.current;
+    if (!toc || toc.scrollWidth <= toc.clientWidth) return;
+    const active = toc.children[activeIndex] as HTMLElement | undefined;
+    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeIndex]);
 
   useEffect(() => {
     if (reducedMotion || !pinRef.current) return;
@@ -175,7 +186,7 @@ export default function HowItWorks() {
       <div ref={pinRef} className={styles.pinContainer}>
         <div className={styles.pinGrid}>
           <nav aria-label="Workflow phases">
-            <ol className={styles.toc} role="tablist">
+            <ol ref={tocRef} className={styles.toc} role="tablist">
               {PHASE_SCENES.map((scene, i) => (
                 <li key={scene.code}>
                   <button

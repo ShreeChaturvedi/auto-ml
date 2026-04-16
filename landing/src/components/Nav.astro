@@ -4,6 +4,12 @@
 // and collapses to "AutoML" after 1.6s. The brand's width is reserved
 // to the long form so nav links / CTA on the right never shift.
 import ThemeToggleIsland from './ThemeToggleIsland';
+
+const navLinks = [
+  { label: 'Quick Look',   href: '#product' },
+  { label: 'Features',     href: '#features' },
+  { label: 'How it works', href: '#how-it-works' },
+];
 ---
 
 <header class="nav-root">
@@ -28,30 +34,91 @@ import ThemeToggleIsland from './ThemeToggleIsland';
     </a>
 
     <nav class="nav-links" aria-label="Primary">
-      <a href="#product">Quick Look</a>
-      <a href="#features">Features</a>
-      <a href="#how-it-works">How it works</a>
+      {navLinks.map((link) => (
+        <a href={link.href}>{link.label}</a>
+      ))}
     </nav>
 
     <div class="nav-right">
       <a href="/login" class="nav-signin">Sign In</a>
       <a href="/login" class="nav-cta">Get Started</a>
     </div>
+
+    <button
+      class="nav-hamburger"
+      aria-label="Open menu"
+      aria-expanded="false"
+      aria-controls="mobile-nav"
+    >
+      <svg class="hamburger-icon hamburger-open" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <line x1="3" y1="5" x2="17" y2="5" />
+        <line x1="3" y1="10" x2="17" y2="10" />
+        <line x1="3" y1="15" x2="17" y2="15" />
+      </svg>
+      <svg class="hamburger-icon hamburger-close" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <line x1="4" y1="4" x2="16" y2="16" />
+        <line x1="16" y1="4" x2="4" y2="16" />
+      </svg>
+    </button>
   </div>
 
   <div class="nav-theme-toggle">
     <ThemeToggleIsland client:only="react" />
   </div>
+
+  <!-- Mobile overlay -->
+  <div id="mobile-nav" class="mobile-nav" aria-hidden="true">
+    <nav class="mobile-nav-links" aria-label="Mobile navigation">
+      {navLinks.map((link) => (
+        <a href={link.href}>{link.label}</a>
+      ))}
+    </nav>
+    <div class="mobile-nav-divider"></div>
+    <div class="mobile-nav-actions">
+      <a href="/login" class="mobile-nav-signin">Sign In</a>
+      <a href="/login" class="mobile-nav-cta">Get Started</a>
+    </div>
+    <div class="mobile-nav-theme">
+      <span class="mobile-nav-theme-label">Theme</span>
+      <ThemeToggleIsland client:only="react" />
+    </div>
+  </div>
 </header>
+
+<script>
+  {
+    const btn = document.querySelector<HTMLButtonElement>('.nav-hamburger');
+    const overlay = document.getElementById('mobile-nav');
+    if (btn && overlay) {
+      btn.addEventListener('click', () => {
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!expanded));
+        btn.setAttribute('aria-label', expanded ? 'Open menu' : 'Close menu');
+        overlay.setAttribute('aria-hidden', String(expanded));
+        document.documentElement.classList.toggle('mobile-nav-open', !expanded);
+      });
+      overlay.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'A') {
+          btn.setAttribute('aria-expanded', 'false');
+          btn.setAttribute('aria-label', 'Open menu');
+          overlay.setAttribute('aria-hidden', 'true');
+          document.documentElement.classList.remove('mobile-nav-open');
+        }
+      });
+    }
+  }
+</script>
 
 <style>
   .nav-root {
+    --nav-height: 72px;
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     z-index: 100;
-    height: 72px;
+    height: var(--nav-height);
     background-image: linear-gradient(
       var(--nav-glass-1) 0%,
       var(--nav-glass-2) 100%
@@ -170,29 +237,25 @@ import ThemeToggleIsland from './ThemeToggleIsland';
     position: absolute;
     top: 0;
     right: 32px;
-    height: 72px;
+    height: var(--nav-height);
     display: flex;
     align-items: center;
   }
 
-  /* ── Sign In — muted text link, height-matched to CTA ── */
-  .nav-signin {
+  /* ── Shared action link base ── */
+  .nav-signin,
+  .mobile-nav-signin {
     font-family: 'Inter Variable', sans-serif;
     font-size: 14px;
     font-weight: 510;
     color: var(--text-muted);
     text-decoration: none;
-    height: 32px;
-    padding: 0 4px;
     display: inline-flex;
     align-items: center;
-    border-radius: 4px;
     transition: color var(--dur-fast) var(--ease-linear-default);
   }
-  .nav-signin:hover { color: var(--text); }
-
-  /* ── CTA — matches hero "Get Started" ── */
-  .nav-cta {
+  .nav-cta,
+  .mobile-nav-cta {
     font-family: 'Inter Variable', sans-serif;
     font-size: 14px;
     font-weight: 510;
@@ -200,7 +263,6 @@ import ThemeToggleIsland from './ThemeToggleIsland';
     text-decoration: none;
     background: var(--cta-bg-grad);
     padding: 0 16px;
-    height: 32px;
     display: inline-flex;
     align-items: center;
     border-radius: 6px;
@@ -208,6 +270,18 @@ import ThemeToggleIsland from './ThemeToggleIsland';
       0 0 0 1px rgba(255, 255, 255, 0.06),
       inset 0 1px 0 rgba(255, 255, 255, 0.5),
       0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+
+  /* ── Desktop overrides ── */
+  .nav-signin {
+    height: 32px;
+    padding: 0 4px;
+    border-radius: 4px;
+  }
+  .nav-signin:hover { color: var(--text); }
+
+  .nav-cta {
+    height: 32px;
     transition: filter 180ms ease,
                 box-shadow 180ms ease;
   }
@@ -226,4 +300,104 @@ import ThemeToggleIsland from './ThemeToggleIsland';
       inset 0 1px 0 rgba(255, 255, 255, 0.3),
       0 0 2px rgba(0, 0, 0, 0.16);
   }
+
+  /* ── Hamburger button — hidden on desktop ── */
+  .nav-hamburger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hamburger-close { display: none; }
+  :global(.mobile-nav-open) .hamburger-open { display: none; }
+  :global(.mobile-nav-open) .hamburger-close { display: block; }
+
+  /* ── Mobile overlay ── */
+  .mobile-nav {
+    display: none;
+    position: absolute;
+    top: var(--nav-height);
+    left: 0;
+    right: 0;
+    background-image: linear-gradient(
+      var(--nav-glass-1) 0%,
+      var(--nav-glass-2) 100%
+    );
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 0.8px solid hsl(var(--border));
+    padding: 16px 24px 24px;
+    flex-direction: column;
+  }
+  .mobile-nav-links {
+    display: flex;
+    flex-direction: column;
+  }
+  .mobile-nav-links a {
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 15px;
+    font-weight: 450;
+    color: var(--text);
+    text-decoration: none;
+    padding: 12px 0;
+    opacity: 0.82;
+    transition: opacity var(--dur-fast) var(--ease-linear-default);
+  }
+  .mobile-nav-links a:hover { opacity: 1; }
+  .mobile-nav-divider {
+    height: 0.8px;
+    background: hsl(var(--border));
+    margin: 8px 0 16px;
+  }
+  .mobile-nav-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  /* ── Mobile overrides (base inherited from shared rules above) ── */
+  .mobile-nav-signin {
+    height: 36px;
+    padding: 0 16px;
+    border-radius: 6px;
+    border: 0.8px solid hsl(var(--border));
+  }
+  .mobile-nav-signin:hover { color: var(--text); }
+  .mobile-nav-cta {
+    height: 36px;
+    flex: 1;
+    justify-content: center;
+  }
+  .mobile-nav-theme {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .mobile-nav-theme-label {
+    font-family: 'Geist Mono Variable', ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Responsive: collapse nav at 768px ── */
+  @media (max-width: 768px) {
+    .nav-inner { padding: 0 16px; gap: 16px; }
+    .nav-links { display: none; }
+    .nav-right { display: none; }
+    .nav-theme-toggle { display: none; }
+    .nav-hamburger { display: flex; }
+    .mobile-nav[aria-hidden='false'] { display: flex; }
+  }
+
+  /* Lock body scroll when mobile nav is open */
+  :global(.mobile-nav-open) { overflow: hidden; }
 </style>

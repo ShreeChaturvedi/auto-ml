@@ -176,7 +176,7 @@ const BULLET_COUNTER_STYLE: React.CSSProperties = {
 };
 
 /**
- * TeamSlide is the "built by" slide, 14s (840f). Two engineers in a
+ * TeamSlide is the team intro slide, 14s (840f). Two team members in a
  * finance-deck format: photo, name, major, short divider, role, company
  * wordmark, then monospace-numbered supporting bullets. The heading, photos,
  * names, and card chrome are identical per column; all differentiation is in
@@ -205,7 +205,7 @@ export const TeamSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           transform: heading.transform,
         }}
       >
-        Two engineers who built this end-to-end.
+        Engineering Team
       </div>
 
       <div style={{ display: "flex", justifyContent: "center", gap: COL_GAP }}>

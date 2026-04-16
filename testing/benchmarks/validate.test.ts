@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -75,4 +77,85 @@ test('pending datasets require a null checksum', () => {
 
   assert.equal(issues.length, 1);
   assert.ok(issues[0]?.message.includes('must be null when status is pending'));
+});
+
+function makeCatalogRoot(name: string): string {
+  const root = path.join(os.tmpdir(), `benchmark-catalog-${name}-${Date.now()}`);
+  mkdirSync(path.join(root, 'datasets', 'public'), { recursive: true });
+  mkdirSync(path.join(root, 'datasets', 'derived'), { recursive: true });
+  mkdirSync(path.join(root, 'datasets', 'poison'), { recursive: true });
+  mkdirSync(path.join(root, 'suites'), { recursive: true });
+  return root;
+}
+
+function writeJson(filePath: string, value: unknown) {
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+test('catalog rejects suite entries that reference unknown datasets', () => {
+  const root = makeCatalogRoot('missing-dataset-ref');
+
+  writeJson(path.join(root, 'suites', 'expo-public-p0.v1.json'), {
+    schemaVersion: 1,
+    id: 'expo-public-p0.v1',
+    lane: 'public-p0',
+    entries: [
+      {
+        datasetRef: 'public.titanic.v1',
+        repetitions: 3,
+        qualityGate: { metric: 'accuracy' },
+      },
+    ],
+  });
+
+  const issues = validateBenchmarkCatalog(root);
+  assert.equal(issues.length, 1);
+  assert.ok(issues[0]?.message.includes('unknown dataset "public.titanic.v1"'));
+});
+
+test('catalog requires reciprocal dataset suiteRefs', () => {
+  const root = makeCatalogRoot('missing-reciprocal-suite-ref');
+
+  writeJson(path.join(root, 'datasets', 'public', 'adult-income.v1.json'), {
+    schemaVersion: 1,
+    id: 'public.adult-income.v1',
+    kind: 'public',
+    slug: 'adult-income',
+    version: 1,
+    status: 'pending',
+    task: {
+      type: 'classification',
+      targetColumn: 'income',
+      primaryMetric: 'accuracy',
+    },
+    storage: {
+      root: 'testing/benchmarks/data/public/adult-income/v1',
+      canonicalFile: 'canonical/data.csv',
+    },
+    integrity: {
+      canonicalSha256: null,
+    },
+    provenance: {
+      upstreamUrl: 'https://example.com/adult-income',
+      acquisition: 'scripted-open',
+      license: 'See upstream terms',
+    },
+  });
+
+  writeJson(path.join(root, 'suites', 'expo-public-p0.v1.json'), {
+    schemaVersion: 1,
+    id: 'expo-public-p0.v1',
+    lane: 'public-p0',
+    entries: [
+      {
+        datasetRef: 'public.adult-income.v1',
+        repetitions: 3,
+        qualityGate: { metric: 'accuracy' },
+      },
+    ],
+  });
+
+  const issues = validateBenchmarkCatalog(root);
+  assert.equal(issues.length, 1);
+  assert.ok(issues[0]?.message.includes('reciprocal suiteRef "expo-public-p0.v1"'));
 });

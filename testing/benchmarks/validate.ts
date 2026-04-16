@@ -17,6 +17,15 @@ function readJson(filePath: string): JsonValue {
   return JSON.parse(readFileSync(filePath, 'utf8')) as JsonValue;
 }
 
+function tryReadRecord(filePath: string): Record<string, JsonValue> | null {
+  try {
+    const value = readJson(filePath);
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 function isRecord(value: JsonValue): value is Record<string, JsonValue> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -392,15 +401,107 @@ export function validateManifestFile(filePath: string): ValidationIssue[] {
 }
 
 export function validateBenchmarkCatalog(root = CATALOG_ROOT): ValidationIssue[] {
-  const manifestRoots = [path.join(root, 'datasets'), path.join(root, 'suites')];
   const issues: ValidationIssue[] = [];
+  const datasetRoot = path.join(root, 'datasets');
+  const suiteRoot = path.join(root, 'suites');
 
-  for (const manifestRoot of manifestRoots) {
-    try {
-      issues.push(...walkJsonFiles(manifestRoot).flatMap((file) => validateManifestFile(file)));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      issues.push({ file: manifestRoot, message: `Catalog root unreadable: ${message}` });
+  let datasetFiles: string[] = [];
+  let suiteFiles: string[] = [];
+
+  try {
+    datasetFiles = walkJsonFiles(datasetRoot);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    issues.push({ file: datasetRoot, message: `Catalog root unreadable: ${message}` });
+  }
+
+  try {
+    suiteFiles = walkJsonFiles(suiteRoot);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    issues.push({ file: suiteRoot, message: `Catalog root unreadable: ${message}` });
+  }
+
+  const datasets = new Map<string, { file: string; value: Record<string, JsonValue> }>();
+  for (const file of datasetFiles) {
+    const fileIssues = validateManifestFile(file);
+    issues.push(...fileIssues);
+    if (fileIssues.length > 0) {
+      continue;
+    }
+
+    const value = tryReadRecord(file);
+    if (value && typeof value.id === 'string') {
+      datasets.set(value.id, { file, value });
+    }
+  }
+
+  const suites = new Map<string, { file: string; value: Record<string, JsonValue> }>();
+  for (const file of suiteFiles) {
+    const fileIssues = validateManifestFile(file);
+    issues.push(...fileIssues);
+    if (fileIssues.length > 0) {
+      continue;
+    }
+
+    const value = tryReadRecord(file);
+    if (value && typeof value.id === 'string') {
+      suites.set(value.id, { file, value });
+    }
+  }
+
+  for (const [suiteId, suite] of suites.entries()) {
+    const entries = Array.isArray(suite.value.entries) ? suite.value.entries : [];
+    for (const [index, entry] of entries.entries()) {
+      if (!isRecord(entry) || typeof entry.datasetRef !== 'string') {
+        continue;
+      }
+
+      const dataset = datasets.get(entry.datasetRef);
+      if (!dataset) {
+        issues.push({
+          file: suite.file,
+          message: `entries[${index}].datasetRef refers to unknown dataset "${entry.datasetRef}"`,
+        });
+        continue;
+      }
+
+      const suiteRefs = Array.isArray(dataset.value.suiteRefs) ? dataset.value.suiteRefs : [];
+      if (!suiteRefs.includes(suiteId)) {
+        issues.push({
+          file: suite.file,
+          message: `entries[${index}].datasetRef must declare reciprocal suiteRef "${suiteId}"`,
+        });
+      }
+    }
+  }
+
+  for (const [datasetId, dataset] of datasets.entries()) {
+    const suiteRefs = Array.isArray(dataset.value.suiteRefs) ? dataset.value.suiteRefs : [];
+    for (const suiteRef of suiteRefs) {
+      if (typeof suiteRef !== 'string') {
+        continue;
+      }
+
+      const suite = suites.get(suiteRef);
+      if (!suite) {
+        issues.push({
+          file: dataset.file,
+          message: `suiteRefs includes unknown suite "${suiteRef}"`,
+        });
+        continue;
+      }
+
+      const entries = Array.isArray(suite.value.entries) ? suite.value.entries : [];
+      const suiteIncludesDataset = entries.some(
+        (entry) => isRecord(entry) && entry.datasetRef === datasetId,
+      );
+      if (!suiteIncludesDataset) {
+        issues.push({
+          file: dataset.file,
+          message: `suiteRefs includes "${suiteRef}" but that suite does not reference dataset "${datasetId}"`,
+        });
+      }
     }
   }
 

@@ -21,7 +21,7 @@
     "build": "npm --prefix backend run build && npm --prefix frontend run build",
     "build:landing": "npm --prefix landing run build",
     "audit": "node scripts/audit.mjs",
-    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint && npm --prefix video run lint",
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
     "lint:landing": "npm --prefix landing run lint",
     "lint:video": "npm --prefix video run lint",
     "test": "npm --prefix backend test && npm --prefix frontend test",

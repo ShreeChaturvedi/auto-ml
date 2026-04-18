@@ -101,7 +101,7 @@ export function useTrainingWorkbooks(
     if (!projectId) return;
     const sessionStore = useWorkflowSessionStore.getState();
     const matchingSessionKeys = findWorkbookSessionKeys(workbookId);
-    let interruptedRunIds = new Set<string>();
+    const interruptedRunIds = new Set<string>();
 
     for (const sessionKey of matchingSessionKeys) {
       const session = sessionStore.getSession(sessionKey);

@@ -257,7 +257,7 @@ describeRouteSuite('dataset routes', () => {
       repository.addDataset(
         createMockDataset({
           filename: 'data.csv',
-          metadata: { sqlName: 'data', tableName: 'data_123' }
+          metadata: { sqlName: 'data', tableName: 'data_a1b2c3d4' }
         })
       );
 

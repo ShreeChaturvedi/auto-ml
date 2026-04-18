@@ -653,9 +653,9 @@ describe('resolveTrainingLifecycleNode', () => {
                 draftId: 'draft-1',
                 segments: [
                   { title: 'Imports', content: 'from catboost import CatBoostClassifier' },
-                  { title: 'Prep', content: 'print(\"prep\")' },
-                  { title: 'Fit', content: 'print(\"fit\")' },
-                  { title: 'Save', content: 'print(\"save\")' }
+                  { title: 'Prep', content: 'print("prep")' },
+                  { title: 'Fit', content: 'print("fit")' },
+                  { title: 'Save', content: 'print("save")' }
                 ]
               }
             }
@@ -673,9 +673,9 @@ describe('resolveTrainingLifecycleNode', () => {
                 draftId: 'draft-1',
                 segments: [
                   { title: 'Imports', content: 'from catboost import CatBoostClassifier' },
-                  { title: 'Prep', content: 'print(\"prep\")' },
-                  { title: 'Fit', content: 'print(\"fit\")' },
-                  { title: 'Save', content: 'print(\"save\")' }
+                  { title: 'Prep', content: 'print("prep")' },
+                  { title: 'Fit', content: 'print("fit")' },
+                  { title: 'Save', content: 'print("save")' }
                 ]
               }
             }

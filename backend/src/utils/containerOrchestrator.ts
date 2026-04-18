@@ -50,7 +50,7 @@ export interface RichOutput {
 }
 
 function isTransientKernelExecutionFailure(result: {
-  status: 'success' | 'error' | 'timeout';
+  status: string;
   error?: string;
 }): boolean {
   return result.status === 'error'

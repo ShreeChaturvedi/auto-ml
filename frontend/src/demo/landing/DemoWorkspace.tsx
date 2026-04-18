@@ -57,7 +57,7 @@ export function DemoWorkspace({
             className="landing-demo-workspace h-full bg-background text-foreground"
             data-testid="landing-demo-workspace"
           >
-            <AppShell viewportMode="container">
+            <AppShell>
               {phase ? <DemoWorkspaceRouteSync phase={phase} /> : null}
               <Routes>
                 <Route path="/project/:projectId" element={<Navigate to={`/project/${DEMO_PROJECT_ID}/${initialPhase}`} replace />} />

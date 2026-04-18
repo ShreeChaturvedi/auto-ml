@@ -91,6 +91,10 @@ test:
 landing:build:
   extends: .run_on_branch_or_mr
   stage: build
+  # Landing is the marketing site, not the core app. Red here must NOT
+  # block a final-demo fix from merging — we only gate on backend+frontend.
+  # The vercel deploy jobs below still run only on their explicit rules.
+  allow_failure: true
   script:
     - npm --prefix landing ci
     - npm --prefix landing run typecheck

@@ -344,7 +344,7 @@ function getTrainingMissingDependencyRecovery(
     }
     const errorMessage = getToolErrorMessage(result);
     const missingModuleName = extractMissingModuleName(errorMessage);
-    const resolvedPackage = resolvePackageRequirementForMissingModule(missingModuleName);
+    const resolvedPackage = resolvePackageRequirementForMissingModule(missingModuleName ?? undefined);
     if (!missingModuleName || !resolvedPackage) {
       continue;
     }
@@ -353,7 +353,7 @@ function getTrainingMissingDependencyRecovery(
     failureIndex = index;
     moduleName = missingModuleName;
     packageName = resolvedPackage;
-    failedCellId = asString(output?.cellId) ?? asString(asRecord(call.args)?.cellId) ?? null;
+    failedCellId = asString(output?.cellId) ?? asString(asRecord(call?.args)?.cellId) ?? null;
     break;
   }
 
@@ -378,7 +378,7 @@ function getTrainingMissingDependencyRecovery(
       continue;
     }
 
-    const output = getOutputRecord(result);
+    const output = getOutputRecord(result ?? null);
     const succeeded = result?.error == null && output?.success === true;
     const failed = Boolean(result?.error) || output?.success === false;
 

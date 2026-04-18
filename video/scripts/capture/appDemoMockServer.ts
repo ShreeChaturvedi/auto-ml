@@ -5,15 +5,11 @@ import { URL } from "node:url";
 import type { AppDemoPreset } from "../../config/appDemo";
 import {
   getMockBusinessRetentionDataset,
-  getMockBusinessRetentionRows,
   getMockBusinessRows,
   getMockBusinessRowsPage,
   listMockBusinessDatasets,
   listMockBusinessDocuments,
-  listMockBusinessWorkflowPhases,
   type FixtureRow,
-  type MockBusinessDataset,
-  type MockBusinessWorkflowPhase,
 } from "./mockBusinessFixtures";
 
 type JsonRecord = Record<string, unknown>;
@@ -94,9 +90,7 @@ const CURRENT_USER = {
 
 const DATASETS = listMockBusinessDatasets();
 const DOCUMENTS = listMockBusinessDocuments();
-const WORKFLOW_PHASES = listMockBusinessWorkflowPhases();
 const RETENTION_DATASET = getMockBusinessRetentionDataset();
-const DATASET_BY_ID = new Map(DATASETS.map((dataset) => [dataset.datasetId, dataset] as const));
 const DATASET_BY_FILENAME = new Map(
   DATASETS.map((dataset) => [dataset.filename.toLowerCase(), dataset] as const),
 );
@@ -107,7 +101,6 @@ const CUSTOMERS_DATASET = mustDataset("customers");
 const SUBSCRIPTIONS_DATASET = mustDataset("subscriptions");
 const SUPPORT_DATASET = mustDataset("support_tickets");
 const USAGE_DATASET = mustDataset("usage_metrics");
-const MARKETING_DATASET = mustDataset("marketing_campaigns");
 const FEATURE_COLUMNS = [
   "annual_revenue_usd",
   "employee_count",

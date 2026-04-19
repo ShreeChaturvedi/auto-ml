@@ -197,7 +197,7 @@ check_stop feature-engineering
 info "Phase 7/9 — training (ridge regression)"
 curl -s -N -m 180 -X POST "$BASE/api/workflows/turns/stream" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET_COLUMN\",\"prompt\":\"Train a ridge regression predicting $TARGET_COLUMN. Drop customer_id before fitting — it is a high-cardinality identifier and would explode the one-hot space with different values in train vs test splits.\"}" \
+  -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET_COLUMN\",\"prompt\":\"Train a ridge regression predicting $TARGET_COLUMN.\"}" \
   > "$OUT/07_train_turn1.ndjson" 2>&1
 
 RUN_ID=$(python3 -c "
@@ -313,9 +313,21 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
 done
 [ "$DEPLOY_STATUS" != "healthy" ] && fail "deployment did not become healthy within 24 polls"
 
-# Predict with sampleRequest
-SAMPLE_REQUEST=$(python3 -c "import json;d=json.load(open('$OUT/07_model.json'));print(json.dumps(d.get('model',{}).get('sampleRequest',{})))")
-[ "$SAMPLE_REQUEST" = "{}" ] && fail "model has no sampleRequest for predict"
+# Predict — synthesize a payload from featureColumns + the first dataset
+# sample row. Models registered by the current workflow do not carry a
+# sampleRequest field on the record, so we build one from the intersection
+# of what the model trained on and what the first sample row provides.
+SAMPLE_REQUEST=$(python3 -c "
+import json
+model=json.load(open('$OUT/07_model.json')).get('model',{})
+features=model.get('featureColumns') or []
+sample=json.load(open('$OUT/04_dataset_sample.json'))
+rows=sample.get('sample') or sample.get('rows') or []
+if not features or not rows:
+    print('{}'); raise SystemExit(0)
+row=rows[0]
+print(json.dumps({k: row.get(k) for k in features if k in row}))")
+[ "$SAMPLE_REQUEST" = "{}" ] && fail "could not synthesize predict payload (featureColumns=$(python3 -c "import json;d=json.load(open('$OUT/07_model.json')).get('model',{});print(d.get('featureColumns'))"))"
 
 info "  POST /api/deployments/$DEPLOYMENT_ID/predict"
 curl -s -m 15 -X POST "$BASE/api/deployments/$DEPLOYMENT_ID/predict" \

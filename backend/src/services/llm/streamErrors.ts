@@ -11,6 +11,7 @@ export type LlmStreamErrorCode =
   | 'UPSTREAM_MODEL_UNAVAILABLE'
   | 'UPSTREAM_AUTH_FAILED'
   | 'UPSTREAM_TIMEOUT'
+  | 'WORKFLOW_BUDGET_EXHAUSTED'
   | 'UPSTREAM_UNKNOWN';
 
 export interface NormalizedLlmStreamError {
@@ -159,6 +160,23 @@ export function normalizeLlmStreamError(error: unknown): NormalizedLlmStreamErro
     return {
       message: 'The model provider timed out. Retry, or switch to a faster model.',
       code: 'UPSTREAM_TIMEOUT',
+      retryable: true
+    };
+  }
+
+  // LangGraph's GraphRecursionError surfaces when the graph hits its
+  // internal step budget before the workflow's MAX_WORKFLOW_ITERATIONS
+  // cap fires (typically because deterministic stage hops cycle the graph
+  // without advancing `iteration`). Surface a specific, actionable code
+  // instead of the generic UPSTREAM_UNKNOWN fallback. Issue #340.
+  if (
+    fingerprint.includes('recursion limit')
+    || fingerprint.includes('graphrecursionerror')
+  ) {
+    return {
+      message:
+        'The preprocessing run ran too many steps without finishing. Try simplifying your request, breaking it into smaller steps, or starting over on a fresh workbook.',
+      code: 'WORKFLOW_BUDGET_EXHAUSTED',
       retryable: true
     };
   }

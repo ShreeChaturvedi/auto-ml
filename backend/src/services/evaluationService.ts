@@ -1152,8 +1152,47 @@ export async function runEvaluation(modelId: string): Promise<void> {
       throw new Error('Clustering models do not support evaluation');
     }
 
-    // 4. Get dataset info
-    const dataset = await datasetRepository.getById(model.datasetId);
+    // 4. Get dataset info — prefer the dataset whose column set covers
+    //    model.featureColumns. Older rows may carry the source upload id
+    //    instead of the preprocessed derived id (fixed for new rows by
+    //    registrationTools.ts, but this fallback keeps already-registered
+    //    models evaluable). Issue #342.
+    let dataset = await datasetRepository.getById(model.datasetId);
+    const featureCols = Array.isArray(model.featureColumns) ? model.featureColumns : [];
+    const needsFallback = (candidate: typeof dataset): boolean => {
+      if (!candidate) return true;
+      if (featureCols.length === 0) return false;
+      const columnNames = new Set(candidate.columns.map((col) => col.name));
+      return featureCols.some((name) => !columnNames.has(name));
+    };
+    if (needsFallback(dataset)) {
+      const projectDatasets = await datasetRepository.listByProject(model.projectId);
+      // Search derived datasets first (those with metadata.derivedFrom) — they
+      // are the preprocessing output the training cell most likely fit on.
+      const derivedFirst = [...projectDatasets].sort((a, b) => {
+        const aDerived = a.metadata?.derivedFrom ? 1 : 0;
+        const bDerived = b.metadata?.derivedFrom ? 1 : 0;
+        return bDerived - aDerived;
+      });
+      const match = derivedFirst.find((candidate) => {
+        if (candidate.datasetId === model.datasetId) return false;
+        if (featureCols.length === 0) return false;
+        const columnNames = new Set(candidate.columns.map((col) => col.name));
+        return featureCols.every((name) => columnNames.has(name));
+      });
+      if (match) {
+        appLogger.warn(
+          '[evaluationService] model.datasetId columns do not cover featureColumns; resolving to a project dataset that does',
+          {
+            modelId,
+            originalDatasetId: model.datasetId,
+            resolvedDatasetId: match.datasetId,
+            derivedFrom: match.metadata?.derivedFrom
+          }
+        );
+        dataset = match;
+      }
+    }
     if (!dataset) {
       throw new Error('Dataset not found');
     }

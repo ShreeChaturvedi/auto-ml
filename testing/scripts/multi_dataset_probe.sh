@@ -294,6 +294,36 @@ print(last[:200])")
     EVAL_ERR=$(python3 -c "import json;d=json.load(open('$OUT/07_model.json'));print((d.get('model',{}).get('evaluationError','') or '')[:200])")
     fail "$DOMAIN/$VARIANT training (eval=$EVAL_STATUS): $EVAL_ERR"
     row "$DOMAIN" "$VARIANT" "training" "FAIL" "eval=$EVAL_STATUS: $EVAL_ERR" "$DATASET_ID"
+    return
+  fi
+
+  # Phase 8: Experiments — verify the /evaluation endpoint surfaces the
+  # chart artefacts the Experiments page renders (confusion_matrix/roc_curves
+  # for classification, residuals for regression, plus feature_importance,
+  # learning_curve, cross_validation). Gated by INCLUDE_EXPERIMENTS so
+  # preprocessing-only sweeps stay fast.
+  [ "${INCLUDE_EXPERIMENTS:-1}" = "0" ] && return
+  info "$DOMAIN/$VARIANT — experiments evaluation"
+  curl -s -m 10 "$BASE/api/experiments/$MODEL_ID/evaluation" \
+    -H "Authorization: Bearer $TOKEN" \
+    > "$OUT/09_experiments.json"
+  local CHARTS
+  CHARTS=$(python3 -c "
+import json
+d=json.load(open('$OUT/09_experiments.json'))
+ev=d.get('evaluation',d) or {}
+want_any=['confusion_matrix','roc_curves','residuals','feature_importance','learning_curve','cross_validation']
+have=[k for k in want_any if ev.get(k)]
+print(','.join(have))
+")
+  if [ -n "$CHARTS" ]; then
+    local CHART_COUNT
+    CHART_COUNT=$(echo "$CHARTS" | awk -F, '{print NF}')
+    pass "$DOMAIN/$VARIANT experiments ($CHART_COUNT charts: $CHARTS)"
+    row "$DOMAIN" "$VARIANT" "experiments" "PASS" "$CHART_COUNT charts: $CHARTS" "$MODEL_ID"
+  else
+    fail "$DOMAIN/$VARIANT experiments (no charts in evaluation payload)"
+    row "$DOMAIN" "$VARIANT" "experiments" "FAIL" "no chart fields in evaluation response" "$MODEL_ID"
   fi
 }
 

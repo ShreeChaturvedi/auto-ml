@@ -146,6 +146,13 @@ def _display_df(df):
 
 # Preprocessing helpers — called by generated cell code so the user sees
 # exactly what runs (no invisible wrapping).
+def _dataset_extension(filename):
+    """Return the lowercased extension (sans dot) of the dataset filename, or empty string."""
+    if not filename:
+        return ""
+    _, _, ext = str(filename).rpartition(".")
+    return ext.lower() if ext else ""
+
 def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     """Load a dataset into the kernel namespace, reusing a cached copy if available."""
     import pandas as pd
@@ -155,13 +162,19 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
         globals()[df_name] = globals()[cache_key].copy()
         return globals()[df_name]
     path = resolve_dataset_path(filename, dataset_id)
-    if file_type == "json":
-        try:
-            frame = pd.read_json(path)
-        except ValueError:
+    ext = _dataset_extension(filename)
+    if file_type == "json" or ext in ("json", "jsonl", "ndjson"):
+        if ext in ("jsonl", "ndjson"):
             frame = pd.read_json(path, lines=True)
-    elif file_type == "xlsx":
+        else:
+            try:
+                frame = pd.read_json(path)
+            except ValueError:
+                frame = pd.read_json(path, lines=True)
+    elif file_type == "xlsx" or ext == "xlsx":
         frame = pd.read_excel(path)
+    elif ext in ("tsv", "tab"):
+        frame = pd.read_csv(path, sep="\t")
     else:
         frame = pd.read_csv(path)
     globals()[df_name] = frame
@@ -179,10 +192,16 @@ def save_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     if not isinstance(frame, pd.DataFrame):
         raise TypeError(f"Preprocessing variable '{df_name}' must be a pandas DataFrame.")
     path = resolve_dataset_path(filename, dataset_id)
-    if file_type == "json":
-        frame.to_json(path, orient="records")
-    elif file_type == "xlsx":
+    ext = _dataset_extension(filename)
+    if file_type == "json" or ext in ("json", "jsonl", "ndjson"):
+        if ext in ("jsonl", "ndjson"):
+            frame.to_json(path, orient="records", lines=True)
+        else:
+            frame.to_json(path, orient="records")
+    elif file_type == "xlsx" or ext == "xlsx":
         frame.to_excel(path, index=False)
+    elif ext in ("tsv", "tab"):
+        frame.to_csv(path, sep="\t", index=False)
     else:
         frame.to_csv(path, index=False)
     # Invalidate cache after save — the data on disk is now transformed,

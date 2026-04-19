@@ -7,6 +7,8 @@ import { appLogger } from '../../../logging/logger.js';
 import type { DatasetRepository } from '../../../repositories/datasetRepository.js';
 import { getNotebook } from '../../../repositories/notebook/index.js';
 import type { PreprocessingRunState } from '../../../repositories/preprocessingRunRepository.js';
+import { SUPPORTED_EXTENSIONS } from '../../../routes/datasets/validation.js';
+import type { DatasetFileType } from '../../../types/dataset.js';
 import { loadDatasetIntoPostgres, parseDatasetRows } from '../../datasetLoader.js';
 import { profileDatasetRows } from '../../datasetProfiler.js';
 
@@ -147,7 +149,13 @@ export async function persistProcessedDataset(
   }
 
   const buffer = readFileSync(workspacePath);
-  const fileType = (extname(sourceDataset.filename).replace('.', '').toLowerCase() || 'csv') as 'csv' | 'json' | 'xlsx';
+  // Normalize extension to the canonical DatasetFileType union. Raw extensions
+  // like `.tsv` or `.jsonl` are not valid inputs to parseDatasetRows — they
+  // funnel through SUPPORTED_EXTENSIONS to 'csv' / 'json' respectively. Issue #339.
+  const ext = extname(sourceDataset.filename).toLowerCase();
+  const fileType: DatasetFileType =
+    SUPPORTED_EXTENSIONS[ext]
+    ?? ((sourceDataset.fileType as DatasetFileType | undefined) ?? 'csv');
   const rows = await parseDatasetRows(buffer, fileType, sourceDataset.filename);
   if (rows.length === 0) {
     appLogger.warn('[persistProcessedDataset] Parsed 0 rows from workspace file, skipping');

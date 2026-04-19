@@ -317,6 +317,16 @@ export const registerModel: TrainingToolHandler = async (
 ): Promise<TrainingToolResult> => {
   const { args, run, projectId, datasetId } = ctx;
 
+  // Prefer the dataset the training run actually fit on, not the
+  // upload dataset the client passed in. Preprocessing commits update
+  // `run.activeDatasetId` to the latest derived dataset — that's the
+  // file the training cell's `pd.read_csv(FILENAME)` loaded from. If we
+  // persist the original upload id here, evaluation later reads the raw
+  // CSV and `pipeline.predict(X_test)` crashes with "columns are
+  // missing" because the fitted ColumnTransformer expects the one-hot
+  // encoded schema. Issue #342.
+  const trainedDatasetId = run.activeDatasetId ?? datasetId;
+
   const resolved = resolveExperiment(run, args);
   if ('error' in resolved) return resolved;
   const { experiment } = resolved;
@@ -397,7 +407,7 @@ export const registerModel: TrainingToolHandler = async (
     const resolvedTemplateId = resolveModelTemplateId(modelType, taskType) ?? `llm-${modelType}`;
     const record = await modelRepository.create({
       projectId,
-      datasetId: datasetId ?? '',
+      datasetId: trainedDatasetId ?? '',
       name: modelName,
       templateId: resolvedTemplateId,
       taskType,

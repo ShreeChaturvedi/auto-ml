@@ -476,6 +476,87 @@ print(','.join(have))
     fail "$DOMAIN/$VARIANT experiments (no charts in evaluation payload)"
     row "$DOMAIN" "$VARIANT" "experiments" "FAIL" "no chart fields in evaluation response" "$MODEL_ID"
   fi
+
+  # Phase 9: Deployment — spin up the inference container, poll until
+  # healthy, then POST a sample request to /predict. Gated on
+  # INCLUDE_DEPLOY=1 because it requires Docker + ~60s container startup.
+  [ "${INCLUDE_DEPLOY:-0}" = "1" ] || return
+  info "$DOMAIN/$VARIANT — deployment create"
+  curl -s -m 30 -X POST "$BASE/api/deployments" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"modelId\":\"$MODEL_ID\",\"projectId\":\"$PROJECT_ID\",\"name\":\"probe-$DOMAIN-$VARIANT-$(date +%s%N)\"}" \
+    > "$OUT/10_deploy.json"
+  local DEPLOY_ID
+  DEPLOY_ID=$(python3 -c "
+import json
+try:
+    d=json.load(open('$OUT/10_deploy.json'))
+    print(d.get('deployment',{}).get('deploymentId',''))
+except: print('')")
+  if [ -z "$DEPLOY_ID" ]; then
+    local DEPLOY_ERR
+    DEPLOY_ERR=$(python3 -c "
+import json
+try: print(json.load(open('$OUT/10_deploy.json')).get('error','')[:200])
+except: print('')")
+    fail "$DOMAIN/$VARIANT deployment create: $DEPLOY_ERR"
+    row "$DOMAIN" "$VARIANT" "deployment" "FAIL" "create: $DEPLOY_ERR" "$MODEL_ID"
+    return
+  fi
+
+  # Poll deployment status
+  local DEPLOY_STATUS=""
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    curl -s -m 5 "$BASE/api/deployments/$DEPLOY_ID" -H "Authorization: Bearer $TOKEN" > "$OUT/10_deploy_status.json"
+    DEPLOY_STATUS=$(python3 -c "import json;d=json.load(open('$OUT/10_deploy_status.json'));print(d.get('deployment',{}).get('status',''))" 2>/dev/null)
+    [ "$DEPLOY_STATUS" = "healthy" ] && break
+    [ "$DEPLOY_STATUS" = "failed" ] && break
+    sleep 8
+  done
+  if [ "$DEPLOY_STATUS" != "healthy" ]; then
+    fail "$DOMAIN/$VARIANT deployment (status=$DEPLOY_STATUS)"
+    row "$DOMAIN" "$VARIANT" "deployment" "FAIL" "status=$DEPLOY_STATUS" "$DEPLOY_ID"
+    return
+  fi
+  row "$DOMAIN" "$VARIANT" "deployment" "PASS" "healthy" "$DEPLOY_ID"
+
+  # Fetch schema → sampleRequest → POST /predict
+  info "$DOMAIN/$VARIANT — deployment /predict"
+  curl -s -m 5 "$BASE/api/deployments/$DEPLOY_ID/schema" -H "Authorization: Bearer $TOKEN" > "$OUT/10_schema.json"
+  python3 -c "
+import json
+s=json.load(open('$OUT/10_schema.json'))
+print(json.dumps(s.get('sampleRequest',{})))
+" > "$OUT/10_predict_payload.json"
+  if [ "$(cat $OUT/10_predict_payload.json)" = "{}" ] || [ ! -s "$OUT/10_predict_payload.json" ]; then
+    fail "$DOMAIN/$VARIANT deploy predict (no sampleRequest in schema)"
+    row "$DOMAIN" "$VARIANT" "deploy_predict" "FAIL" "no sampleRequest" "$DEPLOY_ID"
+    return
+  fi
+  curl -s -m 15 -X POST "$BASE/api/deployments/$DEPLOY_ID/predict" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data-binary @"$OUT/10_predict_payload.json" \
+    > "$OUT/10_predict.json"
+  local PRED_OK
+  PRED_OK=$(python3 -c "
+import json
+try:
+    d=json.load(open('$OUT/10_predict.json'))
+    # Accept any of these shapes as a success
+    if 'prediction' in d or 'predictions' in d or 'result' in d or 'output' in d:
+        print('ok')
+    elif d.get('error'):
+        print('err:' + str(d.get('error'))[:200])
+    else:
+        print('unknown:' + str(list(d.keys()))[:200])
+except: print('parse_error')")
+  if [ "$PRED_OK" = "ok" ]; then
+    pass "$DOMAIN/$VARIANT deploy /predict"
+    row "$DOMAIN" "$VARIANT" "deploy_predict" "PASS" "" "$DEPLOY_ID"
+  else
+    fail "$DOMAIN/$VARIANT deploy /predict: $PRED_OK"
+    row "$DOMAIN" "$VARIANT" "deploy_predict" "FAIL" "$PRED_OK" "$DEPLOY_ID"
+  fi
 }
 
 if [ ! -d "$DATA_ROOT" ]; then

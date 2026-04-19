@@ -313,8 +313,23 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   // raw torch.save artifacts (.pt/.pth) that joblib can't unpickle; load with
   // torch.load and wrap the nn.Module in an sklearn-compatible adapter.
   lines.push(`_EVAL_MODEL_PATH = ${JSON.stringify(modelPath)}`);
+  // Pre-flight validation: truncated artifacts produce opaque EOFError in
+  // pickle.load. Surface a clear message so the user knows the training
+  // step didn't flush the model file cleanly (gradient_boosting flake etc.)
+  lines.push('import os as _os');
+  lines.push('_artifact_size = _os.path.getsize(_EVAL_MODEL_PATH) if _os.path.exists(_EVAL_MODEL_PATH) else 0');
+  lines.push('if _artifact_size < 64:');
+  lines.push('    raise RuntimeError(');
+  lines.push('        f"Model artifact at {_EVAL_MODEL_PATH!r} is empty or truncated ({_artifact_size} bytes). "');
+  lines.push('        "Training likely failed to flush the joblib/torch artifact. Re-run training."');
+  lines.push('    )');
   lines.push('try:');
   lines.push('    pipeline = joblib.load(_EVAL_MODEL_PATH)');
+  lines.push('except EOFError as _eof:');
+  lines.push('    raise RuntimeError(');
+  lines.push('        f"Model artifact at {_EVAL_MODEL_PATH!r} is truncated (pickle EOFError at load). "');
+  lines.push('        "The training cell likely crashed mid-write. Re-run training."');
+  lines.push('    ) from _eof');
   lines.push('except Exception as _load_err:');
   lines.push('    _msg = str(_load_err).lower()');
   lines.push('    _is_torch_artifact = (_EVAL_MODEL_PATH.endswith(".pt") or _EVAL_MODEL_PATH.endswith(".pth")');

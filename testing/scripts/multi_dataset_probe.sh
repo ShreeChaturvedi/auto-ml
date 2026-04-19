@@ -87,7 +87,7 @@ run_cell() {
   # Include nanosecond timestamp + RANDOM + PID + family so back-to-back
   # cells in the same second don't collide on the auth unique email index.
   local EMAIL="probe-$(date +%s%N)-$RANDOM-$$-${MODEL_FAMILY:-auto}-$DOMAIN-$VARIANT@automl.test"
-  curl -s -m 10 -X POST "$BASE/api/auth/register" \
+  curl -s -m 30 -X POST "$BASE/api/auth/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"$EMAIL\",\"password\":\"Probe2026!\",\"name\":\"Robustness Probe\"}" \
     > "$OUT/01_register.json"

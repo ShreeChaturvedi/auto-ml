@@ -197,7 +197,7 @@ check_stop feature-engineering
 info "Phase 7/9 — training (ridge regression)"
 curl -s -N -m 180 -X POST "$BASE/api/workflows/turns/stream" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET_COLUMN\",\"prompt\":\"Train a ridge regression predicting $TARGET_COLUMN.\"}" \
+  -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET_COLUMN\",\"prompt\":\"Train a ridge regression predicting $TARGET_COLUMN. Drop customer_id before fitting — it is a high-cardinality identifier and would explode the one-hot space with different values in train vs test splits.\"}" \
   > "$OUT/07_train_turn1.ndjson" 2>&1
 
 RUN_ID=$(python3 -c "
@@ -217,10 +217,30 @@ for line in open('$OUT/07_train_turn1.ndjson'):
 
 [ -z "$RUN_ID" ] && fail "training turn1 produced no runId"
 
+# Extract proposed experimentName so we can format the strict approval
+# prompt that parseApprovedTrainingExperimentNames() expects at
+# backend/src/services/workflows/trainingExperimentSelection.ts:23.
+EXPERIMENT_NAME=$(python3 -c "
+import json
+name=''
+for line in open('$OUT/07_train_turn1.ndjson'):
+    try:
+        e=json.loads(line)
+        exps=e.get('state',{}).get('metadata',{}).get('experiments',{}) or {}
+        for exp in exps.values():
+            n=exp.get('experimentName') or exp.get('experiment_name')
+            if n: name=n; break
+        if name: break
+    except: pass
+print(name)")
+[ -z "$EXPERIMENT_NAME" ] && fail "training turn1 produced no experimentName in metadata.experiments"
+info "  approving experimentName=$EXPERIMENT_NAME"
+
 info "  training turn2 (approval)"
+APPROVAL_PROMPT="Approved. Proceed with training the selected model: $EXPERIMENT_NAME."
 curl -s -N -m 900 -X POST "$BASE/api/workflows/turns/stream" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"runId\":\"$RUN_ID\",\"threadId\":\"$THREAD_ID\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET_COLUMN\",\"prompt\":\"Approved. Proceed with training.\"}" \
+  -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"runId\":\"$RUN_ID\",\"threadId\":\"$THREAD_ID\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET_COLUMN\",\"prompt\":$(python3 -c "import json,sys;print(json.dumps(sys.argv[1]))" "$APPROVAL_PROMPT")}" \
   > "$OUT/07_train_turn2.ndjson" 2>&1
 
 MODEL_ID=$(python3 -c "

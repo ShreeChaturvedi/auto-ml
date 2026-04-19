@@ -21,17 +21,29 @@ export const updateColumnTypeSchema = z.object({
   dtype: z.enum(COLUMN_DATA_TYPES)
 });
 
+// Note: .tsv is classified as `csv` because the parser branches in
+// services/dataLoading/fileParser.ts use the file extension to pick the
+// correct delimiter (`,` for .csv, `\t` for .tsv). The DatasetFileType
+// union stays at 3 values; the profiler + storage layer treat them the
+// same.  Similarly .jsonl maps to `json` because fileParser's JSON branch
+// already has an NDJSON fallback.  Issue #337.
 export const SUPPORTED_EXTENSIONS: Record<string, DatasetFileType> = {
   '.csv': 'csv',
+  '.tsv': 'csv',
   '.json': 'json',
+  '.jsonl': 'json',
+  '.ndjson': 'json',
   '.xlsx': 'xlsx'
 };
 
 export const SUPPORTED_MIME_TYPES: Partial<Record<string, DatasetFileType>> = {
   'text/csv': 'csv',
+  'text/tab-separated-values': 'csv',
   'application/vnd.ms-excel': 'csv',
   'application/csv': 'csv',
   'application/json': 'json',
+  'application/x-ndjson': 'json',
+  'application/jsonl': 'json',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
 };
 

@@ -13,6 +13,10 @@ type WorkbookPhase = 'preprocessing' | 'feature-engineering' | 'training';
 
 /** Phase-aware delete handler: returns new active workbook ID on success, undefined if rejected. */
 export type WorkbookDeleteHandler = (workbookId: string) => string | undefined;
+/** Phase-aware add handler: creates a new workbook via the phase hook's persistence path (localStorage + React state). Returns the new workbook ID. */
+export type WorkbookAddHandler = () => string | undefined;
+/** Phase-aware rename handler: renames a workbook via the phase hook's persistence path. */
+export type WorkbookRenameHandler = (workbookId: string, name: string) => void;
 
 interface WorkbookRegistryState {
   preprocessing: WorkbookEntry[];
@@ -20,6 +24,8 @@ interface WorkbookRegistryState {
   training: WorkbookEntry[];
   activeWorkbookIds: Partial<Record<WorkbookPhase, string>>;
   deleteHandlers: Partial<Record<WorkbookPhase, WorkbookDeleteHandler>>;
+  addHandlers: Partial<Record<WorkbookPhase, WorkbookAddHandler>>;
+  renameHandlers: Partial<Record<WorkbookPhase, WorkbookRenameHandler>>;
 
   setWorkbooks: (phase: WorkbookPhase, workbooks: WorkbookEntry[]) => void;
   setActiveWorkbookId: (phase: WorkbookPhase, workbookId: string | null) => void;
@@ -27,6 +33,8 @@ interface WorkbookRegistryState {
   removeWorkbook: (phase: WorkbookPhase, workbookId: string) => void;
   updateWorkbook: (phase: WorkbookPhase, workbookId: string, updates: Partial<WorkbookEntry>) => void;
   setDeleteHandler: (phase: WorkbookPhase, handler: WorkbookDeleteHandler | null) => void;
+  setAddHandler: (phase: WorkbookPhase, handler: WorkbookAddHandler | null) => void;
+  setRenameHandler: (phase: WorkbookPhase, handler: WorkbookRenameHandler | null) => void;
 }
 
 export type { WorkbookPhase };
@@ -37,6 +45,8 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
   training: [],
   activeWorkbookIds: {},
   deleteHandlers: {},
+  addHandlers: {},
+  renameHandlers: {},
 
   setWorkbooks: (phase, workbooks) =>
     set((state) => {
@@ -103,5 +113,25 @@ export const useWorkbookRegistryStore = create<WorkbookRegistryState>((set) => (
         return { deleteHandlers: next };
       }
       return { deleteHandlers: { ...state.deleteHandlers, [phase]: handler } };
+    }),
+
+  setAddHandler: (phase, handler) =>
+    set((state) => {
+      if (handler === null) {
+        const next = { ...state.addHandlers };
+        delete next[phase];
+        return { addHandlers: next };
+      }
+      return { addHandlers: { ...state.addHandlers, [phase]: handler } };
+    }),
+
+  setRenameHandler: (phase, handler) =>
+    set((state) => {
+      if (handler === null) {
+        const next = { ...state.renameHandlers };
+        delete next[phase];
+        return { renameHandlers: next };
+      }
+      return { renameHandlers: { ...state.renameHandlers, [phase]: handler } };
     })
 }));

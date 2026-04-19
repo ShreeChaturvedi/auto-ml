@@ -147,6 +147,54 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('def resolve_dataset_path(filename, dataset_id=None):');
     lines.push('    return WORKFLOW_DATASET_PATH');
     lines.push('');
+    // Data-hygiene prelude — monkey-patches pd.Series.astype and
+    // pd.DataFrame.astype so that casts to numeric dtypes on object
+    // columns holding common dirty patterns (yes/no, true/false, "$95",
+    // "1,715", "42%") auto-coerce instead of raising ValueError. The
+    // LLM's training code frequently does `X[col].astype("float")`
+    // without coercing first; this makes that pattern safe.
+    // Robustness fix for #342+ training fragility #1.
+    lines.push('_BOOL_LIKE_MAP = {"yes": 1, "no": 0, "true": 1, "false": 0, "y": 1, "n": 0, "t": 1, "f": 0}');
+    lines.push('def _automl_try_coerce(series, target_dtype):');
+    lines.push('    import pandas as pd');
+    lines.push('    import numpy as np');
+    lines.push('    try:');
+    lines.push('        stripped = series.astype(str).str.strip().str.lower()');
+    lines.push('    except Exception:');
+    lines.push('        return None');
+    lines.push('    non_null = stripped[(stripped.notna()) & (stripped != "") & (stripped != "nan")]');
+    lines.push('    if len(non_null) == 0:');
+    lines.push('        return None');
+    lines.push('    if non_null.isin(list(_BOOL_LIKE_MAP.keys())).all():');
+    lines.push('        mapped = stripped.map(_BOOL_LIKE_MAP)');
+    lines.push('        try:');
+    lines.push('            return mapped.astype(target_dtype)');
+    lines.push('        except Exception:');
+    lines.push('            return mapped');
+    lines.push('    cleaned = stripped.str.replace(",", "", regex=False).str.replace("$", "", regex=False).str.replace("%", "", regex=False)');
+    lines.push('    cleaned = cleaned.str.replace(r"k$", "000", regex=True).str.replace(r"m$", "000000", regex=True)');
+    lines.push('    numeric = pd.to_numeric(cleaned, errors="coerce")');
+    lines.push('    if numeric.notna().sum() / max(len(non_null), 1) >= 0.9:');
+    lines.push('        try:');
+    lines.push('            return numeric.astype(target_dtype)');
+    lines.push('        except Exception:');
+    lines.push('            return numeric');
+    lines.push('    return None');
+    lines.push('');
+    lines.push('_NUMERIC_DTYPE_TOKENS = ("float", "int", "float32", "float64", "int32", "int64", "number")');
+    lines.push('_original_series_astype = pd.Series.astype');
+    lines.push('def _safe_series_astype(self, dtype, *args, **kwargs):');
+    lines.push('    try:');
+    lines.push('        return _original_series_astype(self, dtype, *args, **kwargs)');
+    lines.push('    except (ValueError, TypeError):');
+    lines.push('        if self.dtype == object and any(tok in str(dtype).lower() for tok in _NUMERIC_DTYPE_TOKENS):');
+    lines.push('            coerced = _automl_try_coerce(self, dtype)');
+    lines.push('            if coerced is not None:');
+    lines.push('                print(f"[data-hygiene] auto-coerced Series to {dtype} via yes/no or numeric-string mapping")');
+    lines.push('                return coerced');
+    lines.push('        raise');
+    lines.push('pd.Series.astype = _safe_series_astype');
+    lines.push('');
     for (const segment of workflowPrepSegments) {
       lines.push(segment);
       lines.push('');

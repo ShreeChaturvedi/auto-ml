@@ -15,7 +15,7 @@ import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
 
 import { resolveWorkflowNodeContract } from './contracts.js';
 import type { WorkflowEventSink } from './eventSink.js';
-import type { WorkflowGraphState } from './graphState.js';
+import { MAX_STAGE_HOPS_WITHOUT_TOOL, type WorkflowGraphState } from './graphState.js';
 import type { StageConfig } from './phaseConfig.js';
 import { extractConfigurable } from './phases/types.js';
 import { planWorkflowAction } from './planner.js';
@@ -630,6 +630,17 @@ export async function invokeModelNode(
     const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
     const nextStage = phaseConfig?.resolveNextStage?.(stageConfig.name, currentTurnResults);
     if (typeof nextStage === 'string' && nextStage !== stageConfig.name) {
+      const nextHopCount = (state.stageHopsSinceTool ?? 0) + 1;
+      if (nextHopCount > MAX_STAGE_HOPS_WITHOUT_TOOL) {
+        return {
+          nextStep: 'fail',
+          errorMessage:
+            'Preprocessing did not converge on a committable plan — the workflow kept switching stages without running any transformation. '
+            + 'Try simplifying the request, pruning very messy columns, or starting over on a fresh workbook.',
+          errorCode: 'PREPROCESSING_NO_PROGRESS',
+          stageHopsSinceTool: nextHopCount
+        };
+      }
       return {
         nextStep: 'prepare',
         run: {
@@ -641,7 +652,8 @@ export async function invokeModelNode(
         planExitPayload: null,
         uiPayload: null,
         errorMessage: null,
-        errorCode: null
+        errorCode: null,
+        stageHopsSinceTool: nextHopCount
       };
     }
 

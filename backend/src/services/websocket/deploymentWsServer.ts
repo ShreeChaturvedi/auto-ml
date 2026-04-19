@@ -7,6 +7,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { env } from '../../config.js';
 import { hasDatabaseConfiguration } from '../../db.js';
 import { appLogger } from '../../logging/logger.js';
+import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
+import { createDeploymentRepository } from '../../repositories/deploymentRepository.js';
+import { getProjectRepository } from '../../repositories/projectRepository.js';
 import { authService } from '../../services/authService.js';
 import type { DeploymentRecord, DeploymentWSEvent } from '../../types/deployment.js';
 
@@ -133,7 +136,7 @@ export class DeploymentWSServer {
 
       switch (data.type) {
         case 'subscribe':
-          void this.subscribeToDeployment(clientId, data.deploymentId);
+          void this.authorizeAndSubscribe(clientId, data.deploymentId);
           break;
 
         case 'unsubscribe':
@@ -167,6 +170,59 @@ export class DeploymentWSServer {
   // ============================================================
   // Subscription Management
   // ============================================================
+
+  /**
+   * Load the deployment, verify the connected user owns the backing project,
+   * then subscribe. In database-disabled dev mode we bypass the check entirely
+   * because the repositories throw without a pool — matches the notebook-WS
+   * fallthrough at wsServer.ts:173. Unauthorized or missing deployments get an
+   * `error` frame and a no-op (the socket stays open for retries, matching
+   * notebook-WS behaviour).
+   */
+  private async authorizeAndSubscribe(clientId: string, deploymentId: string): Promise<void> {
+    const client = this.clients.get(clientId);
+    if (!client) return;
+
+    if (!hasDatabaseConfiguration()) {
+      void this.subscribeToDeployment(clientId, deploymentId);
+      return;
+    }
+
+    try {
+      const deployment = await createDeploymentRepository().getById(deploymentId);
+      if (!deployment) {
+        this.sendError(clientId, `Deployment not found: ${deploymentId}`);
+        return;
+      }
+
+      if (client.userId) {
+        const project = await verifyProjectOwnership(
+          deployment.projectId,
+          client.userId,
+          getProjectRepository()
+        );
+        if (!project) {
+          this.sendError(clientId, `Not authorized to subscribe to deployment: ${deploymentId}`);
+          return;
+        }
+      }
+
+      void this.subscribeToDeployment(clientId, deploymentId);
+    } catch (error) {
+      appLogger.error(`[deployment-ws] Subscribe authorization failed for ${clientId}:`, error);
+      this.sendError(clientId, 'Subscribe authorization failed');
+    }
+  }
+
+  private sendError(clientId: string, message: string): void {
+    const client = this.clients.get(clientId);
+    if (!client || client.ws.readyState !== WebSocket.OPEN) return;
+    try {
+      client.ws.send(JSON.stringify({ type: 'error', message }), { compress: false });
+    } catch {
+      /* ignore */
+    }
+  }
 
   public async subscribeToDeployment(clientId: string, deploymentId: string): Promise<void> {
     const client = this.clients.get(clientId);

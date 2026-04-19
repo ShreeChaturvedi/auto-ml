@@ -153,6 +153,27 @@ def _dataset_extension(filename):
     _, _, ext = str(filename).rpartition(".")
     return ext.lower() if ext else ""
 
+def _read_csv_robust(path, sep=","):
+    """Read CSV tolerating ragged rows and non-UTF-8 encodings.
+
+    Ragged CSVs (extra/missing fields per row) crash the default C engine
+    with ParserError; Windows-1252/Latin-1 files raise UnicodeDecodeError.
+    Mirrors the ingest-time leniency in fileParser.ts so the kernel never
+    sees a stricter parser than the upload layer accepted. Issue #341.
+    """
+    import pandas as pd
+    attempts = [
+        {"encoding": "utf-8", "on_bad_lines": "skip", "engine": "python"},
+        {"encoding": "latin-1", "on_bad_lines": "skip", "engine": "python"},
+    ]
+    last_err = None
+    for kwargs in attempts:
+        try:
+            return pd.read_csv(path, sep=sep, **kwargs)
+        except Exception as err:
+            last_err = err
+    raise last_err if last_err else RuntimeError(f"Failed to read CSV at {path}")
+
 def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     """Load a dataset into the kernel namespace, reusing a cached copy if available."""
     import pandas as pd
@@ -174,9 +195,9 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     elif file_type == "xlsx" or ext == "xlsx":
         frame = pd.read_excel(path)
     elif ext in ("tsv", "tab"):
-        frame = pd.read_csv(path, sep="\t")
+        frame = _read_csv_robust(path, sep="\t")
     else:
-        frame = pd.read_csv(path)
+        frame = _read_csv_robust(path, sep=",")
     globals()[df_name] = frame
     globals()[cache_key] = frame.copy()
     globals()["dataset_path"] = path

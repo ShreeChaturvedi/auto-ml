@@ -155,6 +155,28 @@ export function inferRuntimeDependenciesFromCode(code: string | undefined): stri
   return normalizeRuntimeDependencies(matches);
 }
 
+/**
+ * Merge a model's declared runtime deps (from training metadata) with deps
+ * inferred from its algorithm string and from any workflow-prep segments.
+ * Used by both the evaluation pipeline (kernel container) and the deployment
+ * pipeline (inference container) — the two must agree or a model that
+ * evaluates green will fail to deploy with ModuleNotFoundError.
+ */
+export function loadRuntimeDependencies(
+  model: { metadata?: Record<string, unknown> | null; algorithm?: string | null },
+  workflowPrepSegments: string[] = [],
+): string[] {
+  const metadata = (model.metadata && typeof model.metadata === 'object') ? model.metadata : null;
+  const storedDependencies = normalizeRuntimeDependencies(metadata?.runtimeDependencies);
+  const inferredDependencies = inferRuntimeDependenciesFromModelType(model.algorithm ?? undefined);
+  const codeInferredDependencies = inferRuntimeDependenciesFromCode(workflowPrepSegments.join('\n'));
+  return normalizeRuntimeDependencies([
+    ...storedDependencies,
+    ...inferredDependencies,
+    ...codeInferredDependencies,
+  ]);
+}
+
 export function extractMissingModuleName(message: string | undefined): string | null {
   if (!message?.trim()) {
     return null;

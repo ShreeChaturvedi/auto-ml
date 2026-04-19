@@ -38,7 +38,16 @@ export const MAX_SINGLE_TOOL_CALLS = 10;
 // count check.
 export const MAX_IDENTICAL_TOOL_CALLS = 5;
 
-export const WORKFLOW_GRAPH_RECURSION_LIMIT = MAX_WORKFLOW_ITERATIONS * 3 + 8;
+// Budget for LangGraph's internal step counter. The graph cycles
+// `prepare → invoke_model → execute_tools` (3 hops per iteration) plus
+// pause/terminal nodes, and `modelTurnCollector` can cycle
+// `prepare → invoke_model → prepare` for deterministic/delegated stage hops
+// without incrementing `state.iteration`. The previous `*3 + 8 = 152` budget
+// assumed exactly one hop per node per iteration and blew up on messy-data
+// preprocessing turns where the LLM legitimately needs more stage hops to
+// converge. `*5 + 16 = 256` keeps the iteration cap (48) as the authoritative
+// stop condition while leaving headroom for extra stage cycles. Issue #340.
+export const WORKFLOW_GRAPH_RECURSION_LIMIT = MAX_WORKFLOW_ITERATIONS * 5 + 16;
 
 export const InternalWorkflowState = Annotation.Root({
   turn: Annotation<WorkflowTurnRequest>(),

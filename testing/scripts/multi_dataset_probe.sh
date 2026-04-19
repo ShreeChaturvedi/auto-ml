@@ -187,6 +187,137 @@ print(last[:200])")
     [ "${STOP_ON_FAIL:-0}" = "1" ] && return
   fi
 
+  # ---- Feature Engineering phase ------------------------------------
+  # Gated on INCLUDE_FE (default 0). The LLM proposes engineered features,
+  # we extract the features from the workflow stream, then POST /apply to
+  # materialize them into a new derived dataset. Parallels the preprocess
+  # → apply pattern from phase 5 but with feature specs (code, method).
+  if [ "${INCLUDE_FE:-0}" = "1" ]; then
+    info "$DOMAIN/$VARIANT — feature engineering workflow"
+    # Preprocessing's derived dataset id is now in run.activeDatasetId
+    # of the preprocessing run. Easier path: ask the backend which
+    # dataset the project currently uses. The project endpoint returns
+    # the most recent derived dataset via its metadata.
+    local FE_DATASET_ID="$DATASET_ID"
+    local LATEST_DS
+    LATEST_DS=$(curl -s -m 5 "$BASE/api/datasets?projectId=$PROJECT_ID" -H "Authorization: Bearer $TOKEN" \
+      | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    rows=d.get('datasets') or d if isinstance(d,list) else d.get('datasets',[])
+    # pick newest derived (metadata.derivedFrom set)
+    der=[r for r in rows if r.get('metadata',{}).get('derivedFrom')]
+    if der:
+        der.sort(key=lambda r: r.get('createdAt',''), reverse=True)
+        print(der[0].get('datasetId',''))
+    else:
+        print('')
+except: print('')")
+    [ -n "$LATEST_DS" ] && FE_DATASET_ID="$LATEST_DS"
+
+    curl -s -N -m 180 -X POST "$BASE/api/workflows/turns/stream" \
+      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+      -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"feature_engineering\",\"datasetId\":\"$FE_DATASET_ID\",\"targetColumn\":\"$TARGET\",\"prompt\":\"Propose 3 engineered features that should help predict $TARGET. Favor interaction terms and ratios over aggregations.\"}" \
+      > "$OUT/06_fe.ndjson" 2>&1
+    local FE_STATUS
+    FE_STATUS=$(python3 -c "
+import json
+last=''
+for line in open('$OUT/06_fe.ndjson'):
+    try:
+        e=json.loads(line)
+        s=e.get('state',{}).get('status')
+        if s: last=s
+    except: pass
+print(last)")
+    if [ "$FE_STATUS" = "completed" ] || [ "$FE_STATUS" = "paused" ]; then
+      pass "$DOMAIN/$VARIANT fe_workflow ($FE_STATUS)"
+      row "$DOMAIN" "$VARIANT" "fe_workflow" "PASS" "$FE_STATUS" "$FE_DATASET_ID"
+
+      # Extract proposed features from the stream and POST /apply
+      python3 - <<EOF > "$OUT/06b_fe_features.json"
+import json
+features=[]
+seen_ids=set()
+for line in open('$OUT/06_fe.ndjson'):
+    try:
+        e=json.loads(line)
+        if e.get('type')!='tool_executed': continue
+        c=e.get('call',{})
+        if c.get('tool')!='propose_feature': continue
+        args=c.get('args',{}) or {}
+        spec={
+            'sourceColumn': args.get('sourceColumn') or args.get('source_column') or '',
+            'secondaryColumn': args.get('secondaryColumn') or args.get('secondary_column'),
+            'featureName': args.get('featureName') or args.get('feature_name') or '',
+            'method': args.get('method') or 'custom',
+            'code': args.get('code') or '',
+        }
+        # dedupe by featureName
+        fname=spec['featureName']
+        if fname and fname not in seen_ids and spec['sourceColumn']:
+            seen_ids.add(fname)
+            features.append({k:v for k,v in spec.items() if v})
+    except: pass
+print(json.dumps({'features':features[:5]}))
+EOF
+      local FE_FEATURES_COUNT
+      FE_FEATURES_COUNT=$(python3 -c "
+import json
+d=json.load(open('$OUT/06b_fe_features.json'))
+print(len(d.get('features',[])))")
+      if [ "$FE_FEATURES_COUNT" -gt "0" ]; then
+        python3 -c "
+import json
+f=json.load(open('$OUT/06b_fe_features.json'))['features']
+print(json.dumps({'projectId':'$PROJECT_ID','datasetId':'$FE_DATASET_ID','features':f}))
+" > "$OUT/06c_fe_apply_payload.json"
+        curl -s -m 120 -X POST "$BASE/api/feature-engineering/apply" \
+          -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+          --data-binary @"$OUT/06c_fe_apply_payload.json" \
+          > "$OUT/06d_fe_apply.json"
+        local FE_APPLY_DS
+        FE_APPLY_DS=$(python3 -c "
+import json
+try:
+    d=json.load(open('$OUT/06d_fe_apply.json'))
+    print(d.get('dataset',{}).get('datasetId',''))
+except: print('')")
+        if [ -n "$FE_APPLY_DS" ]; then
+          pass "$DOMAIN/$VARIANT fe_apply (new dataset=$FE_APPLY_DS, $FE_FEATURES_COUNT features)"
+          row "$DOMAIN" "$VARIANT" "fe_apply" "PASS" "$FE_FEATURES_COUNT features" "$FE_APPLY_DS"
+          # Prefer the FE-applied dataset for the subsequent training leg
+          DATASET_ID="$FE_APPLY_DS"
+        else
+          local FE_APPLY_ERR
+          FE_APPLY_ERR=$(python3 -c "
+import json
+try: print(json.load(open('$OUT/06d_fe_apply.json')).get('error','')[:200])
+except: print('')")
+          fail "$DOMAIN/$VARIANT fe_apply: $FE_APPLY_ERR"
+          row "$DOMAIN" "$VARIANT" "fe_apply" "FAIL" "$FE_APPLY_ERR" "$FE_DATASET_ID"
+        fi
+      else
+        fail "$DOMAIN/$VARIANT fe_apply (no propose_feature calls in stream)"
+        row "$DOMAIN" "$VARIANT" "fe_apply" "FAIL" "no propose_feature calls found" "$FE_DATASET_ID"
+      fi
+    else
+      local FE_ERR
+      FE_ERR=$(python3 -c "
+import json
+last=''
+for line in open('$OUT/06_fe.ndjson'):
+    try:
+        e=json.loads(line)
+        if e.get('type')=='workflow_error': last=e.get('message','')
+    except: pass
+print(last[:200])")
+      fail "$DOMAIN/$VARIANT fe_workflow ($FE_STATUS): $FE_ERR"
+      row "$DOMAIN" "$VARIANT" "fe_workflow" "FAIL" "$FE_STATUS: $FE_ERR" "$FE_DATASET_ID"
+    fi
+  fi
+
   [ "${INCLUDE_TRAINING:-0}" = "1" ] || return
 
   # ---- Training phase (two-turn approval) --------------------------

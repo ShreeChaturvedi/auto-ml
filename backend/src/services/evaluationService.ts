@@ -23,11 +23,7 @@ import {
   buildStandardImports,
   buildTrainTestSplitLines,
 } from './pythonScriptUtils.js';
-import {
-  inferRuntimeDependenciesFromCode,
-  inferRuntimeDependenciesFromModelType,
-  normalizeRuntimeDependencies,
-} from './runtimeDependencies.js';
+import { loadRuntimeDependencies } from './runtimeDependencies.js';
 import { getWorkflowRepository } from './workflows/repository/index.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
@@ -1129,20 +1125,8 @@ async function loadWorkflowPrepSegments(
   return { segments: [], source: 'none' };
 }
 
-function loadRuntimeDependencies(
-  model: { metadata?: Record<string, unknown>; algorithm?: string },
-  workflowPrepSegments: string[],
-): string[] {
-  const metadata = asRecord(model.metadata);
-  const storedDependencies = normalizeRuntimeDependencies(metadata?.runtimeDependencies);
-  const inferredDependencies = inferRuntimeDependenciesFromModelType(model.algorithm);
-  const codeInferredDependencies = inferRuntimeDependenciesFromCode(workflowPrepSegments.join('\n'));
-  return normalizeRuntimeDependencies([
-    ...storedDependencies,
-    ...inferredDependencies,
-    ...codeInferredDependencies,
-  ]);
-}
+// loadRuntimeDependencies moved to ../runtimeDependencies.ts so the deployment
+// pipeline can share the same merging logic — issue #323.
 
 export async function runEvaluation(modelId: string): Promise<void> {
   try {

@@ -322,9 +322,27 @@ print(last[:200])")
 
   # ---- Training phase (two-turn approval) --------------------------
   info "$DOMAIN/$VARIANT — training turn 1"
+  # The probe's default prompt is model-agnostic. For model-family sweeps,
+  # set MODEL_FAMILY=<name> to request a specific algorithm (e.g.
+  # "logistic_regression", "random_forest", "knn", "xgboost", "lightgbm",
+  # "catboost", "mlp", "tabtransformer", "fttransformer", "tabnet").
+  local TRAIN_PROMPT
+  if [ -n "${MODEL_FAMILY:-}" ]; then
+    TRAIN_PROMPT="Train a $MODEL_FAMILY model to predict $TARGET. Use the correct task type for the target column."
+  else
+    TRAIN_PROMPT="Train a model to predict $TARGET. Choose an appropriate algorithm and task type based on the target column profile."
+  fi
   curl -s -N -m 180 -X POST "$BASE/api/workflows/turns/stream" \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET\",\"prompt\":\"Train a ridge regression predicting $TARGET.\"}" \
+    -d "$(python3 -c "
+import json
+print(json.dumps({
+  'projectId': '$PROJECT_ID',
+  'phase': 'training',
+  'datasetId': '$DATASET_ID',
+  'targetColumn': '$TARGET',
+  'prompt': '''$TRAIN_PROMPT'''
+}))")" \
     > "$OUT/07_train_turn1.ndjson" 2>&1
 
   local RUN_ID THREAD_ID EXP_NAME

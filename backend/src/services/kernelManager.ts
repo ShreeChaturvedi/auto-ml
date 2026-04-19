@@ -182,8 +182,22 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     if cache_key in globals() and isinstance(globals()[cache_key], pd.DataFrame):
         globals()[df_name] = globals()[cache_key].copy()
         return globals()[df_name]
-    path = resolve_dataset_path(filename, dataset_id)
+    # Prefer a base_processed.ext sibling if one exists (chained
+    # preprocessing steps save there). Falling through to the pristine
+    # original keeps step 1 reading the raw upload. Issue #342 root cause.
     ext = _dataset_extension(filename)
+    processed_sibling = None
+    if filename and "." in filename and not filename.rsplit(".", 1)[0].endswith("_processed"):
+        _base, _dot, _ext = filename.rpartition(".")
+        processed_sibling = _base + "_processed." + _ext
+    if processed_sibling:
+        processed_path = resolve_dataset_path(processed_sibling, dataset_id)
+        if processed_path and Path(processed_path).exists():
+            path = processed_path
+        else:
+            path = resolve_dataset_path(filename, dataset_id)
+    else:
+        path = resolve_dataset_path(filename, dataset_id)
     if file_type == "json" or ext in ("json", "jsonl", "ndjson"):
         if ext in ("jsonl", "ndjson"):
             frame = pd.read_json(path, lines=True)
@@ -204,16 +218,37 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     globals()["active_dataset_id"] = dataset_id
     return frame
 
+def _derive_processed_filename(filename):
+    """Return base_processed.ext so save never clobbers the source file."""
+    if not filename:
+        return "_processed"
+    s = str(filename)
+    if "." in s:
+        base, _, ext = s.rpartition(".")
+        # Avoid stacking suffixes like foo_processed_processed.csv on re-saves.
+        if base.endswith("_processed"):
+            return s
+        return base + "_processed." + ext
+    return s + "_processed" if not s.endswith("_processed") else s
+
 def save_preprocessing_dataset(filename, dataset_id, file_type, df_name):
-    """Validate the dataframe and write it back to disk."""
+    """Validate the dataframe and write it to a _processed sibling file.
+
+    Writing to base_processed.ext (instead of overwriting the original
+    at /workspace/datasets/<id>/<filename>) means the raw upload's
+    workspace copy stays pristine for downstream phases (training /
+    feature-engineering / evaluation) that need to reload the source
+    shape. Issue #342 root cause.
+    """
     import pandas as pd
     frame = globals().get(df_name)
     if frame is None:
         raise ValueError(f"Preprocessing cell must leave the active dataframe in variable '{df_name}'.")
     if not isinstance(frame, pd.DataFrame):
         raise TypeError(f"Preprocessing variable '{df_name}' must be a pandas DataFrame.")
-    path = resolve_dataset_path(filename, dataset_id)
-    ext = _dataset_extension(filename)
+    processed_filename = _derive_processed_filename(filename)
+    path = resolve_dataset_path(processed_filename, dataset_id)
+    ext = _dataset_extension(processed_filename)
     if file_type == "json" or ext in ("json", "jsonl", "ndjson"):
         if ext in ("jsonl", "ndjson"):
             frame.to_json(path, orient="records", lines=True)

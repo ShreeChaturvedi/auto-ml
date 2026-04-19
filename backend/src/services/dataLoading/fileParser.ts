@@ -388,13 +388,53 @@ export async function parseDatasetRows(
 ): Promise<Record<string, unknown>[]> {
   switch (fileType) {
     case 'csv': {
-      const text = buffer.toString('utf8');
-      const rows = parseCsv(text, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true
-      }) as Record<string, unknown>[];
-      return sanitizeDatasetRows(rows);
+      // UTF-8 with BOM stripping + delimiter autodetection. .tsv files go
+      // through this branch via the SUPPORTED_EXTENSIONS mapping at
+      // backend/src/routes/datasets/validation.ts. Issue #337 + #338.
+      let text = buffer.toString('utf8');
+      if (text.charCodeAt(0) === 0xFEFF) {
+        text = text.slice(1);
+      }
+      const lower = (filename ?? '').toLowerCase();
+      // Delimiter picking: explicit extension wins, otherwise auto-detect
+      // from the header row. csv-parse's `delimiter` option accepts a
+      // single character; it does NOT auto-detect on its own.
+      let delimiter: string = ',';
+      if (lower.endsWith('.tsv')) {
+        delimiter = '\t';
+      } else {
+        // sniff header: the delimiter that splits the first non-empty line
+        // into the most fields wins.
+        const firstLine = text.split(/\r?\n/).find((l) => l.trim()) ?? '';
+        const candidates: Array<[string, number]> = [
+          [',', firstLine.split(',').length],
+          ['\t', firstLine.split('\t').length],
+          [';', firstLine.split(';').length],
+          ['|', firstLine.split('|').length],
+        ];
+        candidates.sort((a, b) => b[1] - a[1]);
+        if (candidates[0][1] > 1) delimiter = candidates[0][0];
+      }
+      // Lenient parse first (relax_column_count + relax_quotes). If that
+      // still fails, fall back to strict + rethrow with a clear message
+      // the upload handler can map to 400 instead of 500 (issue #338).
+      try {
+        const rows = parseCsv(text, {
+          columns: true,
+          delimiter,
+          skip_empty_lines: true,
+          trim: true,
+          relax_column_count: true,
+          relax_quotes: true,
+        }) as Record<string, unknown>[];
+        return sanitizeDatasetRows(rows);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Failed to parse ${filename ?? 'CSV file'}: ${message}. `
+            + 'Check for unterminated quotes or mismatched header row.',
+        );
+      }
     }
     case 'json': {
       const text = buffer.toString('utf8');

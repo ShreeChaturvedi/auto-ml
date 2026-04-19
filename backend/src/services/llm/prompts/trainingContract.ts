@@ -56,6 +56,14 @@ The code must:
 - If the user approved a specific estimator family (for example DecisionTree, RandomForest, KNeighbors, LogisticRegression, LinearRegression, Ridge, SVR, MLP, KMeans, LightGBM, XGBoost, or CatBoost), implement that exact family. Do NOT silently substitute a nearby baseline.
 - If you use stratified splitting or stratified CV for classification, first verify every class has at least 2 rows. If not, fall back to an unstratified split or a non-stratified CV strategy instead of crashing.
 - If you parse a date column with \`pd.to_datetime()\`, do NOT feed that raw datetime64 column into numeric imputers, scalers, or model features. Convert it to numeric/ordinal values, derive date parts, or drop the raw datetime column first. If the dataset already has numeric date features such as \`date_month\` or \`date_year\`, prefer them over the raw \`DATE\` column.
+- **Do NOT feed high-cardinality identifier columns (e.g. \`customer_id\`, \`user_id\`, \`uuid\`, \`email\`, \`transaction_id\`, or any column whose distinct value count is a large fraction of the row count) into OneHotEncoder, get_dummies, or any model feature matrix.** Drop them from \`featureColumns\` before fitting. They cause two correctness failures:
+  1. **Eval-split column mismatch.** OneHotEncoder fit on the train split produces 150 dummy columns (one per id); the eval split's ids are disjoint so \`pipeline.predict(X_test)\` raises \`ValueError: columns are missing: {...}\`. The evaluation cell cannot recover.
+  2. **Zero signal.** An id column has no predictive relationship with the target — the model learns overfit noise and the metrics are meaningless.
+  Rule of thumb: if \`df[col].nunique() > max(20, 0.3 * len(df))\` AND the column is not the target, exclude it from features. Prefer an explicit drop (\`df = df.drop(columns=['customer_id'])\`) over relying on a column transformer to silently ignore it.
+- **When you DO one-hot encode any remaining categorical column**, always pass \`handle_unknown='ignore'\` to \`OneHotEncoder\` (or \`drop_first=True\` + \`handle_unknown='ignore'\` for sklearn >= 1.1). Categories present at eval time but not at fit time would otherwise raise \`ValueError\` and abort evaluation. Example:
+  \`\`\`python
+  OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+  \`\`\`
 
 **Notebook structure rule (HARD):** During the execution turn, write training code as MULTIPLE SMALL CODE CELLS, not one monolithic cell.
 Use 2-4 code cells in this order when possible:

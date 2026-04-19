@@ -415,16 +415,33 @@ export async function parseDatasetRows(
         candidates.sort((a, b) => b[1] - a[1]);
         if (candidates[0][1] > 1) delimiter = candidates[0][0];
       }
-      // Lenient parse first (relax_column_count + relax_quotes). If that
-      // still fails, fall back to strict + rethrow with a clear message
-      // the upload handler can map to 400 instead of 500 (issue #338).
+      // Lenient parse ladder (issues #338 + #343):
+      //   1. Prefer strict-quote + relax_column_count + skip_records_with_error
+      //      so legitimately-quoted fields with commas ("1,715") parse as
+      //      single values AND mangled rows with stray quotes get skipped
+      //      instead of blowing up the whole file.
+      //   2. Retry with relax_quotes if the first attempt still rejects
+      //      (e.g. a stray quote inside an unquoted field).
+      //   3. Give up with a 400-safe error message.
+      const baseOpts = {
+        columns: true,
+        delimiter,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+        skip_records_with_error: true,
+      } as const;
+      try {
+        const rows = parseCsv(text, baseOpts) as Record<string, unknown>[];
+        if (rows.length > 0) {
+          return sanitizeDatasetRows(rows);
+        }
+      } catch {
+        // fall through to relax_quotes retry
+      }
       try {
         const rows = parseCsv(text, {
-          columns: true,
-          delimiter,
-          skip_empty_lines: true,
-          trim: true,
-          relax_column_count: true,
+          ...baseOpts,
           relax_quotes: true,
         }) as Record<string, unknown>[];
         return sanitizeDatasetRows(rows);

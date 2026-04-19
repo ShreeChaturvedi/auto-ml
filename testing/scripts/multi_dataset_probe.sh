@@ -30,6 +30,12 @@ mkdir -p "$RESULTS_ROOT"
 RESULTS_CSV="$RESULTS_ROOT/results.csv"
 echo "domain,variant,phase,status,detail,datasetId" > "$RESULTS_CSV"
 
+# FULL_RUN=1 flips training phase on. Preprocessing runs by default
+# because it's ~30s/cell and most dataset-shape bugs surface there.
+if [ "${FULL_RUN:-0}" = "1" ]; then
+  export INCLUDE_TRAINING=1
+fi
+
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; RESET='\033[0m'
 pass() { echo -e "${GREEN}[PASS]${RESET} $1"; }
 fail() { echo -e "${RED}[FAIL]${RESET} $1"; }
@@ -38,11 +44,18 @@ row()  { echo "$1,$2,$3,$4,\"$(echo "$5" | tr -d '"' | head -c 300)\",$6" >> "$R
 
 target_for() {
   case "$1" in
+    # v1 domains (tmp/robustness_datasets)
     customer_retention) echo churned ;;
     sensor_readings) echo fault_detected ;;
     messy_survey) echo satisfaction_score ;;
     financial_txns) echo is_fraud ;;
     clinical_records) echo readmitted ;;
+    # v2 domains (tmp/robustness_datasets_v2) — cross-validation set
+    ecommerce_orders) echo completed_purchase ;;
+    hr_attrition) echo left_company ;;
+    loan_default) echo defaulted ;;
+    marketing_response) echo response_tier ;;
+    iot_anomaly) echo is_anomaly ;;
     *) echo "" ;;
   esac
 }
@@ -132,6 +145,156 @@ except: print(0)")
   fi
   pass "$DOMAIN/$VARIANT eda ($ROW_COUNT rows)"
   row "$DOMAIN" "$VARIANT" "eda" "PASS" "$ROW_COUNT rows" "$DATASET_ID"
+
+  [ "${INCLUDE_PREPROCESS:-1}" = "0" ] && return
+  local TARGET
+  TARGET=$(target_for "$DOMAIN")
+
+  # ---- Preprocessing phase ------------------------------------------
+  info "$DOMAIN/$VARIANT — preprocessing workflow"
+  curl -s -N -m 180 -X POST "$BASE/api/workflows/turns/stream" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"preprocessing\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET\",\"prompt\":\"Drop rows with missing values and one-hot encode any categorical columns.\"}" \
+    > "$OUT/05_preprocess.ndjson" 2>&1
+  local PREP_STATUS
+  PREP_STATUS=$(python3 -c "
+import json
+last=''
+for line in open('$OUT/05_preprocess.ndjson'):
+    try:
+        e=json.loads(line)
+        s=e.get('state',{}).get('status')
+        if s: last=s
+    except: pass
+print(last)")
+  if [ "$PREP_STATUS" = "completed" ] || [ "$PREP_STATUS" = "paused" ]; then
+    pass "$DOMAIN/$VARIANT preprocessing ($PREP_STATUS)"
+    row "$DOMAIN" "$VARIANT" "preprocessing" "PASS" "$PREP_STATUS" "$DATASET_ID"
+  else
+    local ERR
+    ERR=$(python3 -c "
+import json
+last=''
+for line in open('$OUT/05_preprocess.ndjson'):
+    try:
+        e=json.loads(line)
+        if e.get('type')=='workflow_error':
+            last=e.get('message','')
+    except: pass
+print(last[:200])")
+    fail "$DOMAIN/$VARIANT preprocessing ($PREP_STATUS): $ERR"
+    row "$DOMAIN" "$VARIANT" "preprocessing" "FAIL" "$PREP_STATUS: $ERR" "$DATASET_ID"
+    [ "${STOP_ON_FAIL:-0}" = "1" ] && return
+  fi
+
+  [ "${INCLUDE_TRAINING:-0}" = "1" ] || return
+
+  # ---- Training phase (two-turn approval) --------------------------
+  info "$DOMAIN/$VARIANT — training turn 1"
+  curl -s -N -m 180 -X POST "$BASE/api/workflows/turns/stream" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET\",\"prompt\":\"Train a ridge regression predicting $TARGET.\"}" \
+    > "$OUT/07_train_turn1.ndjson" 2>&1
+
+  local RUN_ID THREAD_ID EXP_NAME
+  RUN_ID=$(python3 -c "
+import json
+for line in open('$OUT/07_train_turn1.ndjson'):
+    try:
+        e=json.loads(line); r=e.get('state',{}).get('runId')
+        if r: print(r); break
+    except: pass")
+  THREAD_ID=$(python3 -c "
+import json
+for line in open('$OUT/07_train_turn1.ndjson'):
+    try:
+        e=json.loads(line); t=e.get('state',{}).get('threadId')
+        if t: print(t); break
+    except: pass")
+  EXP_NAME=$(python3 -c "
+import json
+name=''
+for line in open('$OUT/07_train_turn1.ndjson'):
+    try:
+        e=json.loads(line)
+        exps=e.get('state',{}).get('metadata',{}).get('experiments',{}) or {}
+        for exp in exps.values():
+            n=exp.get('experimentName') or exp.get('experiment_name')
+            if n: name=n; break
+        if name: break
+    except: pass
+print(name)")
+
+  if [ -z "$RUN_ID" ] || [ -z "$EXP_NAME" ]; then
+    local TRAIN_ERR
+    TRAIN_ERR=$(python3 -c "
+import json
+last=''
+for line in open('$OUT/07_train_turn1.ndjson'):
+    try:
+        e=json.loads(line)
+        if e.get('type')=='workflow_error':
+            last=e.get('message','')
+    except: pass
+print(last[:200])")
+    fail "$DOMAIN/$VARIANT training turn1 (no runId/expName): $TRAIN_ERR"
+    row "$DOMAIN" "$VARIANT" "training" "FAIL" "turn1: $TRAIN_ERR" "$DATASET_ID"
+    return
+  fi
+
+  info "$DOMAIN/$VARIANT — training turn 2 (approval)"
+  local APPROVAL="Approved. Proceed with training the selected model: $EXP_NAME."
+  curl -s -N -m 900 -X POST "$BASE/api/workflows/turns/stream" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"projectId\":\"$PROJECT_ID\",\"phase\":\"training\",\"runId\":\"$RUN_ID\",\"threadId\":\"$THREAD_ID\",\"datasetId\":\"$DATASET_ID\",\"targetColumn\":\"$TARGET\",\"prompt\":$(python3 -c "import json,sys;print(json.dumps(sys.argv[1]))" "$APPROVAL")}" \
+    > "$OUT/07_train_turn2.ndjson" 2>&1
+
+  local MODEL_ID
+  MODEL_ID=$(python3 -c "
+import json
+for line in open('$OUT/07_train_turn2.ndjson'):
+    try:
+        e=json.loads(line)
+        if e.get('type')=='tool_executed':
+            r=e.get('result',{}) or {}; out=r.get('output',{}) or {}
+            if r.get('tool')=='register_model' and out.get('modelId'):
+                print(out['modelId']); break
+    except: pass")
+  if [ -z "$MODEL_ID" ]; then
+    local T2_ERR
+    T2_ERR=$(python3 -c "
+import json
+last=''
+for line in open('$OUT/07_train_turn2.ndjson'):
+    try:
+        e=json.loads(line)
+        if e.get('type')=='workflow_error':
+            last=e.get('message','')
+    except: pass
+print(last[:200])")
+    fail "$DOMAIN/$VARIANT training turn2 (no modelId): $T2_ERR"
+    row "$DOMAIN" "$VARIANT" "training" "FAIL" "turn2: $T2_ERR" "$DATASET_ID"
+    return
+  fi
+
+  # Poll eval
+  local EVAL_STATUS=""
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    curl -s -m 5 "$BASE/api/models/$MODEL_ID" -H "Authorization: Bearer $TOKEN" > "$OUT/07_model.json"
+    EVAL_STATUS=$(python3 -c "import json;d=json.load(open('$OUT/07_model.json'));print(d.get('model',{}).get('evaluationStatus',''))")
+    [ "$EVAL_STATUS" = "ready" ] && break
+    [ "$EVAL_STATUS" = "failed" ] && break
+    sleep 15
+  done
+  if [ "$EVAL_STATUS" = "ready" ]; then
+    pass "$DOMAIN/$VARIANT training (modelId=$MODEL_ID eval=ready)"
+    row "$DOMAIN" "$VARIANT" "training" "PASS" "modelId=$MODEL_ID" "$DATASET_ID"
+  else
+    local EVAL_ERR
+    EVAL_ERR=$(python3 -c "import json;d=json.load(open('$OUT/07_model.json'));print((d.get('model',{}).get('evaluationError','') or '')[:200])")
+    fail "$DOMAIN/$VARIANT training (eval=$EVAL_STATUS): $EVAL_ERR"
+    row "$DOMAIN" "$VARIANT" "training" "FAIL" "eval=$EVAL_STATUS: $EVAL_ERR" "$DATASET_ID"
+  fi
 }
 
 if [ ! -d "$DATA_ROOT" ]; then
@@ -139,7 +302,18 @@ if [ ! -d "$DATA_ROOT" ]; then
   exit 2
 fi
 
-DOMAINS=(customer_retention sensor_readings messy_survey financial_txns clinical_records)
+# Auto-discover domains from DATA_ROOT so the probe works against either the
+# v1 suite (tmp/robustness_datasets) or the v2 cross-validation suite
+# (tmp/robustness_datasets_v2). Any directory with at least one supported
+# file counts as a domain.
+DOMAINS=()
+while IFS= read -r -d '' dir; do
+  DOMAINS+=("$(basename "$dir")")
+done < <(find "$DATA_ROOT" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
+if [ ${#DOMAINS[@]} -eq 0 ]; then
+  echo "[probe] No domains discovered under $DATA_ROOT"
+  exit 2
+fi
 declare -a VARIANT_PAIRS=(
   "standard standard.csv"
   "bom bom.csv"
@@ -173,7 +347,7 @@ counts = defaultdict(lambda: {'PASS':0, 'FAIL':0})
 with open('$RESULTS_CSV') as fh:
     for row in csv.DictReader(fh):
         counts[row['phase']][row['status']] += 1
-for p in ['register','project','upload','eda']:
+for p in ['register','project','upload','eda','preprocessing','training']:
     c = counts.get(p)
-    if c: print(f'  {p:12s} PASS={c[\"PASS\"]:>3}  FAIL={c[\"FAIL\"]:>3}')
+    if c: print(f'  {p:14s} PASS={c[\"PASS\"]:>3}  FAIL={c[\"FAIL\"]:>3}')
 "

@@ -5,6 +5,7 @@
 import type { DatasetProfile } from '../../../types/dataset.js';
 import type { ToolResult } from '../../../types/llm.js';
 import type { FeatureSpec } from '../../featureEngineering.js';
+import { findLikelyIdentifierColumns } from '../../columnClassification.js';
 import { buildTemplateSummary } from '../../modelTemplates.js';
 import type {
   LlmRequest,
@@ -361,6 +362,15 @@ export function buildTrainingRequest(params: {
     targetColumn ? `[Target column: ${targetColumn}]` : null,
     `[Selected training controls: dataset "${dataset.filename}"${targetColumn ? ` and target "${targetColumn}"` : ''}.]`,
     `[Columns: ${dataset.columns.map((column) => `${column.name} (${column.dtype})`).join(', ')}]`,
+    // Identifier guard (#336): flag columns the backend would strip from
+    // featureColumns on configure_experiment anyway. Belt-and-braces so the
+    // LLM also knows not to reference them in its training Python.
+    (() => {
+      const flagged = findLikelyIdentifierColumns(dataset.columns, dataset.nRows);
+      if (flagged.length === 0) return null;
+      const names = flagged.map((column) => column.name).join(', ');
+      return `[High-cardinality identifier columns — the backend will strip these from configure_experiment.featureColumns automatically, so do NOT include them in your training code's feature matrix or one-hot encode them: ${names}]`;
+    })(),
     `[Dataset access: use resolve_dataset_path("${dataset.filename}", "${dataset.datasetId}") when writing Python code. This returns the correct filesystem path inside the execution sandbox. Do NOT use pd.read_csv with a guessed path — the sandbox path is not /mnt/data or /workspace.]`,
     featureSpecs?.length
       ? formatFeatureContext(featureSpecs)

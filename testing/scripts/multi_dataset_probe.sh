@@ -84,17 +84,25 @@ run_cell() {
   fi
 
   info "$DOMAIN/$VARIANT — register"
-  # Include nanosecond timestamp + RANDOM + PID + family so back-to-back
-  # cells in the same second don't collide on the auth unique email index.
-  local EMAIL="probe-$(date +%s%N)-$RANDOM-$$-${MODEL_FAMILY:-auto}-$DOMAIN-$VARIANT@automl.test"
-  curl -s -m 30 -X POST "$BASE/api/auth/register" \
-    -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$EMAIL\",\"password\":\"Probe2026!\",\"name\":\"Robustness Probe\"}" \
-    > "$OUT/01_register.json"
-  local TOKEN
-  TOKEN=$(python3 -c "import json;d=json.load(open('$OUT/01_register.json'));print(d.get('accessToken',''))")
-  [ -z "$TOKEN" ] && { fail "$DOMAIN/$VARIANT register"; row "$DOMAIN" "$VARIANT" "register" "FAIL" "" ""; return; }
-  row "$DOMAIN" "$VARIANT" "register" "PASS" "" ""
+  # Retry register up to 3 times with fresh emails each attempt so a single
+  # bcrypt stall or transient backend blip doesn't fail the whole cell.
+  local TOKEN=""
+  local ATTEMPT=0
+  for ATTEMPT in 1 2 3; do
+    # Include nanosecond timestamp + RANDOM + PID + family + attempt so
+    # each try uses a unique email (avoids the unique-index collision
+    # even if a previous attempt eventually succeeded server-side).
+    local EMAIL="probe-$(date +%s%N)-$RANDOM-$$-${MODEL_FAMILY:-auto}-$DOMAIN-$VARIANT-a${ATTEMPT}@automl.test"
+    curl -s -m 30 -X POST "$BASE/api/auth/register" \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"$EMAIL\",\"password\":\"Probe2026!\",\"name\":\"Robustness Probe\"}" \
+      > "$OUT/01_register.json"
+    TOKEN=$(python3 -c "import json;d=json.load(open('$OUT/01_register.json'));print(d.get('accessToken',''))" 2>/dev/null)
+    [ -n "$TOKEN" ] && break
+    sleep 2
+  done
+  [ -z "$TOKEN" ] && { fail "$DOMAIN/$VARIANT register (after 3 attempts)"; row "$DOMAIN" "$VARIANT" "register" "FAIL" "3 attempts exhausted" ""; return; }
+  row "$DOMAIN" "$VARIANT" "register" "PASS" "attempt=$ATTEMPT" ""
 
   info "$DOMAIN/$VARIANT — create project"
   curl -s -m 10 -X POST "$BASE/api/projects" \

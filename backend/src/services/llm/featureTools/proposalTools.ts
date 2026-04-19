@@ -1,6 +1,7 @@
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
 import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
+import { isLikelyIdentifierColumn } from '../../columnClassification.js';
 import { isActionableFeatureCode } from '../../featureEngineering/codeGenerator.js';
 import { hashCode, nowIso } from '../preprocessingTools/helpers.js';
 
@@ -71,6 +72,25 @@ async function validateSourceColumnsAgainstDataset(
         `Available columns: ${[...availableColumns].slice(0, 20).map((c) => `"${c}"`).join(', ')}` +
         `${availableColumns.size > 20 ? ` (and ${availableColumns.size - 20} more)` : ''}. ` +
         'Use only columns from the active dataset — do not reference columns from other datasets.'
+    };
+  }
+
+  // Reject proposals over identifier-like columns (high-cardinality IDs,
+  // email-shaped PII, `*_id` / `*_uuid` patterns). These leak row identity
+  // and produce junk features. Mirrors the auto-drop heuristic used by
+  // training's configure_experiment. Issue #341/#343.
+  const nRows = dataset.nRows ?? dataset.sample?.length ?? 0;
+  const identifierCols = sourceColumns.filter((columnName) => {
+    const column = dataset.columns.find((col) => col.name === columnName);
+    return column ? isLikelyIdentifierColumn(column, nRows) : false;
+  });
+  if (identifierCols.length > 0) {
+    const idList = identifierCols.map((c) => `"${c}"`).join(', ');
+    return {
+      error:
+        `Refusing to engineer features from identifier-like column${identifierCols.length > 1 ? 's' : ''} ${idList}. ` +
+        'High-cardinality IDs / PII columns leak row identity and produce junk features. ' +
+        'Pick real feature columns (numeric measurements, categorical attributes, dates) instead.'
     };
   }
   return undefined;

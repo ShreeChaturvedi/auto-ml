@@ -1094,7 +1094,13 @@ async function buildTrainingCodeGenerationAction(
 function extractLatestTrainingDraftMetadata(
   state: WorkflowGraphState
 ): TrainingDraftMetadata | null {
-  const latestExperimentId = extractLatestExperimentIdFromHistory(state);
+  // Intentionally NOT pre-filtering by `extractLatestExperimentIdFromHistory(state)`
+  // — that filter was introduced by the sprint11 merge and caused #332:
+  // when a user approves a SECOND model in the same turn, register_model
+  // for the first model wins the reverse scan and the filter then drops
+  // the newer draft because its experimentId !== latestExperimentId.
+  // Callers that need experiment-scoped filtering already do it themselves
+  // (selectTrainingExecutionExperiment + collectTrainingDraftNotebookActivity).
   const callSources = [
     state.toolCallHistory.slice(state.turnStartToolCallCount),
     state.toolCallHistory,
@@ -1113,9 +1119,6 @@ function extractLatestTrainingDraftMetadata(
         continue;
       }
       const experimentId = asString(trainingDraft.experimentId) ?? undefined;
-      if (latestExperimentId && experimentId && experimentId !== latestExperimentId) {
-        continue;
-      }
 
       const segments = rawSegments
         .map((value) => asRecord(value))

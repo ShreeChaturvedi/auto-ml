@@ -1,26 +1,45 @@
 /**
- * Golden-path smoke test — walks all phase routes and asserts each
- * renders without the PhaseErrorBoundary fallback firing.
+ * Golden-path smoke test — register a user, seed auth + project +
+ * dataset via the backend API, then navigate every phase route in
+ * the browser and assert the PhaseErrorBoundary fallback does NOT
+ * render.
  *
- * Scope: navigation + render only. Exercising the LLM workflow
- * end-to-end requires OpenAI credentials, a live Docker Python runtime,
- * and long-running trains — all out of scope for a fast smoke. This
- * test catches the common regression class (dead imports, missing
- * props, broken routes, runtime exceptions on mount) that would have
- * shipped unnoticed when lint/build CI was red.
+ * Works against BOTH:
+ *   - the benchmark preview (`npm run benchmark` → backend:4000 +
+ *     preview:4173)
+ *   - a live dev stack (`npm run dev` + `--config
+ *     playwright.live-dev.config.ts` → backend:4000 + vite:5173)
  *
- * Runs under `npm run benchmark` (testing/playwright.config.ts auto-
- * starts backend:4000 + frontend preview:4173).
+ * Scope: auth + navigation + render only. Exercising the LLM
+ * workflow end-to-end (real OpenAI calls + Docker Python runtime)
+ * is out of scope for a fast smoke.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
-import { resetBackendData } from '../helpers';
-
+const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DATASET_PATH = path.resolve(testDir, '../fixtures', 'sample_customers.csv');
-const SMOKE_PROJECT_NAME = 'Smoke Full Path';
+
+interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  user: Record<string, unknown>;
+}
+
+interface ApiProject {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+  metadata?: Record<string, unknown>;
+}
 
 const PHASES: readonly string[] = [
   'upload',
@@ -29,73 +48,120 @@ const PHASES: readonly string[] = [
   'feature-engineering',
   'training',
   'experiments',
-  'deployment'
+  'deployment',
 ];
 
-/**
- * Fail fast if the phase-level error boundary rendered its fallback.
- * That's what fires when a phase panel throws during mount — the symptom
- * the user reports as "the page is blank / broken".
- */
-async function expectNoPhaseErrorBoundary(page: Page): Promise<void> {
-  const errorBoundary = page.getByText('Something went wrong in this phase.', { exact: false });
-  await expect(errorBoundary).toHaveCount(0);
+async function registerTestUser(request: APIRequestContext): Promise<AuthResponse> {
+  const email = `playwright-${randomUUID()}@automl.test`;
+  const res = await request.post(`${API_BASE}/auth/register`, {
+    data: { email, password: 'Playwright2026!', name: 'Playwright Smoke' },
+  });
+  if (!res.ok()) throw new Error(`register failed: ${res.status()} ${await res.text()}`);
+  return res.json();
 }
 
-test.beforeEach(async ({ request }) => {
-  await resetBackendData(request);
-});
+async function createProject(request: APIRequestContext, accessToken: string): Promise<ApiProject> {
+  const res = await request.post(`${API_BASE}/projects`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: {
+      name: `Smoke Full Path ${randomUUID().slice(0, 8)}`,
+      metadata: {
+        unlockedPhases: [...PHASES],
+        completedPhases: [],
+        currentPhase: 'data-viewer',
+      },
+    },
+  });
+  if (!res.ok()) throw new Error(`project failed: ${res.status()} ${await res.text()}`);
+  return ((await res.json()) as { project: ApiProject }).project;
+}
 
-test('every phase route renders without the PhaseErrorBoundary fallback', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+async function uploadDataset(request: APIRequestContext, accessToken: string, projectId: string) {
+  const res = await request.post(`${API_BASE}/upload/dataset`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    multipart: {
+      projectId,
+      file: {
+        name: 'sample_customers.csv',
+        mimeType: 'text/csv',
+        buffer: readFileSync(SAMPLE_DATASET_PATH),
+      },
+    },
+  });
+  if (!res.ok()) throw new Error(`upload failed: ${res.status()} ${await res.text()}`);
+}
+
+async function seedAuth(page: Page, auth: AuthResponse, project: ApiProject) {
+  await page.addInitScript(({ a, p }) => {
+    localStorage.clear();
+    sessionStorage.clear();
+    // Force email_verified=true to bypass the /verify-email/pending gate
+    // in ProtectedRoute.tsx:86. New users registered via API have
+    // email_verified=false by default; a smoke test doesn't need the
+    // email-link round-trip — the backend still accepts the JWT for
+    // /api/* calls regardless of client-side gating.
+    const verifiedUser = { ...a.user, email_verified: true };
+    localStorage.setItem('auth-storage', JSON.stringify({
+      state: {
+        accessToken: a.accessToken,
+        refreshToken: a.refreshToken,
+        user: verifiedUser,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+      },
+      version: 1,
+    }));
+    localStorage.setItem('automl-projects-storage', JSON.stringify({
+      state: {
+        projects: [{
+          id: p.id,
+          title: p.name,
+          description: p.description ?? '',
+          icon: p.icon ?? 'Folder',
+          color: p.color ?? 'blue',
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+          unlockedPhases: ['upload', 'data-viewer', 'preprocessing', 'feature-engineering', 'training', 'experiments', 'deployment'],
+          completedPhases: [],
+          currentPhase: 'data-viewer',
+          metadata: p.metadata ?? {},
+        }],
+        activeProjectId: p.id,
+      },
+      version: 3,
+    }));
+  }, { a: auth, p: project });
+}
+
+async function expectNoPhaseErrorBoundary(page: Page) {
+  const fallback = page.getByText('Something went wrong in this phase.', { exact: false });
+  await expect(fallback).toHaveCount(0);
+}
+
+test('every phase route renders without the PhaseErrorBoundary fallback', async ({ page, request }) => {
+  const auth = await registerTestUser(request);
+  const project = await createProject(request, auth.accessToken);
+  await uploadDataset(request, auth.accessToken, project.id);
+  await seedAuth(page, auth, project);
+
+  // Intercept /api/auth/me so useAuthBootstrap.ts doesn't overwrite the
+  // seeded user with the backend's unverified one. Smoke test only — real
+  // email-verification flow is out of scope here.
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ user: { ...auth.user, email_verified: true } }),
+    });
   });
 
-  // ---- Step 1: project + dataset (reuse benchmark harness UI flow) -------
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-
-  const createFirst = page.getByRole('button', { name: /Create Your First Project/i });
-  const newProject = page.getByRole('button', { name: /New project/i });
-  if (await createFirst.isVisible().catch(() => false)) {
-    await createFirst.click();
-  } else {
-    await newProject.click();
-  }
-
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await page.getByLabel('Title').fill(SMOKE_PROJECT_NAME);
-
-  const createReq = page.waitForResponse(
-    (r) => r.url().endsWith('/api/projects') && r.request().method() === 'POST' && r.ok()
-  );
-  await page.getByRole('button', { name: /Create Project/i }).click();
-  const createRes = await createReq;
-  const { project } = (await createRes.json()) as { project: { id: string } };
-  const projectId = project.id;
-
-  // Upload a CSV so data-viewer and downstream phases have something to render.
-  await page.goto(`/project/${projectId}/upload`);
-  await expect(page.locator('[data-testid="data-upload-panel"]')).toBeVisible();
-  await page.locator('input[type="file"]').first().setInputFiles(SAMPLE_DATASET_PATH);
-  await expect(
-    page.locator('[data-testid^="file-card"]').filter({ hasText: 'sample_customers.csv' })
-  ).toBeVisible();
-
-  // ---- Step 2: walk each phase route and assert render -------------------
   for (const phase of PHASES) {
     await test.step(`phase: ${phase}`, async () => {
-      await page.goto(`/project/${projectId}/${phase}`);
-      // Wait for either the phase container to render or an error boundary
-      // to show up — whichever loses, we fail cleanly.
-      await page.waitForLoadState('networkidle', { timeout: 30_000 });
+      await page.goto(`/project/${project.id}/${phase}`);
+      await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => { /* some phases keep a WS open */ });
       await expectNoPhaseErrorBoundary(page);
-
-      // Sanity: the URL should still match the phase we navigated to
-      // (unauthorized redirects or auto-redirects would change this).
-      await expect(page).toHaveURL(new RegExp(`/project/${projectId}/${phase}`));
+      await expect(page).toHaveURL(new RegExp(`/project/${project.id}/${phase}`));
     });
   }
 });

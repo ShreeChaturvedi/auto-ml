@@ -450,8 +450,7 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
-  // TODO(#332): re-enable — multi-model-per-turn state leakage in training.ts getStageConfig
-  it.skip('builds execute_training from the latest draft instead of reusing a previous model completion in the same turn', async () => {
+  it('builds execute_training from the latest draft instead of reusing a previous model completion in the same turn', async () => {
     const config = trainingPhaseConfig.getStageConfig('execute_training');
     const action = config.deterministicAction;
     expect(action).toBeTypeOf('function');
@@ -667,8 +666,7 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
-  // TODO(#332): re-enable — multi-model-per-turn state leakage in training.ts getStageConfig
-  it.skip('auto-builds execute/evaluate/register for the next approved experiment after one model is already registered in the same turn', async () => {
+  it('auto-builds execute/evaluate/register for the next approved experiment after one model is already registered in the same turn', async () => {
     const state = createTrainingState([
       makeToolResult('execute_training', {
         output: { experimentId: 'exp-1', status: 'training', metrics: { rmse: 0.43 } }
@@ -1266,8 +1264,7 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
-  // TODO(#332): re-enable — multi-model-per-turn state leakage in training.ts getStageConfig
-  it.skip('writes the next segment for the active draft even when a previous model already completed in the same turn', async () => {
+  it('writes the next segment for the active draft even when a previous model already completed in the same turn', async () => {
     const action = trainingPhaseConfig.getStageConfig('write_code').deterministicAction!;
     const state = createTrainingState([
       makeToolResult('write_cell', { output: { cellId: 'old-cell' } }),

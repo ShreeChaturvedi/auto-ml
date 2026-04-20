@@ -201,10 +201,6 @@ async function applyAuthSideEffects(response: Response): Promise<void> {
 }
 
 export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {
-  if (typeof window !== 'undefined' && (window as unknown as { __AGENTIC_DEMO_MODE__?: boolean }).__AGENTIC_DEMO_MODE__ === true) {
-    throw new Error('apiFetch called while in demo mode');
-  }
-
   const method = options.method ?? 'GET';
   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);

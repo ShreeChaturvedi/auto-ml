@@ -191,14 +191,17 @@ describeRouteSuite('experiments routes', () => {
     expect(response.body.mean_abs_values).toEqual([0.2, 0.125]);
   });
 
-  it('GET /experiments/:modelId/shap returns 404 when file is missing', async () => {
+  it('GET /experiments/:modelId/shap returns 204 when file is missing', async () => {
     mockReadFile.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
 
     const app = createTestApp();
     const response = await request(app).get('/api/experiments/model-missing/shap');
 
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe('SHAP data not found');
+    // Handler at routes/experiments.ts:162 intentionally returns 204 No Content
+    // for missing shap.json so the frontend treats SHAP as an optional,
+    // not-yet-computed resource rather than an error.
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
   });
 
   it('POST /experiments/:modelId/evaluation/retry reruns evaluation and returns updated status', async () => {

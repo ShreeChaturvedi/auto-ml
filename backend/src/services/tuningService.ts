@@ -25,6 +25,7 @@ import {
 import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import { getModelTemplate } from './modelTemplates.js';
+import { resolveModelTestSize } from './modelTestSize.js';
 import {
   buildOutputDirSetup,
   buildResultSaving,
@@ -398,6 +399,23 @@ function writeJsonLine(res: Response, obj: Record<string, unknown>): void {
   }
 }
 
+function extractSyntheticLlmModelType(templateId: string): string | null {
+  let remaining = templateId.trim().toLowerCase();
+  let sawLlmPrefix = false;
+
+  while (remaining.startsWith('seed-') || remaining.startsWith('llm-')) {
+    if (remaining.startsWith('seed-')) {
+      remaining = remaining.slice('seed-'.length);
+      continue;
+    }
+
+    remaining = remaining.slice('llm-'.length);
+    sawLlmPrefix = true;
+  }
+
+  return sawLlmPrefix && remaining ? remaining : null;
+}
+
 export async function runTuningStudy(
   projectId: string,
   modelId: string,
@@ -416,9 +434,15 @@ export async function runTuningStudy(
       return;
     }
 
-    const template = getModelTemplate(model.templateId);
+    const template = getModelTemplate(model.templateId, model.taskType);
     if (!template) {
-      writeJsonLine(res, { type: 'error', message: `Model template "${model.templateId}" not found.` });
+      const syntheticLlmModelType = extractSyntheticLlmModelType(model.templateId);
+      writeJsonLine(
+        res,
+        syntheticLlmModelType
+          ? { type: 'error', message: `Tuning is not supported for model type "${syntheticLlmModelType}".` }
+          : { type: 'error', message: `Model template "${model.templateId}" not found.` },
+      );
       res.end();
       return;
     }
@@ -455,6 +479,7 @@ export async function runTuningStudy(
     const tuningOutputDir = `/workspace/tuning/${modelId}`;
     const containerDatasetPath = `/workspace/datasets/${dataset.filename}`;
     const tuningTimeoutMs = (timeoutSeconds + 60) * 1000; // extra headroom for setup
+    const testSize = resolveModelTestSize(model);
 
     // 6. Orchestrate container execution with streaming callback
     const RELAY_TYPES = new Set(['trial_result', 'importance_update', 'convergence_update']);
@@ -466,7 +491,7 @@ export async function runTuningStudy(
           template,
           datasetPath: containerDatasetPath,
           targetColumn,
-          testSize: 0.2,
+          testSize,
           nTrials,
           metric,
           timeoutSeconds,
@@ -516,7 +541,7 @@ export async function runTuningStudy(
         projectId,
         datasetId: model.datasetId,
         name: `${model.name} (tuned · ${dateTag})`,
-        templateId: model.templateId,
+        templateId: template.id,
         taskType: template.taskType,
         library: template.library,
         algorithm: template.modelClass,

@@ -6,6 +6,20 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import { chromium } from 'playwright';
 
+import {
+  buildLandingPreviewCaptureUrl,
+  LANDING_PREVIEW_CAPTURE_POSTROLL_MS,
+  LANDING_PREVIEW_CAPTURE_PREROLL_MS,
+  LANDING_PREVIEW_CAPTURE_VIEWPORT,
+  LANDING_PREVIEW_HERO_PRESETS,
+  LANDING_PREVIEW_PHASE_PRESETS,
+  type LandingPreviewHeroPreset,
+  type LandingPreviewPhasePreset,
+  type LandingPreviewPreset,
+  startLandingPreviewCapture,
+  waitForLandingPreviewFinished,
+  waitForLandingPreviewReady,
+} from './capture/landingPreviewRuntime';
 import { ScreencastRecorder } from './capture/screencastRecorder';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,12 +37,63 @@ const PREVIEW_VERSION_FILE = path.join(
   'generatedPreviewVersion.ts',
 );
 
-const FRONTEND_URL = 'http://127.0.0.1:5173';
-const CAPTURE_VIEWPORT = { width: 1600, height: 1000 };
+type CaptureEndpoint = {
+  baseUrl: string;
+  port: number;
+};
+
+function resolveCaptureEndpoint({
+  label,
+  fallbackUrl,
+  fallbackPort,
+  urlEnvName,
+  portEnvName,
+}: {
+  label: string;
+  fallbackUrl: string;
+  fallbackPort: number;
+  urlEnvName: string;
+  portEnvName: string;
+}): CaptureEndpoint {
+  const envUrl = process.env[urlEnvName]?.trim();
+  const envPort = process.env[portEnvName]?.trim();
+  const url = new URL(envUrl || fallbackUrl);
+
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error(`[landing-previews] ${urlEnvName} must use http:// or https:// for ${label}.`);
+  }
+  if (url.pathname !== '/' || url.search || url.hash) {
+    throw new Error(`[landing-previews] ${urlEnvName} must be an origin-only URL for ${label}.`);
+  }
+
+  let port = url.port ? Number.parseInt(url.port, 10) : fallbackPort;
+  if (envPort) {
+    port = Number.parseInt(envPort, 10);
+  }
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`[landing-previews] ${portEnvName} must be a valid TCP port for ${label}.`);
+  }
+
+  url.port = String(port);
+  return {
+    baseUrl: url.toString().replace(/\/$/, ''),
+    port,
+  };
+}
+
+const FRONTEND_SERVER = resolveCaptureEndpoint({
+  label: 'frontend',
+  fallbackUrl: 'http://127.0.0.1:5173',
+  fallbackPort: 5173,
+  urlEnvName: 'CAPTURE_FRONTEND_URL',
+  portEnvName: 'CAPTURE_FRONTEND_PORT',
+});
+const FRONTEND_URL = FRONTEND_SERVER.baseUrl;
+const CAPTURE_VIEWPORT = { ...LANDING_PREVIEW_CAPTURE_VIEWPORT };
 const PHASE_OUTPUT_SIZE = { width: 1150, height: 500 };
 const PHASE_CROP = { x: 184, y: 34, width: 1320, height: 572 };
-const PREROLL_MS = 300;
-const POSTROLL_MS = 1800;
+const PREROLL_MS = LANDING_PREVIEW_CAPTURE_PREROLL_MS;
+const POSTROLL_MS = LANDING_PREVIEW_CAPTURE_POSTROLL_MS;
 
 const cleanupFns: Array<() => void | Promise<void>> = [];
 let signalHandled = false;
@@ -46,46 +111,12 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   });
 }
 
-type PhasePreviewId =
-  | 'ingest'
-  | 'explore'
-  | 'preprocess'
-  | 'engineer'
-  | 'train'
-  | 'experiments'
-  | 'deploy';
+type PhasePreviewId = LandingPreviewPhasePreset;
+type HeroPresetId = LandingPreviewHeroPreset;
+type CapturePresetId = LandingPreviewPreset;
 
-type HeroPresetId =
-  | 'hero-upload'
-  | 'hero-explore'
-  | 'hero-preprocess'
-  | 'hero-train'
-  | 'hero-deploy';
-
-type CapturePresetId = PhasePreviewId | HeroPresetId;
-
-type LandingPreviewCapture = {
-  status?: 'ready' | 'recording' | 'finished';
-  start?: () => void;
-};
-
-const PHASE_PRESETS: readonly PhasePreviewId[] = [
-  'ingest',
-  'explore',
-  'preprocess',
-  'engineer',
-  'train',
-  'experiments',
-  'deploy',
-];
-
-const HERO_PRESETS: readonly HeroPresetId[] = [
-  'hero-upload',
-  'hero-explore',
-  'hero-preprocess',
-  'hero-train',
-  'hero-deploy',
-];
+const PHASE_PRESETS: readonly PhasePreviewId[] = LANDING_PREVIEW_PHASE_PRESETS;
+const HERO_PRESETS: readonly HeroPresetId[] = LANDING_PREVIEW_HERO_PRESETS;
 
 const HERO_SEGMENTS: ReadonlyArray<{
   preset: HeroPresetId;
@@ -123,7 +154,7 @@ async function ensureFrontendServer(): Promise<ChildProcess | null> {
   }
 
   console.log('[landing-previews] starting frontend dev server...');
-  const proc = spawn('npm', ['run', 'dev:ui', '--', '--host', '0.0.0.0', '--port', '5173'], {
+  const proc = spawn('npm', ['run', 'dev:ui', '--', '--host', '0.0.0.0', '--port', String(FRONTEND_SERVER.port)], {
     cwd: FRONTEND_ROOT,
     env: { ...process.env, FORCE_COLOR: '0' },
     stdio: 'inherit',
@@ -187,15 +218,10 @@ async function capturePreset(preset: CapturePresetId): Promise<string> {
       deviceScaleFactor: 1,
     });
 
-    await page.goto(`${FRONTEND_URL}/dev/landing-preview?preset=${preset}`, {
+    await page.goto(buildLandingPreviewCaptureUrl(FRONTEND_URL, preset), {
       waitUntil: 'domcontentloaded',
     });
-    await page.waitForFunction(
-      () =>
-        (
-          window as Window & { __landingPreviewCapture?: LandingPreviewCapture }
-        ).__landingPreviewCapture?.status === 'ready',
-    );
+    await waitForLandingPreviewReady(page);
     await page.waitForTimeout(PREROLL_MS);
 
     recorder = await ScreencastRecorder.start({
@@ -205,20 +231,8 @@ async function capturePreset(preset: CapturePresetId): Promise<string> {
       jpegQuality: 96,
     });
 
-    await page.evaluate(() => {
-      (
-        window as Window & { __landingPreviewCapture?: LandingPreviewCapture }
-      ).__landingPreviewCapture?.start?.();
-    });
-    await page.waitForFunction(
-      () =>
-        (
-          window as Window & { __landingPreviewCapture?: LandingPreviewCapture }
-        ).__landingPreviewCapture?.status === 'finished',
-      {
-        timeout: 15_000,
-      },
-    );
+    await startLandingPreviewCapture(page);
+    await waitForLandingPreviewFinished(page);
     await page.waitForTimeout(POSTROLL_MS);
     await recorder.stop();
     recorder = null;

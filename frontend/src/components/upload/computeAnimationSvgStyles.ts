@@ -3,8 +3,7 @@ import {
   FLOW_PARTICLE_OFFSET_START,
 } from '@/lib/animation/flowPulseTokens';
 
-export function buildComputeAnimationStyles(uid: string, durationScale: number = 1) {
-  const scale = (seconds: number) => `${(seconds * durationScale).toFixed(2)}s`;
+export function buildComputeAnimationStyles(uid: string) {
   return `
     @keyframes ca-particle-${uid} {
       0%   { stroke-dashoffset: ${FLOW_PARTICLE_OFFSET_START}; }
@@ -29,7 +28,7 @@ export function buildComputeAnimationStyles(uid: string, durationScale: number =
       height: 100%;
       position: relative;
       transform-style: preserve-3d;
-      animation: ca-rotate-cube-${uid} ${scale(12)} infinite linear;
+      animation: ca-rotate-cube-${uid} 12s infinite linear;
     }
 
     .ca-face-${uid} {
@@ -114,9 +113,9 @@ export function buildComputeAnimationStyles(uid: string, durationScale: number =
       100% { transform: rotateX(65deg) rotateY(120deg) rotateZ(360deg); }
     }
 
-    .ca-orbit-1-${uid} { animation: ca-precess-1-${uid} ${scale(6.4)} linear infinite; }
-    .ca-orbit-2-${uid} { animation: ca-precess-2-${uid} ${scale(7.2)} linear infinite; }
-    .ca-orbit-3-${uid} { animation: ca-precess-3-${uid} ${scale(8)} linear infinite; }
+    .ca-orbit-1-${uid} { animation: ca-precess-1-${uid} 6.4s linear infinite; }
+    .ca-orbit-2-${uid} { animation: ca-precess-2-${uid} 7.2s linear infinite; }
+    .ca-orbit-3-${uid} { animation: ca-precess-3-${uid} 8s linear infinite; }
 
     .ca-electron-container-${uid} {
       position: absolute;
@@ -128,9 +127,9 @@ export function buildComputeAnimationStyles(uid: string, durationScale: number =
       transform-style: preserve-3d;
     }
 
-    .ca-spin-1-${uid} { animation: ca-spin-z-${uid} ${scale(1.25)} linear infinite; }
-    .ca-spin-2-${uid} { animation: ca-spin-z-${uid} ${scale(1.5)} linear infinite; }
-    .ca-spin-3-${uid} { animation: ca-spin-z-${uid} ${scale(1.75)} linear infinite; }
+    .ca-spin-1-${uid} { animation: ca-spin-z-${uid} 1.25s linear infinite; }
+    .ca-spin-2-${uid} { animation: ca-spin-z-${uid} 1.5s linear infinite; }
+    .ca-spin-3-${uid} { animation: ca-spin-z-${uid} 1.75s linear infinite; }
 
     @keyframes ca-spin-z-${uid} {
       0%   { transform: rotateZ(0deg); }
@@ -156,7 +155,7 @@ export function buildComputeAnimationStyles(uid: string, durationScale: number =
     }
 
     .ca-edge-pulse-${uid} {
-      animation: ca-cube-edge-${uid} ${scale(4)} linear infinite;
+      animation: ca-cube-edge-${uid} 4s linear infinite;
     }
 
     @keyframes ca-cube-edge-${uid} {

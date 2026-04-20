@@ -11,7 +11,7 @@ import {
   setSynVarsFromPalette,
   type SyntaxThemeId,
 } from '@/lib/color/syntaxPalette';
-import { getMonacoIfReady, registerAdaptiveTheme, subscribeMonacoReady } from '@/lib/monaco/preloader';
+import { registerAdaptiveTheme, initMonaco } from '@/lib/monaco/preloader';
 
 /** Direct color-name → hex mapping, matching Tailwind's palette. */
 const PROJECT_COLOR_HEX: Record<string, { light: string; dark: string }> = {
@@ -103,8 +103,8 @@ export function useProjectThemeColor() {
       return { color: p?.color, customColor: p?.customColor };
     }),
   );
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === 'dark';
+  const { theme } = useTheme();
+  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   const themeColor = useMemo(() => {
     if (customColor) return customColor;
@@ -121,16 +121,6 @@ export function useProjectThemeColor() {
   }, [color, customColor]);
 
   const adaptivePref = useSyncExternalStore(subscribeAdaptivePref, getAdaptiveSyntaxPref);
-
-  // Re-run the Monaco theme-application effect once Monaco finishes loading.
-  // Without this, editors that mount before Monaco is ready never get their
-  // adaptive palette applied — the layoutEffect below bails on null monaco
-  // and never re-fires until `isDark` or `color` change.
-  const monacoReady = useSyncExternalStore(
-    subscribeMonacoReady,
-    () => getMonacoIfReady() !== null,
-    () => false,
-  );
 
   const syntaxThemeId: SyntaxThemeId = useMemo(() => {
     if (!adaptivePref || !color) return isDark ? 'static-dark' : 'static-light';
@@ -160,23 +150,20 @@ export function useProjectThemeColor() {
 
   useLayoutEffect(() => {
     const root = document.documentElement;
-    const monaco = getMonacoIfReady();
     if (!adaptivePref || !color) {
       const palette = isDark ? STATIC_SYNTAX_PALETTE.dark : STATIC_SYNTAX_PALETTE.light;
       setSynVarsFromPalette(root, palette);
-      monaco?.editor?.setTheme(isDark ? 'static-dark' : 'static-light');
+      initMonaco().then(m => m?.editor?.setTheme(isDark ? 'static-dark' : 'static-light')).catch(() => {});
       return;
     }
     const palette = computeSyntaxPalette(hue, isDark);
     setSynVarsFromPalette(root, palette);
-    if (!monaco?.editor) return;
-    registerAdaptiveTheme(monaco, palette, isDark);
-    monaco.editor.setTheme(isDark ? 'adaptive-dark' : 'adaptive-light');
-    // `monacoReady` is intentionally a dep — when Monaco finishes loading
-    // asynchronously (after an editor mounts), this effect re-runs so the
-    // adaptive palette is registered and applied without needing a theme
-    // toggle to force it.
-  }, [hue, isDark, color, adaptivePref, monacoReady]);
+    initMonaco().then(m => {
+      if (!m?.editor) return;
+      registerAdaptiveTheme(m, palette, isDark);
+      m.editor.setTheme(isDark ? 'adaptive-dark' : 'adaptive-light');
+    }).catch(() => {});
+  }, [hue, isDark, color, adaptivePref]);
 
   const colorClasses: ProjectColorEntry | undefined = useMemo(
     () => (color ? projectColorClasses[color] : undefined),

@@ -7,19 +7,12 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useNotebookStore } from '@/stores/notebookStore';
 import { useExperimentsStore, createInitialExperimentsState } from '@/stores/experimentsStore';
 import type { Phase } from '@/types/phase';
-import {
-  loadDataViewerTab,
-  loadFeatureEngineeringPanel,
-  loadPreprocessingPanel,
-  loadTrainingPanel,
-  loadUploadArea,
-} from './projectWorkspacePhaseLoaders';
 
-const UploadArea = lazy(loadUploadArea);
-const DataViewerTab = lazy(loadDataViewerTab);
-const PreprocessingPanel = lazy(loadPreprocessingPanel);
-const FeatureEngineeringPanel = lazy(loadFeatureEngineeringPanel);
-const TrainingPanel = lazy(loadTrainingPanel);
+const UploadArea = lazy(() => import('@/components/upload/UploadArea').then(m => ({ default: m.UploadArea })));
+const DataViewerTab = lazy(() => import('@/components/data/DataViewerTab').then(m => ({ default: m.DataViewerTab })));
+const PreprocessingPanel = lazy(() => import('@/components/preprocessing/PreprocessingPanel').then(m => ({ default: m.PreprocessingPanel })));
+const FeatureEngineeringPanel = lazy(() => import('@/components/features/FeatureEngineeringPanel').then(m => ({ default: m.FeatureEngineeringPanel })));
+const TrainingPanel = lazy(() => import('@/components/training/TrainingPanel').then(m => ({ default: m.TrainingPanel })));
 
 const NOTEBOOK_SESSION_PRESERVED_PHASES = new Set<Phase>([
   'preprocessing',

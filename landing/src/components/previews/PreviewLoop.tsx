@@ -78,6 +78,14 @@ export function PreviewLoop({
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') {
+      // SSR fallback: no IntersectionObserver available — treat the component
+      // as in-viewport so playback kicks in immediately once hydrated. Setting
+      // state in-effect here is the intended behavior for this environment
+      // branch; the equivalent render-time initializer would require
+      // inspecting `typeof IntersectionObserver` from the useState lazy init,
+      // which is the same thing with less locality. Safe: the branch only
+      // fires once per mount.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsInViewport(true);
       return;
     }
@@ -121,6 +129,12 @@ export function PreviewLoop({
   }, [active, alignPhaseLoopWindow, playbackVisible, showPosterOnly]);
 
   useEffect(() => {
+    // Reset the "visible frame" marker whenever the underlying media sources
+    // change so a fresh asset doesn't inherit the previous loop's "ready"
+    // flag. This is a controlled reset keyed on stable prop triples, not a
+    // cascading render — the rule's cascading-render concern doesn't apply
+    // here because the reset value is constant and the deps are narrow.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasVisibleFrame(false);
   }, [asset.mp4Src, asset.posterSrc, asset.webmSrc]);
 

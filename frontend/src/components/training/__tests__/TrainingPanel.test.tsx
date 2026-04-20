@@ -158,7 +158,9 @@ vi.mock('@/stores/workbookRegistryStore', () => ({
     getState: () => ({
       setWorkbooks: mockState.setWorkbooksMock,
       setActiveWorkbookId: vi.fn(),
-      setDeleteHandler: vi.fn()
+      setDeleteHandler: vi.fn(),
+      setAddHandler: vi.fn(),
+      setRenameHandler: vi.fn()
     })
   }
 }));

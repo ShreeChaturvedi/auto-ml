@@ -17,8 +17,8 @@ import type { ProcessingResult } from '@/types/processing';
 import {
   FLOW_BASE_STROKE_WIDTH,
   FLOW_PARTICLE_DASHARRAY,
+  FLOW_PARTICLE_DURATION,
   FLOW_PARTICLE_STROKE_WIDTH,
-  scaledFlowParticleDuration,
 } from '@/lib/animation/flowPulseTokens';
 import {
   COMPUTE_CUBE_FACES,
@@ -113,7 +113,6 @@ interface FlowPathsProps {
   visibleFiles: number;
   visibleResults: number;
   isComplete: boolean;
-  durationScale?: number;
 }
 
 export function FlowPaths({
@@ -123,9 +122,7 @@ export function FlowPaths({
   visibleFiles,
   visibleResults,
   isComplete,
-  durationScale = 1,
 }: FlowPathsProps) {
-  const particleDuration = scaledFlowParticleDuration(durationScale);
   return (
     <>
       {files.map((_, index) => {
@@ -163,7 +160,7 @@ export function FlowPaths({
             opacity={visible && !isComplete ? 1 : 0}
             style={{
               transition: 'opacity 0.5s ease',
-              animation: `ca-particle-${uid} ${particleDuration} linear infinite`,
+              animation: `ca-particle-${uid} ${FLOW_PARTICLE_DURATION} linear infinite`,
               animationDelay: `${index * 0.2}s`,
             }}
           />
@@ -205,7 +202,7 @@ export function FlowPaths({
             opacity={visible ? 1 : 0}
             style={{
               transition: 'opacity 0.5s ease',
-              animation: `ca-particle-${uid} ${particleDuration} linear infinite`,
+              animation: `ca-particle-${uid} ${FLOW_PARTICLE_DURATION} linear infinite`,
               animationDelay: `${index * 0.3}s`,
             }}
           />

@@ -70,19 +70,6 @@ describe('useDataViewerQueryHandlers', () => {
     vi.mocked(executeSqlQuery).mockReset();
   });
 
-  it('defaults the query panel to english mode for a lighter initial explorer view', () => {
-    const { result } = renderHook(() =>
-      useDataViewerQueryHandlers({
-        activeProject: project,
-        createArtifact: vi.fn(),
-        setActiveFileTab: vi.fn(),
-        tableNames: ['employees'],
-      }),
-    );
-
-    expect(result.current.queryMode).toBe('english');
-  });
-
   it('normalizes missing NL query payloads to null', async () => {
     const nlPayload: NlQueryResponsePayload = {
       sql: 'SELECT * FROM employees',

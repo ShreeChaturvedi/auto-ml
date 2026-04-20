@@ -69,8 +69,10 @@ test('project creation and dataset upload work end-to-end', async ({ page, reque
   await expect(page.getByRole('table')).toBeVisible();
   await expect(page.getByRole('row', { name: /Alice/ })).toBeVisible();
 
+  const benchmarkApiBase = process.env.BENCHMARK_API_BASE ?? 'http://localhost:4100/api';
+
   await expect.poll(async () => {
-    const response = await request.get('http://localhost:4000/api/projects');
+    const response = await request.get(`${benchmarkApiBase}/projects`);
     if (!response.ok()) return false;
     const data = (await response.json()) as { projects: Array<{ name: string }> };
     return data.projects.some((project) => project.name === SAMPLE_PROJECT_NAME);
@@ -78,7 +80,7 @@ test('project creation and dataset upload work end-to-end', async ({ page, reque
 
   let datasetFromApi: { datasetId: string; filename: string } | undefined;
   await expect.poll(async () => {
-    const response = await request.get('http://localhost:4000/api/datasets');
+    const response = await request.get(`${benchmarkApiBase}/datasets`);
     if (!response.ok()) return false;
     const data = (await response.json()) as { datasets: Array<{ datasetId: string; filename: string }> };
     datasetFromApi = data.datasets.find((entry) => entry.filename === SAMPLE_FILENAME);

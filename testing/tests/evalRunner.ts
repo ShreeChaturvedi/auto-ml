@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 import fetch from 'node-fetch';
 
@@ -14,13 +15,45 @@ interface RagCase {
   projectId: string;
 }
 
-async function runNl2SqlEval(baseUrl: string) {
+interface RegisterResponse {
+  accessToken: string;
+  refreshToken: string;
+  user: Record<string, unknown>;
+}
+
+// Mirrors the registerTestUser pattern in smoke-full-path.spec.ts.
+// /query/nl and /answer both require a valid Authorization header; the
+// evalRunner originally predated the JWT enforcement and has been returning
+// 401 for every case. Register a throwaway user once per run and thread the
+// access token through the two evaluators.
+async function registerEvalUser(baseUrl: string): Promise<string> {
+  const email = `eval-${randomUUID()}@automl.test`;
+  const response = await fetch(`${baseUrl}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'EvalRunner2026!', name: 'Eval Runner' })
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Eval auth registration failed: ${response.status} ${body.slice(0, 200)}`);
+  }
+  const data = (await response.json()) as RegisterResponse;
+  if (!data.accessToken) {
+    throw new Error('Eval auth registration returned no accessToken');
+  }
+  return data.accessToken;
+}
+
+async function runNl2SqlEval(baseUrl: string, accessToken: string) {
   const cases = JSON.parse(readFileSync(new URL('../fixtures/nl2sql_eval.json', import.meta.url), 'utf8')) as Nl2SqlCase[];
   let passes = 0;
   for (const testCase of cases) {
     const response = await fetch(`${baseUrl}/query/nl`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
       body: JSON.stringify({ projectId: testCase.projectId, query: testCase.prompt })
     });
     if (!response.ok) {
@@ -36,13 +69,16 @@ async function runNl2SqlEval(baseUrl: string) {
   console.log(`[nl2sql] Passed ${passes}/${cases.length}`);
 }
 
-async function runRagEval(baseUrl: string) {
+async function runRagEval(baseUrl: string, accessToken: string) {
   const cases = JSON.parse(readFileSync(new URL('../fixtures/rag_eval.json', import.meta.url), 'utf8')) as RagCase[];
   let passes = 0;
   for (const testCase of cases) {
     const response = await fetch(`${baseUrl}/answer`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
       body: JSON.stringify({ projectId: testCase.projectId, question: testCase.question, topK: 3 })
     });
     if (!response.ok) {
@@ -67,8 +103,9 @@ async function runRagEval(baseUrl: string) {
 
 async function main() {
   const baseUrl = process.env.EVAL_API_BASE ?? 'http://localhost:4000/api';
-  await runNl2SqlEval(baseUrl);
-  await runRagEval(baseUrl);
+  const accessToken = await registerEvalUser(baseUrl);
+  await runNl2SqlEval(baseUrl, accessToken);
+  await runRagEval(baseUrl, accessToken);
 }
 
 main().catch((error) => {

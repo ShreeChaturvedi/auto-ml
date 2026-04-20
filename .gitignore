@@ -21,6 +21,9 @@ routes_check.txt
 backend/frontend_dump.json
 tmp/
 
+# Local Python venv used by testing/scripts/*.py (pandas/openpyxl)
+testing/.venv/
+
 # Empty shadcn alias structure
 frontend/@/
 

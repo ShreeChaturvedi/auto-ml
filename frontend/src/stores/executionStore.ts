@@ -8,7 +8,6 @@
 import { create } from 'zustand';
 import type { ExecutionResult, PackageInfo, PackageInstallEvent, PythonVersion } from '@/lib/api/execution';
 import * as executionApi from '@/lib/api/execution';
-import { isDemoMode } from '@/lib/demoMode';
 
 interface ExecutionState {
   // Runtime configuration
@@ -214,11 +213,6 @@ export const useExecutionStore = create<ExecutionState>((set, get) => ({
   },
 
   checkCloudHealth: async () => {
-    if (isDemoMode()) {
-      set({ cloudAvailable: true });
-      return;
-    }
-
     try {
       const health = await executionApi.getExecutionHealth();
       set({ cloudAvailable: health.dockerAvailable });

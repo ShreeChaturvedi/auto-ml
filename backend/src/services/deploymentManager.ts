@@ -23,6 +23,7 @@ import { ensureRuntimeImage } from './container/imageManager.js';
 import { buildInferenceDockerRunArgs } from './container/inferenceDockerBuilder.js';
 import { execDocker } from './dockerUtils.js';
 import { buildInferenceServerScript } from './inferenceServerBuilder.js';
+import { loadRuntimeDependencies } from './runtimeDependencies.js';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -33,7 +34,10 @@ export const MAX_DEPLOYMENTS_PER_PROJECT = 5;
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
 const HEALTH_CHECK_TIMEOUT_MS = 3_000;
 const READINESS_POLL_INTERVAL_MS = 1_000;
-const READINESS_TIMEOUT_MS = 60_000;
+// First-run readiness is dominated by pip-installing any runtime deps
+// (issue #323) — torch/pytorch-tabular wheels can take several minutes on a
+// cold cache. The base case (sklearn-only, no deps) still converges in <5s.
+const READINESS_TIMEOUT_MS = 360_000;
 const CONSECUTIVE_FAILURES_THRESHOLD = 3;
 const STALE_CREATING_THRESHOLD_MS = 120_000;
 
@@ -335,11 +339,16 @@ async function deployModelInternal(
 
     // 7. docker run
     const containerName = `automl-serve-${deploymentId.slice(0, 8)}`;
+    const runtimeDependencies = loadRuntimeDependencies(model);
+    if (runtimeDependencies.length > 0) {
+      appLogger.info(`${LOG_TAG} Deployment ${deploymentId} will pip-install runtime deps at boot: ${runtimeDependencies.join(', ')}`);
+    }
     const dockerArgs = buildInferenceDockerRunArgs({
       containerName,
       imageName,
       modelArtifactPath: modelArtifactDir,
       deploymentDir,
+      runtimeDependencies,
     });
 
     const { stdout: runStdout } = await execDocker(dockerArgs);
@@ -466,11 +475,16 @@ export async function startDeployment(deploymentId: string): Promise<void> {
     const imageName = await ensureRuntimeImage('3.11');
     const containerName = `automl-serve-${deploymentId.slice(0, 8)}`;
 
+    const runtimeDependencies = loadRuntimeDependencies(model);
+    if (runtimeDependencies.length > 0) {
+      appLogger.info(`${LOG_TAG} Deployment ${deploymentId} restart will pip-install runtime deps at boot: ${runtimeDependencies.join(', ')}`);
+    }
     const dockerArgs = buildInferenceDockerRunArgs({
       containerName,
       imageName,
       modelArtifactPath: modelArtifactDir,
       deploymentDir,
+      runtimeDependencies,
     });
 
     const { stdout: runStdout } = await execDocker(dockerArgs);

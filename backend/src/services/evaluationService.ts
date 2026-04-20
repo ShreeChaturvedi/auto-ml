@@ -1005,7 +1005,18 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    _unique_native_labels = [c for c in y.unique() if c is not None and not pd.isna(c)]');
     lines.push('    _sorted_native_labels = sorted(_unique_native_labels, key=lambda c: str(c))');
     lines.push('    labels = [str(c) for c in _sorted_native_labels]');
-    lines.push('    cm = confusion_matrix(y_test, y_pred, labels=_sorted_native_labels)');
+    // sklearn\'s internal _check_targets calls numpy.unique(y) which crashes
+    // on mixed None/str arrays ("<" not supported between NoneType and str).
+    // Catch the TypeError / ValueError and retry with string-coerced copies
+    // of y_test / y_pred / labels so the chart data still lands even when
+    // the target column has mixed types after the live prep replay.
+    lines.push('    try:');
+    lines.push('        cm = confusion_matrix(y_test, y_pred, labels=_sorted_native_labels)');
+    lines.push('    except (TypeError, ValueError) as _cm_err:');
+    lines.push('        _y_test_str = pd.Series(y_test).astype(str).values');
+    lines.push('        _y_pred_str = pd.Series(y_pred).astype(str).values');
+    lines.push('        cm = confusion_matrix(_y_test_str, _y_pred_str, labels=labels)');
+    lines.push('        print(f"[data-hygiene] confusion_matrix recovered via str-coercion ({type(_cm_err).__name__})")');
     lines.push('    cm_normalized = cm.astype(float) / cm.sum(axis=1, keepdims=True)');
     lines.push('    cm_normalized = np.nan_to_num(cm_normalized)');
     lines.push('    result["confusion_matrix"] = {');

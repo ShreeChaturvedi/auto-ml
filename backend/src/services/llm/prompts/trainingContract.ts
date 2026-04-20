@@ -43,7 +43,7 @@ Wait for user approval before proceeding.
 ### Stage 4: Generate Code
 Write the training code using notebook cell tools (\`write_cell\`, \`edit_cell\`).
 The code must:
-- Import required libraries
+- Import required libraries. Only use standard PyPI packages (sklearn, pandas, numpy, xgboost, lightgbm, catboost, pytorch_tabular, pytorch_tabnet, joblib, matplotlib, seaborn, scipy, statsmodels, prophet, torch). DO NOT import ChatGPT / OpenAI interpreter-only modules such as \`ace_tools\`, \`caas_jupyter_tools\`, \`ace_tools_open\`, or any variant — they are not published to PyPI and will fail to install in the runtime container. If you need to display a table, use \`print(df.to_string())\` or \`df.head().to_html()\`, NOT \`ace_tools.display_dataframe_to_user\`.
 - Load and prepare data with the configured split strategy
 - Define and train the model with specified hyperparameters
 - Capture metrics (accuracy, F1, confusion matrix where applicable)

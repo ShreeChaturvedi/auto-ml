@@ -27,40 +27,54 @@ const modelRepository = createModelRepository(env.modelMetadataPath);
 const datasetRepositoryForSampleRequest = createDatasetRepository(env.datasetMetadataPath);
 
 /**
- * Build a `sampleRequest` payload for the deployment playground from the
- * trained dataset's first sample row. The dataset profile stores up to
- * ~20 sample rows; we use the first one, filtering to the model's feature
- * columns. If any required column is missing from the sample, we fall back
- * to 0 for numeric-looking types and empty string for strings so the
- * /predict endpoint always has a valid demo payload.
+ * Build a `sampleRequest` payload AND `featureTypes` map for the deployment
+ * playground from the trained dataset's first sample row + column profile.
+ *
+ * Returns:
+ *   - sampleRequest: { featureName: sample_value_from_first_row }
+ *   - featureTypes: { featureName: 'number' | 'boolean' | 'string' }
+ *     (used by the inference server's Pydantic model so the /predict
+ *     endpoint accepts strings for categorical fields instead of
+ *     rejecting everything as non-float).
+ *
+ * Missing sample values fall back to 0 (numeric-looking names) or ''.
  */
 async function buildSampleRequestFromDataset(
   datasetId: string | undefined,
   featureColumns: string[]
-): Promise<Record<string, unknown>> {
-  if (!datasetId || featureColumns.length === 0) return {};
+): Promise<{ sampleRequest: Record<string, unknown>; featureTypes: Record<string, 'float' | 'int' | 'str'> }> {
+  if (!datasetId || featureColumns.length === 0) return { sampleRequest: {}, featureTypes: {} };
   try {
     const dataset = await datasetRepositoryForSampleRequest.getById(datasetId);
-    const firstRow = dataset?.sample?.[0] ?? dataset?.columns?.[0]
-      ? (dataset?.sample?.[0] as Record<string, unknown> | undefined)
-      : undefined;
-    if (!firstRow) return {};
+    const firstRow = dataset?.sample?.[0] as Record<string, unknown> | undefined;
+    const columnProfiles = dataset?.columns ?? [];
+    const dtypeByName = new Map<string, string>(
+      columnProfiles.map((col) => [col.name, (col.dtype ?? 'string').toLowerCase()])
+    );
+    // Inference server Pydantic schema uses the Python-like type names
+    // 'float' / 'int' / 'str'. Map dataset dtypes accordingly. Booleans
+    // go to 'int' (0/1) so FastAPI accepts the JSON payload cleanly
+    // without special-casing.
+    const toInferenceType = (dtype: string): 'float' | 'int' | 'str' => {
+      if (dtype === 'float' || dtype === 'number') return 'float';
+      if (dtype === 'integer' || dtype === 'int' || dtype === 'boolean' || dtype === 'bool') return 'int';
+      return 'str';
+    };
     const sampleRequest: Record<string, unknown> = {};
+    const featureTypes: Record<string, 'float' | 'int' | 'str'> = {};
     for (const col of featureColumns) {
-      if (col in firstRow && firstRow[col] != null) {
+      const dtype = dtypeByName.get(col) ?? 'string';
+      const infType = toInferenceType(dtype);
+      featureTypes[col] = infType;
+      if (firstRow && col in firstRow && firstRow[col] != null) {
         sampleRequest[col] = firstRow[col];
       } else {
-        // Fall back to a neutral placeholder so predict proxy doesn't reject
-        // the payload. Numeric for numeric-looking column name, else empty
-        // string.
-        sampleRequest[col] = /_(count|id|num|amount|price|age|days|pct|percent|score|rate|size|length|month|year)(_|$)/i.test(col)
-          ? 0
-          : '';
+        sampleRequest[col] = infType === 'str' ? '' : 0;
       }
     }
-    return sampleRequest;
+    return { sampleRequest, featureTypes };
   } catch {
-    return {};
+    return { sampleRequest: {}, featureTypes: {} };
   }
 }
 
@@ -448,7 +462,10 @@ export const registerModel: TrainingToolHandler = async (
   // the deployment schema endpoint returns `{}` and the /predict
   // playground has nothing to demo. Issue surfaced during the Phase 9
   // deployment probe.
-  const sampleRequest = await buildSampleRequestFromDataset(trainedDatasetId, featureColumns ?? []);
+  const { sampleRequest, featureTypes } = await buildSampleRequestFromDataset(
+    trainedDatasetId,
+    featureColumns ?? []
+  );
 
   let artifact: ModelArtifact | undefined;
   try {
@@ -472,6 +489,7 @@ export const registerModel: TrainingToolHandler = async (
         : undefined,
       featureColumns,
       ...(Object.keys(sampleRequest).length > 0 ? { sampleRequest } : {}),
+      ...(Object.keys(featureTypes).length > 0 ? { featureTypes } : {}),
       // Artifact is populated after the permanent copy succeeds below.
       evaluationStatus: 'pending',
       metadata: {

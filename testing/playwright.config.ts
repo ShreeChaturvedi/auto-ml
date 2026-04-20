@@ -8,9 +8,19 @@ const storagePath = path.join(tempRoot, 'projects.json');
 const datasetMetadataPath = path.join(tempRoot, 'datasets', 'metadata.json');
 const datasetFilesPath = path.join(tempRoot, 'datasets', 'files');
 
+// Port knobs — defaults chosen to not collide with the live `npm run dev`
+// stack (backend:4000, frontend:5173). Override with BENCHMARK_PORT and
+// BENCHMARK_PREVIEW_PORT when running benchmarks alongside the dev server.
+const benchmarkPort = Number(process.env.BENCHMARK_PORT ?? 4100);
+const previewPort = Number(process.env.BENCHMARK_PREVIEW_PORT ?? 4174);
+const benchmarkApiBase = `http://127.0.0.1:${benchmarkPort}/api`;
+
 process.env.AUTOML_STORAGE_PATH = storagePath;
 process.env.AUTOML_DATASET_METADATA_PATH = datasetMetadataPath;
 process.env.AUTOML_DATASET_FILES_PATH = datasetFilesPath;
+// Expose the benchmark api base to the spec via env so hard-coded
+// http://localhost:4000 lookups can migrate to the configurable port.
+process.env.BENCHMARK_API_BASE = benchmarkApiBase;
 
 export default defineConfig({
   testDir: './tests',
@@ -22,7 +32,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: `http://127.0.0.1:${previewPort}`,
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure'
@@ -31,22 +41,22 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm --prefix ../backend run serve:benchmark',
-      port: 4000,
+      port: benchmarkPort,
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
-        PORT: '4000',
+        PORT: String(benchmarkPort),
         STORAGE_PATH: storagePath,
         DATASET_METADATA_PATH: datasetMetadataPath,
-      DATASET_STORAGE_DIR: datasetFilesPath,
-      ALLOWED_ORIGINS: 'http://127.0.0.1:4173,http://localhost:4173',
-      NODE_ENV: 'test',
-      VITEST: 'true'
-    }
-  },
+        DATASET_STORAGE_DIR: datasetFilesPath,
+        ALLOWED_ORIGINS: `http://127.0.0.1:${previewPort},http://localhost:${previewPort}`,
+        NODE_ENV: 'test',
+        VITEST: 'true'
+      }
+    },
     {
-      command: 'npm --prefix ../frontend run preview -- --host --port 4173',
-      port: 4173,
+      command: `npm --prefix ../frontend run preview -- --host --port ${previewPort}`,
+      port: previewPort,
       reuseExistingServer: false,
       timeout: 120_000
     }

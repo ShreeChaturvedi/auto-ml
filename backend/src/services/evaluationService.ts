@@ -246,6 +246,49 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('            return result');
     lines.push('pd.read_csv = _safe_read_csv');
     lines.push('');
+    // train_test_split monkey-patch: drop rows with NaN target before sklearn
+    // asserts finite y. Stale prep segments frequently lack `df.dropna(
+    // subset=[TARGET])` even after the LLM fixed it mid-turn. The patch only
+    // activates when the original call raises "Input y contains NaN" — happy
+    // paths are untouched. Mirrors pd.read_csv/_safe_series_astype pattern.
+    // V3 heavy_nan + ragged_rows regression.
+    lines.push('import sklearn.model_selection as _automl_sk_model_selection');
+    lines.push('_original_train_test_split = _automl_sk_model_selection.train_test_split');
+    lines.push('def _safe_train_test_split(*args, **kwargs):');
+    lines.push('    try:');
+    lines.push('        return _original_train_test_split(*args, **kwargs)');
+    lines.push('    except ValueError as err:');
+    lines.push('        msg = str(err)');
+    lines.push('        if "Input y contains NaN" not in msg and "y contains NaN" not in msg:');
+    lines.push('            raise');
+    lines.push('        if len(args) < 2:');
+    lines.push('            raise');
+    lines.push('        X, y = args[0], args[1]');
+    lines.push('        try:');
+    lines.push('            mask = pd.notna(y)');
+    lines.push('        except Exception:');
+    lines.push('            raise err');
+    lines.push('        dropped = int((mask == False).sum()) if hasattr(mask, "sum") else 0');
+    lines.push('        if dropped == 0:');
+    lines.push('            raise');
+    lines.push('        X_clean = X.loc[mask] if hasattr(X, "loc") else X[mask]');
+    lines.push('        try:');
+    lines.push('            y_clean = y.loc[mask] if hasattr(y, "loc") else y[mask]');
+    lines.push('        except Exception:');
+    lines.push('            y_clean = y[mask]');
+    lines.push('        # Rebuild stratify kwarg if the caller passed the same y.');
+    lines.push('        new_kwargs = dict(kwargs)');
+    lines.push('        strat = new_kwargs.get("stratify")');
+    lines.push('        if strat is not None:');
+    lines.push('            try:');
+    lines.push('                new_kwargs["stratify"] = y_clean if len(strat) == len(y) else strat');
+    lines.push('            except Exception:');
+    lines.push('                pass');
+    lines.push('        new_args = (X_clean, y_clean) + args[2:]');
+    lines.push('        print(f"[data-hygiene] train_test_split dropped {dropped} rows with NaN target")');
+    lines.push('        return _original_train_test_split(*new_args, **new_kwargs)');
+    lines.push('_automl_sk_model_selection.train_test_split = _safe_train_test_split');
+    lines.push('');
     for (const segment of workflowPrepSegments) {
       lines.push(segment);
       lines.push('');

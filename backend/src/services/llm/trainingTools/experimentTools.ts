@@ -170,13 +170,23 @@ export const configureExperiment: TrainingToolHandler = async (
     };
   }
 
+  // Family-prefix match is acceptable: a name like "decision_tree_churn_prediction"
+  // (inferred → "decision_tree") paired with modelType="decision_tree_regressor"
+  // or "decision_tree_classifier" is the SAME family — the suffix just makes
+  // the estimator choice more specific. Only reject when the families
+  // genuinely differ (e.g., name says "tabnet" but type is "tabtransformer").
   if (modelTypeFromExperimentName && modelType !== modelTypeFromExperimentName) {
-    return {
-      error:
-        `Experiment name "${experimentName}" implies modelType="${modelTypeFromExperimentName}" `
-        + `but configure_experiment requested "${modelType}". Retry with modelType="${modelTypeFromExperimentName}" `
-        + 'and do not substitute a proxy model.'
-    };
+    const typesInSameFamily =
+      modelType.startsWith(`${modelTypeFromExperimentName}_`)
+      || modelTypeFromExperimentName.startsWith(`${modelType}_`);
+    if (!typesInSameFamily) {
+      return {
+        error:
+          `Experiment name "${experimentName}" implies modelType="${modelTypeFromExperimentName}" `
+          + `but configure_experiment requested "${modelType}". Retry with modelType="${modelTypeFromExperimentName}" `
+          + 'and do not substitute a proxy model.'
+      };
+    }
   }
 
   // Enforce the Feature Engineering pipeline handoff. If the project has

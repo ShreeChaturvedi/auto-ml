@@ -182,23 +182,133 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    return None');
     lines.push('');
     lines.push('_NUMERIC_DTYPE_TOKENS = ("float", "int", "float32", "float64", "int32", "int64", "number")');
+    lines.push('_BOOL_DTYPE_TOKENS = ("bool", "boolean")');
+    // Fire the coercion ladder for any "stringy" source dtype — plain object,
+    // pandas StringDtype (dtype name == "string" / "string[python]"), or
+    // CategoricalDtype wrapping strings. The LLM's training code sometimes
+    // does `df[col] = df[col].astype("string")` before a later cast to
+    // float/boolean; both the object and string paths end up in this branch.
+    lines.push('def _is_stringy_dtype(dt):');
+    lines.push('    if dt == object: return True');
+    lines.push('    try:');
+    lines.push('        name = str(dt).lower()');
+    lines.push('    except Exception:');
+    lines.push('        return False');
+    lines.push('    return "string" in name or name.startswith("str") or (name == "category")');
     lines.push('_original_series_astype = pd.Series.astype');
     lines.push('def _safe_series_astype(self, dtype, *args, **kwargs):');
     lines.push('    try:');
     lines.push('        return _original_series_astype(self, dtype, *args, **kwargs)');
     lines.push('    except (ValueError, TypeError):');
-    lines.push('        if self.dtype == object and any(tok in str(dtype).lower() for tok in _NUMERIC_DTYPE_TOKENS):');
+    lines.push('        _dt_lower = str(dtype).lower()');
+    lines.push('        if _is_stringy_dtype(self.dtype) and any(tok in _dt_lower for tok in _NUMERIC_DTYPE_TOKENS):');
     lines.push('            coerced = _automl_try_coerce(self, dtype)');
     lines.push('            if coerced is not None:');
-    lines.push('                print(f"[data-hygiene] auto-coerced Series to {dtype} via yes/no or numeric-string mapping")');
+    lines.push('                print(f"[data-hygiene] auto-coerced {self.dtype} → {dtype} via yes/no or numeric-string mapping")');
     lines.push('                return coerced');
+    lines.push('        # Boolean / boolean[pandas] cast on yes/no / true/false / y/n string-like column');
+    lines.push('        if _is_stringy_dtype(self.dtype) and any(tok in _dt_lower for tok in _BOOL_DTYPE_TOKENS):');
+    lines.push('            stripped = self.astype(str).str.strip().str.lower()');
+    lines.push('            non_null = stripped[(stripped.notna()) & (stripped != "") & (stripped != "nan")]');
+    lines.push('            if len(non_null) > 0 and non_null.isin(list(_BOOL_LIKE_MAP.keys())).all():');
+    lines.push('                mapped = stripped.map(_BOOL_LIKE_MAP).astype("Int64")');
+    lines.push('                print(f"[data-hygiene] auto-coerced {self.dtype} → {dtype} via yes/no → 0/1 mapping")');
+    lines.push('                return mapped.astype(dtype) if "boolean" in _dt_lower else (mapped == 1)');
     lines.push('        raise');
     lines.push('pd.Series.astype = _safe_series_astype');
+    lines.push('');
+    // pd.read_csv monkey-patch: tolerate ragged/encoding-variant CSVs when a
+    // stale training segment calls `pd.read_csv(path)` with default kwargs.
+    // This mirrors kernelManager._read_csv_robust and the FE scriptBuilder
+    // fallback so the evaluator never sees a stricter parser than the
+    // ingest layer accepted. Caught failure modes:
+    //   - ParserError "Expected N fields in line M, saw K" (ragged CSV rows)
+    //   - UnicodeDecodeError (Windows-1252 / Latin-1 content in a CSV the
+    //     LLM opens with the default utf-8 encoding)
+    // The patch only activates on error — well-formed CSVs go through the
+    // original fast C parser with no behavior change. V3 ragged_rows regression.
+    lines.push('_original_read_csv = pd.read_csv');
+    lines.push('def _safe_read_csv(*args, **kwargs):');
+    lines.push('    try:');
+    lines.push('        return _original_read_csv(*args, **kwargs)');
+    lines.push('    except (pd.errors.ParserError, UnicodeDecodeError, UnicodeError) as err:');
+    lines.push('        fallback = dict(kwargs)');
+    lines.push('        fallback.setdefault("on_bad_lines", "skip")');
+    lines.push('        fallback.setdefault("engine", "python")');
+    lines.push('        try:');
+    lines.push('            result = _original_read_csv(*args, **fallback)');
+    lines.push('            print(f"[data-hygiene] pd.read_csv recovered via on_bad_lines=skip/python engine ({type(err).__name__})")');
+    lines.push('            return result');
+    lines.push('        except UnicodeDecodeError:');
+    lines.push('            fallback["encoding"] = "latin-1"');
+    lines.push('            result = _original_read_csv(*args, **fallback)');
+    lines.push('            print("[data-hygiene] pd.read_csv recovered via latin-1 fallback")');
+    lines.push('            return result');
+    lines.push('pd.read_csv = _safe_read_csv');
+    lines.push('');
+    // train_test_split monkey-patch: drop rows with NaN target before sklearn
+    // asserts finite y. Stale prep segments frequently lack `df.dropna(
+    // subset=[TARGET])` even after the LLM fixed it mid-turn. The patch only
+    // activates when the original call raises "Input y contains NaN" — happy
+    // paths are untouched. Mirrors pd.read_csv/_safe_series_astype pattern.
+    // V3 heavy_nan + ragged_rows regression.
+    lines.push('import sklearn.model_selection as _automl_sk_model_selection');
+    lines.push('_original_train_test_split = _automl_sk_model_selection.train_test_split');
+    lines.push('def _safe_train_test_split(*args, **kwargs):');
+    lines.push('    try:');
+    lines.push('        return _original_train_test_split(*args, **kwargs)');
+    lines.push('    except ValueError as err:');
+    lines.push('        msg = str(err)');
+    lines.push('        if "Input y contains NaN" not in msg and "y contains NaN" not in msg:');
+    lines.push('            raise');
+    lines.push('        if len(args) < 2:');
+    lines.push('            raise');
+    lines.push('        X, y = args[0], args[1]');
+    lines.push('        try:');
+    lines.push('            mask = pd.notna(y)');
+    lines.push('        except Exception:');
+    lines.push('            raise err');
+    lines.push('        dropped = int((mask == False).sum()) if hasattr(mask, "sum") else 0');
+    lines.push('        if dropped == 0:');
+    lines.push('            raise');
+    lines.push('        X_clean = X.loc[mask] if hasattr(X, "loc") else X[mask]');
+    lines.push('        try:');
+    lines.push('            y_clean = y.loc[mask] if hasattr(y, "loc") else y[mask]');
+    lines.push('        except Exception:');
+    lines.push('            y_clean = y[mask]');
+    lines.push('        # Rebuild stratify kwarg if the caller passed the same y.');
+    lines.push('        new_kwargs = dict(kwargs)');
+    lines.push('        strat = new_kwargs.get("stratify")');
+    lines.push('        if strat is not None:');
+    lines.push('            try:');
+    lines.push('                new_kwargs["stratify"] = y_clean if len(strat) == len(y) else strat');
+    lines.push('            except Exception:');
+    lines.push('                pass');
+    lines.push('        new_args = (X_clean, y_clean) + args[2:]');
+    lines.push('        print(f"[data-hygiene] train_test_split dropped {dropped} rows with NaN target")');
+    lines.push('        return _original_train_test_split(*new_args, **new_kwargs)');
+    lines.push('_automl_sk_model_selection.train_test_split = _safe_train_test_split');
+    // Rebind the local name too: the prelude does `from sklearn.model_selection
+    // import train_test_split` at module top (line 113), which binds the
+    // ORIGINAL function into this script's namespace before the patch runs.
+    // Any later call to plain `train_test_split(...)` from the auto-derive
+    // block or a user prep segment that does the same import would hit the
+    // unpatched version. Rebind the top-level name so every caller routes
+    // through the NaN-tolerant wrapper.
+    lines.push('train_test_split = _safe_train_test_split');
     lines.push('');
     for (const segment of workflowPrepSegments) {
       lines.push(segment);
       lines.push('');
     }
+    // After the prep segments run, any `from sklearn.model_selection import
+    // train_test_split` inside them has re-shadowed our name with the
+    // patched-module reference (which IS the safe wrapper — good). But if a
+    // segment re-imported the name before the module attribute was patched
+    // (edge case: segment does `import sklearn.model_selection` then binds
+    // through it), re-pin the local name here to be safe.
+    lines.push('train_test_split = _safe_train_test_split');
+    lines.push('');
     // Auto-derive the sklearn-style X_train/X_test/y_train/y_test variables
     // when the prep segments only expose DataFrame-centric splits
     // (train_df/test_df). This happens for pytorch_tabular training (FT/Tab/
@@ -313,8 +423,23 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   // raw torch.save artifacts (.pt/.pth) that joblib can't unpickle; load with
   // torch.load and wrap the nn.Module in an sklearn-compatible adapter.
   lines.push(`_EVAL_MODEL_PATH = ${JSON.stringify(modelPath)}`);
+  // Pre-flight validation: truncated artifacts produce opaque EOFError in
+  // pickle.load. Surface a clear message so the user knows the training
+  // step didn't flush the model file cleanly (gradient_boosting flake etc.)
+  lines.push('import os as _os');
+  lines.push('_artifact_size = _os.path.getsize(_EVAL_MODEL_PATH) if _os.path.exists(_EVAL_MODEL_PATH) else 0');
+  lines.push('if _artifact_size < 64:');
+  lines.push('    raise RuntimeError(');
+  lines.push('        f"Model artifact at {_EVAL_MODEL_PATH!r} is empty or truncated ({_artifact_size} bytes). "');
+  lines.push('        "Training likely failed to flush the joblib/torch artifact. Re-run training."');
+  lines.push('    )');
   lines.push('try:');
   lines.push('    pipeline = joblib.load(_EVAL_MODEL_PATH)');
+  lines.push('except EOFError as _eof:');
+  lines.push('    raise RuntimeError(');
+  lines.push('        f"Model artifact at {_EVAL_MODEL_PATH!r} is truncated (pickle EOFError at load). "');
+  lines.push('        "The training cell likely crashed mid-write. Re-run training."');
+  lines.push('    ) from _eof');
   lines.push('except Exception as _load_err:');
   lines.push('    _msg = str(_load_err).lower()');
   lines.push('    _is_torch_artifact = (_EVAL_MODEL_PATH.endswith(".pt") or _EVAL_MODEL_PATH.endswith(".pth")');
@@ -577,21 +702,56 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('');
 
   // ── Feature importance ──
+  // fitted_model.feature_importances_ / coef_ arrays reflect the POST-
+  // transform feature space (after ColumnTransformer/OneHotEncoder), so the
+  // accompanying feature-name list must be the OHE-expanded one — not the
+  // raw feature_columns. The old fallback used raw feature_columns which
+  // rendered garbage x-axis labels when a pipeline step was not named
+  // "preprocessor" (e.g. RF on employee_performance: 10 raw names vs 338
+  // OHE importances). V3 deep-audit regression.
   lines.push('# Feature importance');
   lines.push('try:');
   lines.push('    fi = {}');
   lines.push('');
-  lines.push('    # Resolve OHE-expanded feature names from the trained pipeline');
-  lines.push('    try:');
-  lines.push('        ohe_feature_names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())');
-  lines.push('    except Exception:');
-  lines.push('        ohe_feature_names = feature_columns');
+  lines.push('    def _resolve_feature_names(expected_len):');
+  lines.push('        candidates = []');
+  lines.push('        try:');
+  lines.push('            if hasattr(pipeline, "__getitem__") and hasattr(pipeline, "steps") and len(pipeline.steps) > 1:');
+  lines.push('                prefix = pipeline[:-1]');
+  lines.push('                if hasattr(prefix, "get_feature_names_out"):');
+  lines.push('                    candidates.append(list(prefix.get_feature_names_out()))');
+  lines.push('        except Exception:');
+  lines.push('            pass');
+  lines.push('        try:');
+  lines.push('            prep = pipeline.named_steps.get("preprocessor") if hasattr(pipeline, "named_steps") else None');
+  lines.push('            if prep is not None and hasattr(prep, "get_feature_names_out"):');
+  lines.push('                candidates.append(list(prep.get_feature_names_out()))');
+  lines.push('        except Exception:');
+  lines.push('            pass');
+  lines.push('        try:');
+  lines.push('            if hasattr(pipeline, "named_steps"):');
+  lines.push('                for _step_name, _step in pipeline.named_steps.items():');
+  lines.push('                    if _step is None:');
+  lines.push('                        continue');
+  lines.push('                    if type(_step).__name__ == "ColumnTransformer" and hasattr(_step, "get_feature_names_out"):');
+  lines.push('                        try:');
+  lines.push('                            candidates.append(list(_step.get_feature_names_out()))');
+  lines.push('                        except Exception:');
+  lines.push('                            continue');
+  lines.push('        except Exception:');
+  lines.push('            pass');
+  lines.push('        candidates.append(list(feature_columns))');
+  lines.push('        for cand in candidates:');
+  lines.push('            if len(cand) == expected_len:');
+  lines.push('                return [str(name) for name in cand]');
+  lines.push('        return [f"feature_{i}" for i in range(expected_len)]');
   lines.push('');
   lines.push('    # Model-based importance');
   lines.push('    if hasattr(fitted_model, "feature_importances_"):');
+  lines.push('        _model_importances = [float(x) for x in fitted_model.feature_importances_]');
   lines.push('        fi["model_based"] = {');
-  lines.push('            "features": ohe_feature_names,');
-  lines.push('            "importances": [float(x) for x in fitted_model.feature_importances_]');
+  lines.push('            "features": _resolve_feature_names(len(_model_importances)),');
+  lines.push('            "importances": _model_importances');
   lines.push('        }');
   lines.push('    elif hasattr(fitted_model, "coef_"):');
   lines.push('        coefs = fitted_model.coef_');
@@ -599,9 +759,10 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('            coefs = np.mean(np.abs(coefs), axis=0)');
   lines.push('        else:');
   lines.push('            coefs = np.abs(coefs)');
+  lines.push('        _coef_importances = [float(x) for x in coefs]');
   lines.push('        fi["model_based"] = {');
-  lines.push('            "features": ohe_feature_names,');
-  lines.push('            "importances": [float(x) for x in coefs]');
+  lines.push('            "features": _resolve_feature_names(len(_coef_importances)),');
+  lines.push('            "importances": _coef_importances');
   lines.push('        }');
   lines.push('');
   lines.push('    if expensive_analysis_model:');
@@ -835,8 +996,27 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   if (taskType === 'classification') {
     lines.push('if effective_task_type == "classification" and not _is_multi_output:');
     lines.push('    # Classification-specific metrics');
-    lines.push('    labels = sorted([str(c) for c in y.unique()])');
-    lines.push('    cm = confusion_matrix(y_test, y_pred, labels=sorted(y.unique()))');
+    // Filter NaN/None out of unique labels before sorting. Mixed None+str
+    // labels (e.g. from a target column that still had NaN rows when eval
+    // replayed the corrected prep code) break Python 3\'s TypeError on
+    // NoneType vs str comparisons inside sorted(). Also compute the string
+    // label list from the CLEANED native list so confusion_matrix\'s labels
+    // array matches what we expose on the chart.
+    lines.push('    _unique_native_labels = [c for c in y.unique() if c is not None and not pd.isna(c)]');
+    lines.push('    _sorted_native_labels = sorted(_unique_native_labels, key=lambda c: str(c))');
+    lines.push('    labels = [str(c) for c in _sorted_native_labels]');
+    // sklearn\'s internal _check_targets calls numpy.unique(y) which crashes
+    // on mixed None/str arrays ("<" not supported between NoneType and str).
+    // Catch the TypeError / ValueError and retry with string-coerced copies
+    // of y_test / y_pred / labels so the chart data still lands even when
+    // the target column has mixed types after the live prep replay.
+    lines.push('    try:');
+    lines.push('        cm = confusion_matrix(y_test, y_pred, labels=_sorted_native_labels)');
+    lines.push('    except (TypeError, ValueError) as _cm_err:');
+    lines.push('        _y_test_str = pd.Series(y_test).astype(str).values');
+    lines.push('        _y_pred_str = pd.Series(y_pred).astype(str).values');
+    lines.push('        cm = confusion_matrix(_y_test_str, _y_pred_str, labels=labels)');
+    lines.push('        print(f"[data-hygiene] confusion_matrix recovered via str-coercion ({type(_cm_err).__name__})")');
     lines.push('    cm_normalized = cm.astype(float) / cm.sum(axis=1, keepdims=True)');
     lines.push('    cm_normalized = np.nan_to_num(cm_normalized)');
     lines.push('    result["confusion_matrix"] = {');

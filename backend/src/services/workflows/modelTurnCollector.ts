@@ -632,12 +632,31 @@ export async function invokeModelNode(
     if (typeof nextStage === 'string' && nextStage !== stageConfig.name) {
       const nextHopCount = (state.stageHopsSinceTool ?? 0) + 1;
       if (nextHopCount > MAX_STAGE_HOPS_WITHOUT_TOOL) {
+        // Phase-aware message + code: the guard fires in any phase whose
+        // stage machine uses deterministic transitions (preprocessing /
+        // training / feature_engineering). Misleading "preprocessing" text
+        // confused users during training-phase sweeps.
+        const phase = state.turn?.phase ?? 'workflow';
+        const phaseLabel = phase === 'preprocessing'
+          ? 'Preprocessing'
+          : phase === 'training'
+            ? 'Training'
+            : phase === 'feature_engineering'
+              ? 'Feature engineering'
+              : 'Workflow';
+        const errorCode = phase === 'preprocessing'
+          ? 'PREPROCESSING_NO_PROGRESS'
+          : phase === 'training'
+            ? 'TRAINING_NO_PROGRESS'
+            : phase === 'feature_engineering'
+              ? 'FEATURE_ENGINEERING_NO_PROGRESS'
+              : 'WORKFLOW_NO_PROGRESS';
         return {
           nextStep: 'fail',
           errorMessage:
-            'Preprocessing did not converge on a committable plan — the workflow kept switching stages without running any transformation. '
+            `${phaseLabel} did not converge on a committable plan — the workflow kept switching stages without running any transformation. `
             + 'Try simplifying the request, pruning very messy columns, or starting over on a fresh workbook.',
-          errorCode: 'PREPROCESSING_NO_PROGRESS',
+          errorCode,
           stageHopsSinceTool: nextHopCount
         };
       }

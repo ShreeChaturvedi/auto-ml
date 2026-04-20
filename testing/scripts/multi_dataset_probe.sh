@@ -56,6 +56,13 @@ target_for() {
     loan_default) echo defaulted ;;
     marketing_response) echo response_tier ;;
     iot_anomaly) echo is_anomaly ;;
+    # v3 dirty-data sweep (tmp/v3_dirty_datasets) — stress test training
+    # contract against realistic defects per the 2026-04-20 directive.
+    employee_performance) echo promoted ;;
+    insurance_claims) echo claim_approved ;;
+    product_reviews) echo helpful ;;
+    hospital_readmission) echo readmitted_30d ;;
+    telecom_tickets) echo resolved_same_day ;;
     *) echo "" ;;
   esac
 }
@@ -84,15 +91,25 @@ run_cell() {
   fi
 
   info "$DOMAIN/$VARIANT — register"
-  local EMAIL="probe-$(date +%s)-$RANDOM-$DOMAIN-$VARIANT@automl.test"
-  curl -s -m 10 -X POST "$BASE/api/auth/register" \
-    -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$EMAIL\",\"password\":\"Probe2026!\",\"name\":\"Robustness Probe\"}" \
-    > "$OUT/01_register.json"
-  local TOKEN
-  TOKEN=$(python3 -c "import json;d=json.load(open('$OUT/01_register.json'));print(d.get('accessToken',''))")
-  [ -z "$TOKEN" ] && { fail "$DOMAIN/$VARIANT register"; row "$DOMAIN" "$VARIANT" "register" "FAIL" "" ""; return; }
-  row "$DOMAIN" "$VARIANT" "register" "PASS" "" ""
+  # Retry register up to 3 times with fresh emails each attempt so a single
+  # bcrypt stall or transient backend blip doesn't fail the whole cell.
+  local TOKEN=""
+  local ATTEMPT=0
+  for ATTEMPT in 1 2 3; do
+    # Include nanosecond timestamp + RANDOM + PID + family + attempt so
+    # each try uses a unique email (avoids the unique-index collision
+    # even if a previous attempt eventually succeeded server-side).
+    local EMAIL="probe-$(date +%s%N)-$RANDOM-$$-${MODEL_FAMILY:-auto}-$DOMAIN-$VARIANT-a${ATTEMPT}@automl.test"
+    curl -s -m 30 -X POST "$BASE/api/auth/register" \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"$EMAIL\",\"password\":\"Probe2026!\",\"name\":\"Robustness Probe\"}" \
+      > "$OUT/01_register.json"
+    TOKEN=$(python3 -c "import json;d=json.load(open('$OUT/01_register.json'));print(d.get('accessToken',''))" 2>/dev/null)
+    [ -n "$TOKEN" ] && break
+    sleep 2
+  done
+  [ -z "$TOKEN" ] && { fail "$DOMAIN/$VARIANT register (after 3 attempts)"; row "$DOMAIN" "$VARIANT" "register" "FAIL" "3 attempts exhausted" ""; return; }
+  row "$DOMAIN" "$VARIANT" "register" "PASS" "attempt=$ATTEMPT" ""
 
   info "$DOMAIN/$VARIANT — create project"
   curl -s -m 10 -X POST "$BASE/api/projects" \
@@ -474,6 +491,87 @@ print(','.join(have))
     fail "$DOMAIN/$VARIANT experiments (no charts in evaluation payload)"
     row "$DOMAIN" "$VARIANT" "experiments" "FAIL" "no chart fields in evaluation response" "$MODEL_ID"
   fi
+
+  # Phase 9: Deployment — spin up the inference container, poll until
+  # healthy, then POST a sample request to /predict. Gated on
+  # INCLUDE_DEPLOY=1 because it requires Docker + ~60s container startup.
+  [ "${INCLUDE_DEPLOY:-0}" = "1" ] || return
+  info "$DOMAIN/$VARIANT — deployment create"
+  curl -s -m 30 -X POST "$BASE/api/deployments" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"modelId\":\"$MODEL_ID\",\"projectId\":\"$PROJECT_ID\",\"name\":\"probe-$DOMAIN-$VARIANT-$(date +%s%N)\"}" \
+    > "$OUT/10_deploy.json"
+  local DEPLOY_ID
+  DEPLOY_ID=$(python3 -c "
+import json
+try:
+    d=json.load(open('$OUT/10_deploy.json'))
+    print(d.get('deployment',{}).get('deploymentId',''))
+except: print('')")
+  if [ -z "$DEPLOY_ID" ]; then
+    local DEPLOY_ERR
+    DEPLOY_ERR=$(python3 -c "
+import json
+try: print(json.load(open('$OUT/10_deploy.json')).get('error','')[:200])
+except: print('')")
+    fail "$DOMAIN/$VARIANT deployment create: $DEPLOY_ERR"
+    row "$DOMAIN" "$VARIANT" "deployment" "FAIL" "create: $DEPLOY_ERR" "$MODEL_ID"
+    return
+  fi
+
+  # Poll deployment status
+  local DEPLOY_STATUS=""
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    curl -s -m 5 "$BASE/api/deployments/$DEPLOY_ID" -H "Authorization: Bearer $TOKEN" > "$OUT/10_deploy_status.json"
+    DEPLOY_STATUS=$(python3 -c "import json;d=json.load(open('$OUT/10_deploy_status.json'));print(d.get('deployment',{}).get('status',''))" 2>/dev/null)
+    [ "$DEPLOY_STATUS" = "healthy" ] && break
+    [ "$DEPLOY_STATUS" = "failed" ] && break
+    sleep 8
+  done
+  if [ "$DEPLOY_STATUS" != "healthy" ]; then
+    fail "$DOMAIN/$VARIANT deployment (status=$DEPLOY_STATUS)"
+    row "$DOMAIN" "$VARIANT" "deployment" "FAIL" "status=$DEPLOY_STATUS" "$DEPLOY_ID"
+    return
+  fi
+  row "$DOMAIN" "$VARIANT" "deployment" "PASS" "healthy" "$DEPLOY_ID"
+
+  # Fetch schema → sampleRequest → POST /predict
+  info "$DOMAIN/$VARIANT — deployment /predict"
+  curl -s -m 5 "$BASE/api/deployments/$DEPLOY_ID/schema" -H "Authorization: Bearer $TOKEN" > "$OUT/10_schema.json"
+  python3 -c "
+import json
+s=json.load(open('$OUT/10_schema.json'))
+print(json.dumps(s.get('sampleRequest',{})))
+" > "$OUT/10_predict_payload.json"
+  if [ "$(cat $OUT/10_predict_payload.json)" = "{}" ] || [ ! -s "$OUT/10_predict_payload.json" ]; then
+    fail "$DOMAIN/$VARIANT deploy predict (no sampleRequest in schema)"
+    row "$DOMAIN" "$VARIANT" "deploy_predict" "FAIL" "no sampleRequest" "$DEPLOY_ID"
+    return
+  fi
+  curl -s -m 15 -X POST "$BASE/api/deployments/$DEPLOY_ID/predict" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data-binary @"$OUT/10_predict_payload.json" \
+    > "$OUT/10_predict.json"
+  local PRED_OK
+  PRED_OK=$(python3 -c "
+import json
+try:
+    d=json.load(open('$OUT/10_predict.json'))
+    # Accept any of these shapes as a success
+    if 'prediction' in d or 'predictions' in d or 'result' in d or 'output' in d:
+        print('ok')
+    elif d.get('error'):
+        print('err:' + str(d.get('error'))[:200])
+    else:
+        print('unknown:' + str(list(d.keys()))[:200])
+except: print('parse_error')")
+  if [ "$PRED_OK" = "ok" ]; then
+    pass "$DOMAIN/$VARIANT deploy /predict"
+    row "$DOMAIN" "$VARIANT" "deploy_predict" "PASS" "" "$DEPLOY_ID"
+  else
+    fail "$DOMAIN/$VARIANT deploy /predict: $PRED_OK"
+    row "$DOMAIN" "$VARIANT" "deploy_predict" "FAIL" "$PRED_OK" "$DEPLOY_ID"
+  fi
 }
 
 if [ ! -d "$DATA_ROOT" ]; then
@@ -493,18 +591,44 @@ if [ ${#DOMAINS[@]} -eq 0 ]; then
   echo "[probe] No domains discovered under $DATA_ROOT"
   exit 2
 fi
-declare -a VARIANT_PAIRS=(
-  "standard standard.csv"
-  "bom bom.csv"
-  "latin1 latin1.csv"
-  "tsv standard.tsv"
-  "semicolon semicolon.csv"
-  "records records.json"
-  "jsonl newline.jsonl"
-  "xlsx standard.xlsx"
-  "ragged ragged.csv"
-  "schema_drift schema_drift.csv"
-)
+# VARIANT_SET selects which variant pair-list to iterate:
+#   v1v2 (default) — format/quality variants (standard, bom, latin1, tsv,
+#                    semicolon, records, jsonl, xlsx, ragged, schema_drift).
+#                    Used by the V1/V2 robustness suites.
+#   v3             — semantic-defect variants (clean, string_in_numeric,
+#                    unicode_text, mixed_dates, class_imbalance,
+#                    high_cardinality, constant_cols, heavy_nan,
+#                    ragged_rows, leaky_target). Used by the V3 dirty-data
+#                    sweep. All files are CSV; the shape is what varies.
+VARIANT_SET="${VARIANT_SET:-v1v2}"
+declare -a VARIANT_PAIRS
+if [ "$VARIANT_SET" = "v3" ]; then
+  VARIANT_PAIRS=(
+    "clean clean.csv"
+    "string_in_numeric string_in_numeric.csv"
+    "unicode_text unicode_text.csv"
+    "mixed_dates mixed_dates.csv"
+    "class_imbalance class_imbalance.csv"
+    "high_cardinality high_cardinality.csv"
+    "constant_cols constant_cols.csv"
+    "heavy_nan heavy_nan.csv"
+    "ragged_rows ragged_rows.csv"
+    "leaky_target leaky_target.csv"
+  )
+else
+  VARIANT_PAIRS=(
+    "standard standard.csv"
+    "bom bom.csv"
+    "latin1 latin1.csv"
+    "tsv standard.tsv"
+    "semicolon semicolon.csv"
+    "records records.json"
+    "jsonl newline.jsonl"
+    "xlsx standard.xlsx"
+    "ragged ragged.csv"
+    "schema_drift schema_drift.csv"
+  )
+fi
 
 for DOMAIN in "${DOMAINS[@]}"; do
   [ -n "$FILTER_DOMAIN" ] && [ "$FILTER_DOMAIN" != "$DOMAIN" ] && continue

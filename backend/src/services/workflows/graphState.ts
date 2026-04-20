@@ -41,7 +41,14 @@ export const MAX_IDENTICAL_TOOL_CALLS = 5;
 // Hard cap on consecutive deterministic/delegated stage hops that return to
 // `prepare` without executing any tool. Prevents phaseConfig.resolveNextStage
 // oscillations from exhausting the LangGraph recursion budget. Issue #341.
-export const MAX_STAGE_HOPS_WITHOUT_TOOL = 12;
+// Raised from 12 → 24: training matrix showed that complex model families
+// (catboost + categorical handling, pytorch_tabular) can legitimately need
+// 15-20 intermediate stage hops when the LLM retries after its first
+// cross_val_score attempt fails on raw categoricals. 12 was too tight
+// and produced TRAINING_NO_PROGRESS on recoverable flakes. 24 still
+// catches real oscillations (the LangGraph iteration cap at 48 is the
+// ultimate backstop).
+export const MAX_STAGE_HOPS_WITHOUT_TOOL = 24;
 
 // Budget for LangGraph's internal step counter. The graph cycles
 // `prepare → invoke_model → execute_tools` (3 hops per iteration) plus

@@ -56,6 +56,13 @@ target_for() {
     loan_default) echo defaulted ;;
     marketing_response) echo response_tier ;;
     iot_anomaly) echo is_anomaly ;;
+    # v3 dirty-data sweep (tmp/v3_dirty_datasets) — stress test training
+    # contract against realistic defects per the 2026-04-20 directive.
+    employee_performance) echo promoted ;;
+    insurance_claims) echo claim_approved ;;
+    product_reviews) echo helpful ;;
+    hospital_readmission) echo readmitted_30d ;;
+    telecom_tickets) echo resolved_same_day ;;
     *) echo "" ;;
   esac
 }
@@ -584,18 +591,44 @@ if [ ${#DOMAINS[@]} -eq 0 ]; then
   echo "[probe] No domains discovered under $DATA_ROOT"
   exit 2
 fi
-declare -a VARIANT_PAIRS=(
-  "standard standard.csv"
-  "bom bom.csv"
-  "latin1 latin1.csv"
-  "tsv standard.tsv"
-  "semicolon semicolon.csv"
-  "records records.json"
-  "jsonl newline.jsonl"
-  "xlsx standard.xlsx"
-  "ragged ragged.csv"
-  "schema_drift schema_drift.csv"
-)
+# VARIANT_SET selects which variant pair-list to iterate:
+#   v1v2 (default) — format/quality variants (standard, bom, latin1, tsv,
+#                    semicolon, records, jsonl, xlsx, ragged, schema_drift).
+#                    Used by the V1/V2 robustness suites.
+#   v3             — semantic-defect variants (clean, string_in_numeric,
+#                    unicode_text, mixed_dates, class_imbalance,
+#                    high_cardinality, constant_cols, heavy_nan,
+#                    ragged_rows, leaky_target). Used by the V3 dirty-data
+#                    sweep. All files are CSV; the shape is what varies.
+VARIANT_SET="${VARIANT_SET:-v1v2}"
+declare -a VARIANT_PAIRS
+if [ "$VARIANT_SET" = "v3" ]; then
+  VARIANT_PAIRS=(
+    "clean clean.csv"
+    "string_in_numeric string_in_numeric.csv"
+    "unicode_text unicode_text.csv"
+    "mixed_dates mixed_dates.csv"
+    "class_imbalance class_imbalance.csv"
+    "high_cardinality high_cardinality.csv"
+    "constant_cols constant_cols.csv"
+    "heavy_nan heavy_nan.csv"
+    "ragged_rows ragged_rows.csv"
+    "leaky_target leaky_target.csv"
+  )
+else
+  VARIANT_PAIRS=(
+    "standard standard.csv"
+    "bom bom.csv"
+    "latin1 latin1.csv"
+    "tsv standard.tsv"
+    "semicolon semicolon.csv"
+    "records records.json"
+    "jsonl newline.jsonl"
+    "xlsx standard.xlsx"
+    "ragged ragged.csv"
+    "schema_drift schema_drift.csv"
+  )
+fi
 
 for DOMAIN in "${DOMAINS[@]}"; do
   [ -n "$FILTER_DOMAIN" ] && [ "$FILTER_DOMAIN" != "$DOMAIN" ] && continue

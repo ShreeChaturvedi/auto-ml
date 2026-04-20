@@ -288,11 +288,27 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('        print(f"[data-hygiene] train_test_split dropped {dropped} rows with NaN target")');
     lines.push('        return _original_train_test_split(*new_args, **new_kwargs)');
     lines.push('_automl_sk_model_selection.train_test_split = _safe_train_test_split');
+    // Rebind the local name too: the prelude does `from sklearn.model_selection
+    // import train_test_split` at module top (line 113), which binds the
+    // ORIGINAL function into this script's namespace before the patch runs.
+    // Any later call to plain `train_test_split(...)` from the auto-derive
+    // block or a user prep segment that does the same import would hit the
+    // unpatched version. Rebind the top-level name so every caller routes
+    // through the NaN-tolerant wrapper.
+    lines.push('train_test_split = _safe_train_test_split');
     lines.push('');
     for (const segment of workflowPrepSegments) {
       lines.push(segment);
       lines.push('');
     }
+    // After the prep segments run, any `from sklearn.model_selection import
+    // train_test_split` inside them has re-shadowed our name with the
+    // patched-module reference (which IS the safe wrapper — good). But if a
+    // segment re-imported the name before the module attribute was patched
+    // (edge case: segment does `import sklearn.model_selection` then binds
+    // through it), re-pin the local name here to be safe.
+    lines.push('train_test_split = _safe_train_test_split');
+    lines.push('');
     // Auto-derive the sklearn-style X_train/X_test/y_train/y_test variables
     // when the prep segments only expose DataFrame-centric splits
     // (train_df/test_df). This happens for pytorch_tabular training (FT/Tab/

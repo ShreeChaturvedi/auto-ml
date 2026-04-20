@@ -702,21 +702,56 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('');
 
   // ── Feature importance ──
+  // fitted_model.feature_importances_ / coef_ arrays reflect the POST-
+  // transform feature space (after ColumnTransformer/OneHotEncoder), so the
+  // accompanying feature-name list must be the OHE-expanded one — not the
+  // raw feature_columns. The old fallback used raw feature_columns which
+  // rendered garbage x-axis labels when a pipeline step was not named
+  // "preprocessor" (e.g. RF on employee_performance: 10 raw names vs 338
+  // OHE importances). V3 deep-audit regression.
   lines.push('# Feature importance');
   lines.push('try:');
   lines.push('    fi = {}');
   lines.push('');
-  lines.push('    # Resolve OHE-expanded feature names from the trained pipeline');
-  lines.push('    try:');
-  lines.push('        ohe_feature_names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())');
-  lines.push('    except Exception:');
-  lines.push('        ohe_feature_names = feature_columns');
+  lines.push('    def _resolve_feature_names(expected_len):');
+  lines.push('        candidates = []');
+  lines.push('        try:');
+  lines.push('            if hasattr(pipeline, "__getitem__") and hasattr(pipeline, "steps") and len(pipeline.steps) > 1:');
+  lines.push('                prefix = pipeline[:-1]');
+  lines.push('                if hasattr(prefix, "get_feature_names_out"):');
+  lines.push('                    candidates.append(list(prefix.get_feature_names_out()))');
+  lines.push('        except Exception:');
+  lines.push('            pass');
+  lines.push('        try:');
+  lines.push('            prep = pipeline.named_steps.get("preprocessor") if hasattr(pipeline, "named_steps") else None');
+  lines.push('            if prep is not None and hasattr(prep, "get_feature_names_out"):');
+  lines.push('                candidates.append(list(prep.get_feature_names_out()))');
+  lines.push('        except Exception:');
+  lines.push('            pass');
+  lines.push('        try:');
+  lines.push('            if hasattr(pipeline, "named_steps"):');
+  lines.push('                for _step_name, _step in pipeline.named_steps.items():');
+  lines.push('                    if _step is None:');
+  lines.push('                        continue');
+  lines.push('                    if type(_step).__name__ == "ColumnTransformer" and hasattr(_step, "get_feature_names_out"):');
+  lines.push('                        try:');
+  lines.push('                            candidates.append(list(_step.get_feature_names_out()))');
+  lines.push('                        except Exception:');
+  lines.push('                            continue');
+  lines.push('        except Exception:');
+  lines.push('            pass');
+  lines.push('        candidates.append(list(feature_columns))');
+  lines.push('        for cand in candidates:');
+  lines.push('            if len(cand) == expected_len:');
+  lines.push('                return [str(name) for name in cand]');
+  lines.push('        return [f"feature_{i}" for i in range(expected_len)]');
   lines.push('');
   lines.push('    # Model-based importance');
   lines.push('    if hasattr(fitted_model, "feature_importances_"):');
+  lines.push('        _model_importances = [float(x) for x in fitted_model.feature_importances_]');
   lines.push('        fi["model_based"] = {');
-  lines.push('            "features": ohe_feature_names,');
-  lines.push('            "importances": [float(x) for x in fitted_model.feature_importances_]');
+  lines.push('            "features": _resolve_feature_names(len(_model_importances)),');
+  lines.push('            "importances": _model_importances');
   lines.push('        }');
   lines.push('    elif hasattr(fitted_model, "coef_"):');
   lines.push('        coefs = fitted_model.coef_');
@@ -724,9 +759,10 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('            coefs = np.mean(np.abs(coefs), axis=0)');
   lines.push('        else:');
   lines.push('            coefs = np.abs(coefs)');
+  lines.push('        _coef_importances = [float(x) for x in coefs]');
   lines.push('        fi["model_based"] = {');
-  lines.push('            "features": ohe_feature_names,');
-  lines.push('            "importances": [float(x) for x in coefs]');
+  lines.push('            "features": _resolve_feature_names(len(_coef_importances)),');
+  lines.push('            "importances": _coef_importances');
   lines.push('        }');
   lines.push('');
   lines.push('    if expensive_analysis_model:');

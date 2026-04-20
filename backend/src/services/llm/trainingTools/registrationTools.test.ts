@@ -43,8 +43,19 @@ vi.mock('../../../config.js', () => ({
   env: {
     get modelMetadataPath() { return '/tmp/test-models.json'; },
     get modelStorageDir() { return storageDir; },
-    get executionWorkspaceDir() { return workspaceDir; }
+    get executionWorkspaceDir() { return workspaceDir; },
+    get datasetMetadataPath() { return '/tmp/test-datasets.json'; }
   }
+}));
+
+// Dataset repo only used by the buildSampleRequestFromDataset helper;
+// return null so the helper falls back to {} (which is what the
+// existing tests expected before the sampleRequest wiring).
+vi.mock('../../../repositories/datasetRepository.js', () => ({
+  createDatasetRepository: () => ({
+    getById: vi.fn(async () => null),
+    listByProject: vi.fn(async () => [])
+  })
 }));
 
 // Now import after mocks are set up

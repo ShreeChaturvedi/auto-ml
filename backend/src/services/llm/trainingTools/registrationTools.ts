@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
+import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
 import { createModelRepository } from '../../../repositories/modelRepository.js';
 import type { DatasetProfileColumn } from '../../../types/dataset.js';
 import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
@@ -23,6 +24,45 @@ import {
 } from './workflowPrepSegments.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
+const datasetRepositoryForSampleRequest = createDatasetRepository(env.datasetMetadataPath);
+
+/**
+ * Build a `sampleRequest` payload for the deployment playground from the
+ * trained dataset's first sample row. The dataset profile stores up to
+ * ~20 sample rows; we use the first one, filtering to the model's feature
+ * columns. If any required column is missing from the sample, we fall back
+ * to 0 for numeric-looking types and empty string for strings so the
+ * /predict endpoint always has a valid demo payload.
+ */
+async function buildSampleRequestFromDataset(
+  datasetId: string | undefined,
+  featureColumns: string[]
+): Promise<Record<string, unknown>> {
+  if (!datasetId || featureColumns.length === 0) return {};
+  try {
+    const dataset = await datasetRepositoryForSampleRequest.getById(datasetId);
+    const firstRow = dataset?.sample?.[0] ?? dataset?.columns?.[0]
+      ? (dataset?.sample?.[0] as Record<string, unknown> | undefined)
+      : undefined;
+    if (!firstRow) return {};
+    const sampleRequest: Record<string, unknown> = {};
+    for (const col of featureColumns) {
+      if (col in firstRow && firstRow[col] != null) {
+        sampleRequest[col] = firstRow[col];
+      } else {
+        // Fall back to a neutral placeholder so predict proxy doesn't reject
+        // the payload. Numeric for numeric-looking column name, else empty
+        // string.
+        sampleRequest[col] = /_(count|id|num|amount|price|age|days|pct|percent|score|rate|size|length|month|year)(_|$)/i.test(col)
+          ? 0
+          : '';
+      }
+    }
+    return sampleRequest;
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Resolve an LLM-supplied artifactPath against the project's execution
@@ -402,6 +442,14 @@ export const registerModel: TrainingToolHandler = async (
     };
   }
 
+  // Build a sample request payload for the deployment playground. The
+  // non-LLM training path populates this from a Python-side
+  // `sample_row` dict; the LLM path hadn't. Without a sampleRequest,
+  // the deployment schema endpoint returns `{}` and the /predict
+  // playground has nothing to demo. Issue surfaced during the Phase 9
+  // deployment probe.
+  const sampleRequest = await buildSampleRequestFromDataset(trainedDatasetId, featureColumns ?? []);
+
   let artifact: ModelArtifact | undefined;
   try {
     const resolvedTemplateId = resolveModelTemplateId(modelType, taskType) ?? `llm-${modelType}`;
@@ -423,6 +471,7 @@ export const registerModel: TrainingToolHandler = async (
         ? experiment.targetColumn
         : undefined,
       featureColumns,
+      ...(Object.keys(sampleRequest).length > 0 ? { sampleRequest } : {}),
       // Artifact is populated after the permanent copy succeeds below.
       evaluationStatus: 'pending',
       metadata: {

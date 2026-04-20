@@ -51,6 +51,13 @@ The code must:
 - If \`modelType\` is \`tabtransformer\`, use a real TabTransformer implementation (for example \`pytorch_tabular.TabTransformerConfig\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
 - If \`modelType\` is \`fttransformer\`, use a real FT-Transformer implementation (for example \`pytorch_tabular.FTTransformerConfig\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
 - If \`modelType\` is \`tabnet\`, use a real TabNet implementation (for example \`pytorch_tabnet.TabNetClassifier\` / \`TabNetRegressor\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If \`modelType\` is \`catboost\` and the training dataframe contains raw string/categorical columns (dtype == 'object'), you MUST tell CatBoost which columns are categorical. Either (a) pass \`cat_features=[<list of categorical column names or integer indices>]\` to \`CatBoostClassifier\` / \`CatBoostRegressor\` at init OR fit time, OR (b) wrap CatBoost in a \`Pipeline\` whose preprocessor step one-hot-encodes those columns (with \`handle_unknown='ignore'\`) BEFORE CatBoost sees them. Passing raw "M"/"F"/"yes"/"no" strings without either of these steps raises \`CatBoostError: Cannot convert '...' to float\` and aborts training. Example:
+  \`\`\`python
+  categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
+  model = CatBoostClassifier(iterations=200, cat_features=categorical_features, verbose=0)
+  model.fit(X_train, y_train)
+  \`\`\`
+- If \`modelType\` is \`xgboost\` or \`lightgbm\` and the training dataframe contains raw string/categorical columns, encode them first (OneHotEncoder inside a Pipeline, pd.get_dummies, or ordinal/target encoding). XGBoost and LightGBM accept \`enable_categorical=True\` with pandas Categorical dtype but NOT raw \`object\` dtype — silent conversion failures produce opaque training errors. Safest path: always wrap them in a ColumnTransformer that one-hot-encodes object columns.
 - If the configured task type is \`regression\`, NEVER use \`stratify=y\`, \`StratifiedKFold\`, or \`StratifiedShuffleSplit\`. Regression targets must use unstratified splits.
 - If the configured task type is \`clustering\`, do not build a supervised target split or supervised metrics block.
 - If the user approved a specific estimator family (for example DecisionTree, RandomForest, KNeighbors, LogisticRegression, LinearRegression, Ridge, SVR, MLP, KMeans, LightGBM, XGBoost, or CatBoost), implement that exact family. Do NOT silently substitute a nearby baseline.

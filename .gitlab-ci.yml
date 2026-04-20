@@ -110,10 +110,14 @@ test:
 landing:build:
   extends: .run_on_branch_or_mr
   stage: build
-  # Landing is the marketing site, not the core app. Red here must NOT
-  # block a final-demo fix from merging — we only gate on backend+frontend.
-  # The vercel deploy jobs below still run only on their explicit rules.
-  allow_failure: true
+  # Historically this job was `allow_failure: true` because its vitest
+  # suite had stale demo-copy assertions. The 2026-04-20 demo-day plan
+  # Phase 6 cleaned those up (skipped the removed-guard apiFetch tests,
+  # dropped brittle demo-copy regexes, aligned the login-page spec with
+  # the current redirect-to-app behaviour) so landing:build stays green
+  # on healthy runs. The allow_failure flag is now gone — a broken
+  # landing BLOCKS the cascade, giving us a real signal before Vercel
+  # gets the tree.
   script:
     - npm --prefix landing ci
     - npm --prefix landing run typecheck

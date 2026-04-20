@@ -490,6 +490,23 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('    pipeline = _unwrapped');
   lines.push('');
 
+  // Defensive unwrap for custom class wrappers (SimpleTabNetClassifier,
+  // MyModelWrapper, etc.) — when the LLM writes its own class that forgets
+  // to implement `.predict` but holds the real sklearn-compatible
+  // estimator as an attribute. Walk common attribute names and pick the
+  // first one that has `.predict`. Handles pytorch_tabnet (`.network`),
+  // custom wrappers (`.model`/`.estimator`/`.clf`/`.inner`), and
+  // skorch-style nested estimators. Falls through to a hard error only if
+  // none of these exist.
+  lines.push('if not hasattr(pipeline, "predict") and not isinstance(pipeline, dict):');
+  lines.push("    for _attr_name in ('estimator_', 'estimator', 'model', 'model_', 'classifier_', 'classifier', 'regressor_', 'regressor', 'clf', 'clf_', 'inner', 'wrapped', 'base_estimator', 'base_estimator_'):");
+  lines.push('        _inner = getattr(pipeline, _attr_name, None)');
+  lines.push('        if _inner is not None and hasattr(_inner, "predict") and callable(getattr(_inner, "predict", None)):');
+  lines.push('            print(f"[eval] Saved wrapper lacked .predict; using inner attribute .{_attr_name} ({type(_inner).__name__}).")');
+  lines.push('            pipeline = _inner');
+  lines.push('            break');
+  lines.push('');
+
   // ── Resolve fitted estimator / compatibility sanitation ──
   lines.push('# Resolve the fitted estimator step robustly');
   lines.push('fitted_model = None');

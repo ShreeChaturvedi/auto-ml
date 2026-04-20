@@ -217,6 +217,35 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('        raise');
     lines.push('pd.Series.astype = _safe_series_astype');
     lines.push('');
+    // pd.read_csv monkey-patch: tolerate ragged/encoding-variant CSVs when a
+    // stale training segment calls `pd.read_csv(path)` with default kwargs.
+    // This mirrors kernelManager._read_csv_robust and the FE scriptBuilder
+    // fallback so the evaluator never sees a stricter parser than the
+    // ingest layer accepted. Caught failure modes:
+    //   - ParserError "Expected N fields in line M, saw K" (ragged CSV rows)
+    //   - UnicodeDecodeError (Windows-1252 / Latin-1 content in a CSV the
+    //     LLM opens with the default utf-8 encoding)
+    // The patch only activates on error — well-formed CSVs go through the
+    // original fast C parser with no behavior change. V3 ragged_rows regression.
+    lines.push('_original_read_csv = pd.read_csv');
+    lines.push('def _safe_read_csv(*args, **kwargs):');
+    lines.push('    try:');
+    lines.push('        return _original_read_csv(*args, **kwargs)');
+    lines.push('    except (pd.errors.ParserError, UnicodeDecodeError, UnicodeError) as err:');
+    lines.push('        fallback = dict(kwargs)');
+    lines.push('        fallback.setdefault("on_bad_lines", "skip")');
+    lines.push('        fallback.setdefault("engine", "python")');
+    lines.push('        try:');
+    lines.push('            result = _original_read_csv(*args, **fallback)');
+    lines.push('            print(f"[data-hygiene] pd.read_csv recovered via on_bad_lines=skip/python engine ({type(err).__name__})")');
+    lines.push('            return result');
+    lines.push('        except UnicodeDecodeError:');
+    lines.push('            fallback["encoding"] = "latin-1"');
+    lines.push('            result = _original_read_csv(*args, **fallback)');
+    lines.push('            print("[data-hygiene] pd.read_csv recovered via latin-1 fallback")');
+    lines.push('            return result');
+    lines.push('pd.read_csv = _safe_read_csv');
+    lines.push('');
     for (const segment of workflowPrepSegments) {
       lines.push(segment);
       lines.push('');

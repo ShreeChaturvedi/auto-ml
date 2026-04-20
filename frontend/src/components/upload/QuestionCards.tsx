@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -15,19 +15,14 @@ interface QuestionCardsProps {
   questions: AskUserQuestion[];
   onSubmit: (answers: QuestionAnswer[]) => void;
   disabled?: boolean;
-  animateStepChanges?: boolean;
 }
 
 type AnswerState = Record<string, string | string[]>;
 
-// Option chip states — default (muted border over a faint surface), hover
-// (border/background brighten), selected (primary ring + accent fill). All
-// opacity steps are valid Tailwind stops so the classes resolve in both the
-// frontend and landing builds.
 const getCardClassName = (selected: boolean) =>
   cn(
-    'cursor-pointer border border-border bg-background/40 transition-all hover:border-primary/40 hover:bg-accent/40',
-    selected && 'border-primary/70 bg-primary/10 ring-1 ring-primary/70 hover:bg-primary/10'
+    'cursor-pointer border transition-colors hover:border-primary/40',
+    selected && 'border-primary bg-primary/5'
   );
 
 function OptionCard({
@@ -88,26 +83,14 @@ function OptionCard({
   );
 }
 
-export function QuestionCards({
-  questions,
-  onSubmit,
-  disabled = false,
-  animateStepChanges = true,
-}: QuestionCardsProps) {
+export function QuestionCards({ questions, onSubmit, disabled = false }: QuestionCardsProps) {
   const [answers, setAnswers] = useState<AnswerState>({});
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const customInputRef = useRef<HTMLInputElement>(null);
-  const prevQuestionIdRef = useRef<string | null>(null);
 
   const currentQuestion = questions[currentIndex];
   const selected = currentQuestion ? answers[currentQuestion.id] : undefined;
-
-  useLayoutEffect(() => {
-    const id = questions[currentIndex]?.id;
-    if (id === undefined) return;
-    prevQuestionIdRef.current = id;
-  }, [questions, currentIndex]);
 
   const allowCustom = currentQuestion
     ? currentQuestion.type !== 'free_text' && (currentQuestion.allowCustom ?? true)
@@ -187,15 +170,6 @@ export function QuestionCards({
 
   const hasOptions = currentQuestion.options && currentQuestion.options.length > 0;
 
-  const shouldAnimateStepEnter =
-    animateStepChanges &&
-    prevQuestionIdRef.current !== null &&
-    prevQuestionIdRef.current !== currentQuestion.id;
-
-  const stepEnterMotionClass = shouldAnimateStepEnter
-    ? 'animate-in fade-in-0 slide-in-from-bottom-2 duration-300 ease-out motion-reduce:animate-none'
-    : '';
-
   return (
     <form
       className="space-y-4"
@@ -212,7 +186,9 @@ export function QuestionCards({
         <CardHeader className="space-y-3 pb-3">
           <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2 text-xs text-muted-foreground">
             <span>Question {currentIndex + 1} of {questions.length}</span>
-            <span className="min-w-0" aria-hidden="true" />
+            <CardDescription className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {currentQuestion.header}
+            </CardDescription>
             <div className="flex items-center justify-end gap-1" role="group" aria-label="Question navigation">
               {questions.map((question, index) => (
                 <button
@@ -239,15 +215,9 @@ export function QuestionCards({
               ))}
             </div>
           </div>
+          <CardTitle className="text-base leading-relaxed">{currentQuestion.question}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 pt-0">
-          <div key={currentQuestion.id} className={cn('space-y-4', stepEnterMotionClass)}>
-            <div className="space-y-3">
-              <CardDescription className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                {currentQuestion.header}
-              </CardDescription>
-              <CardTitle className="text-base leading-relaxed">{currentQuestion.question}</CardTitle>
-            </div>
+        <CardContent className="space-y-4">
           {currentQuestion.type === 'single_select' && hasOptions ? (
             <div
               className="space-y-2"
@@ -395,7 +365,6 @@ export function QuestionCards({
               data-testid={`custom-answer-${currentQuestion.id}`}
             />
           ) : null}
-          </div>
 
           <div className="flex items-center justify-between gap-2 pt-4 border-t border-border/40 mt-6">
             <Button

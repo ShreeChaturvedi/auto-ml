@@ -14,7 +14,6 @@ import { HomeEmptyIllustration } from '@/components/ui/illustrations';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAuthStore } from '@/stores/authStore';
-import { getLandingUrl } from '@/lib/landingUrl';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -155,22 +154,16 @@ export function HomePage() {
           <EmptyContent className="empty-state-enter" style={{ animationDelay: '400ms' }}>
             <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
           </EmptyContent>
-          <Button
-            variant="link"
-            asChild
-            className="text-muted-foreground empty-state-enter"
-            size="sm"
+          <a
+            className="empty-state-enter inline-flex items-center gap-1 rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             style={{ animationDelay: '500ms' }}
+            href="https://agentic-automl.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Learn More (opens landing page in new tab)"
           >
-            <a
-              href={getLandingUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Learn More (opens marketing site in new tab)"
-            >
-              Learn More <ArrowUpRight className="h-4 w-4" aria-hidden />
-            </a>
-          </Button>
+            Learn More <ArrowUpRight className="h-4 w-4" />
+          </a>
           <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
         </Empty>
       </div>

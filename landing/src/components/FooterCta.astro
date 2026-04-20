@@ -1,4 +1,7 @@
 ---
+import { getAppLoginUrl } from '@/lib/appLinks';
+
+const appLoginUrl = getAppLoginUrl();
 ---
 
 <section class="footer-cta" aria-labelledby="footer-cta-heading">
@@ -11,7 +14,7 @@
     The agent reads your data, writes the code, trains the models,
     and hands you a reproducible result.
   </p>
-  <a href="/login" class="footer-cta-button">
+  <a href={appLoginUrl} class="footer-cta-button">
     Get Started
     <svg class="footer-cta-arrow" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>

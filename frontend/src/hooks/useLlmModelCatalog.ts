@@ -10,7 +10,6 @@ import {
   DEFAULT_REASONING_EFFORT,
   type AssistantModelOption
 } from '@/components/llm/modelOptions';
-import { isDemoMode } from '@/lib/demoMode';
 
 let cachedCatalog: LlmModelCatalogResponse | null = null;
 let pendingCatalogRequest: Promise<LlmModelCatalogResponse> | null = null;
@@ -73,26 +72,6 @@ function emptyCatalogState() {
   };
 }
 
-function demoCatalogState() {
-  const defaultOption: AssistantModelOption = {
-    value: DEFAULT_ASSISTANT_MODEL,
-    label: 'GPT 5.4',
-    kind: 'base',
-    description: 'Landing demo catalog placeholder.',
-    supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
-    defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
-    featured: true
-  };
-
-  return {
-    catalog: null as LlmModelCatalogResponse | null,
-    featuredModelOptions: [defaultOption],
-    allModelOptions: [defaultOption],
-    defaultModel: DEFAULT_ASSISTANT_MODEL,
-    defaultReasoningEffort: DEFAULT_REASONING_EFFORT
-  };
-}
-
 export function resetLlmModelCatalogCacheForTests() {
   cachedCatalog = null;
   pendingCatalogRequest = null;
@@ -100,14 +79,6 @@ export function resetLlmModelCatalogCacheForTests() {
 
 export function useLlmModelCatalog() {
   const [state, setState] = useState(() => {
-    if (isDemoMode()) {
-      return {
-        ...demoCatalogState(),
-        isLoading: false,
-        error: null as Error | null
-      };
-    }
-
     if (!cachedCatalog) {
       return {
         ...emptyCatalogState(),
@@ -124,7 +95,7 @@ export function useLlmModelCatalog() {
   });
 
   useEffect(() => {
-    if (isDemoMode() || cachedCatalog) {
+    if (cachedCatalog) {
       return;
     }
 

@@ -13,7 +13,7 @@ import { getOrCreateContainer, isDockerAvailable } from './containerManager.js';
 import { runEvaluation } from './evaluationService.js';
 import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
-import { getModelTemplate, listModelTemplates } from './modelTemplates.js';
+import { getModelTemplate, listModelTemplates, resolveModelTemplateId } from './modelTemplates.js';
 import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
 import { deleteTuningStudiesByModelId } from './tuningService.js';
 
@@ -330,12 +330,32 @@ function normalizeEvaluationFailureStatus(record: ModelRecord | undefined): Mode
   };
 }
 
+function normalizeTemplateId(record: ModelRecord | undefined): ModelRecord | undefined {
+  if (!record) {
+    return undefined;
+  }
+
+  const resolvedTemplateId = resolveModelTemplateId(record.templateId, record.taskType);
+  if (!resolvedTemplateId || resolvedTemplateId === record.templateId) {
+    return record;
+  }
+
+  return {
+    ...record,
+    templateId: resolvedTemplateId,
+  };
+}
+
+function normalizeModelRecord(record: ModelRecord | undefined): ModelRecord | undefined {
+  return normalizeTemplateId(normalizeEvaluationFailureStatus(record));
+}
+
 export function listModels(projectId?: string) {
-  return modelRepository.list(projectId).then((records) => records.map((record) => normalizeEvaluationFailureStatus(record) ?? record));
+  return modelRepository.list(projectId).then((records) => records.map((record) => normalizeModelRecord(record) ?? record));
 }
 
 export function getModelById(modelId: string) {
-  return modelRepository.getById(modelId).then((record) => normalizeEvaluationFailureStatus(record));
+  return modelRepository.getById(modelId).then((record) => normalizeModelRecord(record));
 }
 
 export function updateModelRecord(

@@ -43,6 +43,10 @@ vi.mock('../../repositories/modelRepository.js', () => ({
 vi.mock('../../repositories/datasetRepository.js', () => ({
   createDatasetRepository: () => ({
     getById: hoisted.mockDatasetGetById,
+    // listByProject is used by the featureColumns-superset fallback
+    // added in #342. Default to empty so the fallback is a no-op in
+    // tests that don't explicitly stub it.
+    listByProject: vi.fn().mockResolvedValue([]),
   }),
 }));
 

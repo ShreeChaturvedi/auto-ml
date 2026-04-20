@@ -304,8 +304,31 @@ async function resolveLatestStepNotebookContext(
   }
 
   const controllerSummary = asRecord(state.controllerSummary);
-  const runId = asString(controllerSummary?.runId);
-  const stepId = asString(controllerSummary?.activeStepId) ?? asString(controllerSummary?.currentStepId);
+  let runId = asString(controllerSummary?.runId);
+  let stepId = asString(controllerSummary?.activeStepId) ?? asString(controllerSummary?.currentStepId);
+
+  // Fallback: scan recent tool results for (runId, stepId). All preprocessing
+  // tools (propose/materialize/execute/validate/commit) return these in their
+  // output payload. If the controllerSummary is stale or empty (seen after
+  // execute_transformation_step on clean datasets where validate's
+  // deterministic action ran before the controller was refreshed), this
+  // keeps the workflow moving instead of silently hopping stages. Issue #343.
+  if (!runId || !stepId) {
+    const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+    for (let index = currentTurnResults.length - 1; index >= 0; index -= 1) {
+      const output = asRecord(currentTurnResults[index]?.output);
+      if (!output) continue;
+      const candidateRunId = asString(output.runId);
+      const step = asRecord(output.step);
+      const candidateStepId = asString(output.stepId) ?? (step ? asString(step.stepId) : null);
+      if (candidateRunId && candidateStepId) {
+        runId = runId ?? candidateRunId;
+        stepId = stepId ?? candidateStepId;
+        break;
+      }
+    }
+  }
+
   if (!runId || !stepId) {
     return null;
   }

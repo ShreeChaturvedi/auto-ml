@@ -12,7 +12,6 @@ export function ComputeAnimation({
   isComplete,
   accentClassName,
   onSettled,
-  durationScale = 1,
 }: ComputeAnimationProps) {
   const uid = useId().replace(/:/g, '');
   const { visibleFiles, visibleResults } = useComputeAnimationState(
@@ -39,7 +38,6 @@ export function ComputeAnimation({
         isComplete={isComplete}
         visibleFiles={visibleFiles}
         visibleResults={visibleResults}
-        durationScale={durationScale}
       />
     </div>
   );

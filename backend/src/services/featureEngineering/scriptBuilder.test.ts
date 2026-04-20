@@ -24,7 +24,7 @@ describe('buildFeatureEngineeringScript', () => {
 
     expect(script).toContain('import pandas as pd');
     expect(script).toContain('dataset_path = resolve_dataset_path("train.csv", "ds-123")');
-    expect(script).toContain('df = pd.read_csv(dataset_path)');
+    expect(script).toContain("df = pd.read_csv(dataset_path, on_bad_lines='skip', engine='python')");
     expect(script).toContain('# Feature: value_log');
     expect(script).toContain('df["value_log"] = np.log1p(df["value"])');
     expect(script).toContain('df.to_csv(output_path, index=False)');
@@ -57,8 +57,11 @@ describe('buildFeatureEngineeringScript', () => {
     ];
     const script = buildFeatureEngineeringScript({ ...baseParams, features });
 
-    // Dataset loads once at the top
-    expect((script.match(/pd\.read_csv\(dataset_path\)/g) ?? []).length).toBe(1);
+    // Dataset loads once at the top (lenient read_csv since #341/#343 +
+    // one nested occurrence inside the LLM-code wrapper for the ratio feature)
+    expect(
+      (script.match(/pd\.read_csv\(dataset_path,\s+on_bad_lines='skip',\s+engine='python'\)/g) ?? []).length
+    ).toBe(1);
 
     // Simple template for log1p
     expect(script).toContain('df["value_log"] = np.log1p(df["value"])');

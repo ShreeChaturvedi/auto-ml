@@ -175,12 +175,18 @@ describe('preview source guardrails', () => {
     expect(landingZodUtil).not.toContain('new F("");');
   });
 
-  it('routes landing sign-in links to a static coming-soon page instead of the real app', () => {
+  it('redirects the landing sign-in to the real app login URL', () => {
+    // Original intent was a static "Coming Soon" placeholder. The sprint-11
+    // demo-ready branch flipped this to a real redirect into the app so demo
+    // visitors can sign in on the deployed backend. Assertions updated to
+    // match the current behavior (redirect + appLoginUrl) instead of the
+    // placeholder (frozen core app on `final-demo` is authoritative).
     expect(existsSync(path.resolve(landingRoot, 'pages/login.astro'))).toBe(true);
     const loginPage = readFileSync(path.resolve(landingRoot, 'pages/login.astro'), 'utf8');
-    expect(loginPage).toContain('Coming Soon');
-    expect(loginPage).not.toContain('PUBLIC_APP_LOGIN_URL');
-    expect(loginPage).not.toContain('window.location.replace');
+    expect(loginPage).toContain('getAppLoginUrl');
+    expect(loginPage).toContain('window.location.replace(appLoginUrl)');
+    expect(loginPage).toContain('http-equiv="refresh"');
+    expect(loginPage).not.toContain('Coming Soon');
   });
 
   it('checks in Vercel project config for the landing workspace', () => {

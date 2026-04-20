@@ -1,12 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getReduceMotionPref, subscribeReduceMotionPref } from '@/lib/generalPrefs';
 
-function getServerSnapshot(): boolean {
-  return false;
-}
-
 export function usePrefersReducedMotion(): boolean {
-  const appPref = useSyncExternalStore(subscribeReduceMotionPref, getReduceMotionPref, getServerSnapshot);
+  const appPref = useSyncExternalStore(subscribeReduceMotionPref, getReduceMotionPref);
   const [osPref, setOsPref] = useState(false);
 
   useEffect(() => {

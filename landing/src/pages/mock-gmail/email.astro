@@ -7,10 +7,10 @@ import Root from '@/layouts/Root.astro';
 import GmailHeader from '@/components/mock/GmailHeader.astro';
 import GmailSidebar from '@/components/mock/GmailSidebar.astro';
 import VerificationEmailBody from '@/components/mock/VerificationEmailBody.astro';
+import { getVerifyEmailUrl } from '@/lib/appLinks';
 
-// The real frontend lives on port 5173 during `npm run capture:demo`.
 // Token value matches `MOCK_VERIFY_TOKEN` in `video/scripts/capture-demo.ts`.
-const VERIFY_URL = 'http://localhost:5173/verify-email?token=mock-verify-token-abc123';
+const VERIFY_URL = getVerifyEmailUrl('mock-verify-token-abc123');
 const RECIPIENT_NAME = 'Ayush';
 ---
 

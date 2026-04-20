@@ -8,6 +8,8 @@
     "build": "remotion render remotion/index.ts main out/final.mp4 --crf 18",
     "build:draft": "remotion render remotion/index.ts main out/draft.mp4 --crf 28 --scale 0.5 --x264-preset fast",
     "build:only": "remotion render remotion/index.ts main out/partial.mp4",
+    "render:app-demo:chunks": "tsx scripts/render-app-demo-chunks.ts --phase=all",
+    "render:app-demo:chunks:draft": "tsx scripts/render-app-demo-chunks.ts --phase=all --draft",
     "render:lambda": "tsx scripts/render-lambda.mts",
     "voiceover": "tsx scripts/voiceover.mts",
     "capture:demo": "tsx scripts/capture-demo.ts",

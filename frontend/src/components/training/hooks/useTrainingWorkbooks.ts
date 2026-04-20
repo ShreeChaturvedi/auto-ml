@@ -101,7 +101,7 @@ export function useTrainingWorkbooks(
     if (!projectId) return;
     const sessionStore = useWorkflowSessionStore.getState();
     const matchingSessionKeys = findWorkbookSessionKeys(workbookId);
-    let interruptedRunIds = new Set<string>();
+    const interruptedRunIds = new Set<string>();
 
     for (const sessionKey of matchingSessionKeys) {
       const session = sessionStore.getSession(sessionKey);
@@ -412,16 +412,47 @@ export function useTrainingWorkbooks(
     })();
   }, [activeWorkbookId, interruptWorkbookWorkflow, projectId, workbooks]);
 
+  // Sidebar "+" and rename dialog go through the registry. Register the
+  // phase-hook versions so sidebar mutations land in React state +
+  // localStorage (issues #325 + #326). Previously only delete was wired;
+  // the sidebar's direct registry mutations for add/rename were ephemeral
+  // and clobbered on the next sync tick.
+  const addWorkbookFromRegistry = useCallback((): string | undefined => {
+    const newId = createWorkbookId();
+    const newWorkbook: WorkbookEntry = {
+      id: newId,
+      name: nextWorkbookName(workbooks),
+      notebookId: null
+    };
+    setWorkbooks((prev) => [...prev, newWorkbook]);
+    setActiveWorkbookId(newId);
+    syncRequestedWorkbookParam(newId, false);
+    toast.success(`${newWorkbook.name} created`);
+    return newId;
+  }, [syncRequestedWorkbookParam, workbooks]);
+
+  const renameWorkbookById = useCallback((id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setWorkbooks((prev) => prev.map((w) => (w.id === id ? { ...w, name: trimmed } : w)));
+  }, []);
+
   useEffect(() => {
     if (!ready) {
       return;
     }
 
-    useWorkbookRegistryStore.getState().setDeleteHandler('training', deleteWorkbookById);
+    const store = useWorkbookRegistryStore.getState();
+    store.setDeleteHandler('training', deleteWorkbookById);
+    store.setAddHandler('training', addWorkbookFromRegistry);
+    store.setRenameHandler('training', renameWorkbookById);
     return () => {
-      useWorkbookRegistryStore.getState().setDeleteHandler('training', null);
+      const s = useWorkbookRegistryStore.getState();
+      s.setDeleteHandler('training', null);
+      s.setAddHandler('training', null);
+      s.setRenameHandler('training', null);
     };
-  }, [deleteWorkbookById, ready]);
+  }, [addWorkbookFromRegistry, deleteWorkbookById, ready, renameWorkbookById]);
 
   return {
     workbooks,

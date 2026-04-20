@@ -36,7 +36,7 @@ export function useDataViewerQueryHandlers({
   tableNames,
 }: UseDataViewerQueryHandlersOptions) {
   const [isExecuting, setIsExecuting] = useState(false);
-  const [queryMode, setQueryMode] = useState<QueryMode>('english');
+  const [queryMode, setQueryMode] = useState<QueryMode>('sql');
 
   const handleExecuteQuery = useCallback(
     async (query: string, mode: QueryMode) => {

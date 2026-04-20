@@ -183,24 +183,36 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('');
     lines.push('_NUMERIC_DTYPE_TOKENS = ("float", "int", "float32", "float64", "int32", "int64", "number")');
     lines.push('_BOOL_DTYPE_TOKENS = ("bool", "boolean")');
+    // Fire the coercion ladder for any "stringy" source dtype — plain object,
+    // pandas StringDtype (dtype name == "string" / "string[python]"), or
+    // CategoricalDtype wrapping strings. The LLM's training code sometimes
+    // does `df[col] = df[col].astype("string")` before a later cast to
+    // float/boolean; both the object and string paths end up in this branch.
+    lines.push('def _is_stringy_dtype(dt):');
+    lines.push('    if dt == object: return True');
+    lines.push('    try:');
+    lines.push('        name = str(dt).lower()');
+    lines.push('    except Exception:');
+    lines.push('        return False');
+    lines.push('    return "string" in name or name.startswith("str") or (name == "category")');
     lines.push('_original_series_astype = pd.Series.astype');
     lines.push('def _safe_series_astype(self, dtype, *args, **kwargs):');
     lines.push('    try:');
     lines.push('        return _original_series_astype(self, dtype, *args, **kwargs)');
     lines.push('    except (ValueError, TypeError):');
     lines.push('        _dt_lower = str(dtype).lower()');
-    lines.push('        if self.dtype == object and any(tok in _dt_lower for tok in _NUMERIC_DTYPE_TOKENS):');
+    lines.push('        if _is_stringy_dtype(self.dtype) and any(tok in _dt_lower for tok in _NUMERIC_DTYPE_TOKENS):');
     lines.push('            coerced = _automl_try_coerce(self, dtype)');
     lines.push('            if coerced is not None:');
-    lines.push('                print(f"[data-hygiene] auto-coerced Series to {dtype} via yes/no or numeric-string mapping")');
+    lines.push('                print(f"[data-hygiene] auto-coerced {self.dtype} → {dtype} via yes/no or numeric-string mapping")');
     lines.push('                return coerced');
-    lines.push('        # Boolean / boolean[pandas] cast on yes/no / true/false / y/n object column');
-    lines.push('        if self.dtype == object and any(tok in _dt_lower for tok in _BOOL_DTYPE_TOKENS):');
+    lines.push('        # Boolean / boolean[pandas] cast on yes/no / true/false / y/n string-like column');
+    lines.push('        if _is_stringy_dtype(self.dtype) and any(tok in _dt_lower for tok in _BOOL_DTYPE_TOKENS):');
     lines.push('            stripped = self.astype(str).str.strip().str.lower()');
     lines.push('            non_null = stripped[(stripped.notna()) & (stripped != "") & (stripped != "nan")]');
     lines.push('            if len(non_null) > 0 and non_null.isin(list(_BOOL_LIKE_MAP.keys())).all():');
     lines.push('                mapped = stripped.map(_BOOL_LIKE_MAP).astype("Int64")');
-    lines.push('                print(f"[data-hygiene] auto-coerced Series to {dtype} via yes/no → 0/1 mapping")');
+    lines.push('                print(f"[data-hygiene] auto-coerced {self.dtype} → {dtype} via yes/no → 0/1 mapping")');
     lines.push('                return mapped.astype(dtype) if "boolean" in _dt_lower else (mapped == 1)');
     lines.push('        raise');
     lines.push('pd.Series.astype = _safe_series_astype');

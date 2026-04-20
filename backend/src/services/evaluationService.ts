@@ -996,8 +996,16 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   if (taskType === 'classification') {
     lines.push('if effective_task_type == "classification" and not _is_multi_output:');
     lines.push('    # Classification-specific metrics');
-    lines.push('    labels = sorted([str(c) for c in y.unique()])');
-    lines.push('    cm = confusion_matrix(y_test, y_pred, labels=sorted(y.unique()))');
+    // Filter NaN/None out of unique labels before sorting. Mixed None+str
+    // labels (e.g. from a target column that still had NaN rows when eval
+    // replayed the corrected prep code) break Python 3\'s TypeError on
+    // NoneType vs str comparisons inside sorted(). Also compute the string
+    // label list from the CLEANED native list so confusion_matrix\'s labels
+    // array matches what we expose on the chart.
+    lines.push('    _unique_native_labels = [c for c in y.unique() if c is not None and not pd.isna(c)]');
+    lines.push('    _sorted_native_labels = sorted(_unique_native_labels, key=lambda c: str(c))');
+    lines.push('    labels = [str(c) for c in _sorted_native_labels]');
+    lines.push('    cm = confusion_matrix(y_test, y_pred, labels=_sorted_native_labels)');
     lines.push('    cm_normalized = cm.astype(float) / cm.sum(axis=1, keepdims=True)');
     lines.push('    cm_normalized = np.nan_to_num(cm_normalized)');
     lines.push('    result["confusion_matrix"] = {');

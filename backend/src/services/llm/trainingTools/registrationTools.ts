@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
+import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
 import { createModelRepository } from '../../../repositories/modelRepository.js';
 import type { DatasetProfileColumn } from '../../../types/dataset.js';
 import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
@@ -23,6 +24,59 @@ import {
 } from './workflowPrepSegments.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
+const datasetRepositoryForSampleRequest = createDatasetRepository(env.datasetMetadataPath);
+
+/**
+ * Build a `sampleRequest` payload AND `featureTypes` map for the deployment
+ * playground from the trained dataset's first sample row + column profile.
+ *
+ * Returns:
+ *   - sampleRequest: { featureName: sample_value_from_first_row }
+ *   - featureTypes: { featureName: 'number' | 'boolean' | 'string' }
+ *     (used by the inference server's Pydantic model so the /predict
+ *     endpoint accepts strings for categorical fields instead of
+ *     rejecting everything as non-float).
+ *
+ * Missing sample values fall back to 0 (numeric-looking names) or ''.
+ */
+async function buildSampleRequestFromDataset(
+  datasetId: string | undefined,
+  featureColumns: string[]
+): Promise<{ sampleRequest: Record<string, unknown>; featureTypes: Record<string, 'float' | 'int' | 'str'> }> {
+  if (!datasetId || featureColumns.length === 0) return { sampleRequest: {}, featureTypes: {} };
+  try {
+    const dataset = await datasetRepositoryForSampleRequest.getById(datasetId);
+    const firstRow = dataset?.sample?.[0] as Record<string, unknown> | undefined;
+    const columnProfiles = dataset?.columns ?? [];
+    const dtypeByName = new Map<string, string>(
+      columnProfiles.map((col) => [col.name, (col.dtype ?? 'string').toLowerCase()])
+    );
+    // Inference server Pydantic schema uses the Python-like type names
+    // 'float' / 'int' / 'str'. Map dataset dtypes accordingly. Booleans
+    // go to 'int' (0/1) so FastAPI accepts the JSON payload cleanly
+    // without special-casing.
+    const toInferenceType = (dtype: string): 'float' | 'int' | 'str' => {
+      if (dtype === 'float' || dtype === 'number') return 'float';
+      if (dtype === 'integer' || dtype === 'int' || dtype === 'boolean' || dtype === 'bool') return 'int';
+      return 'str';
+    };
+    const sampleRequest: Record<string, unknown> = {};
+    const featureTypes: Record<string, 'float' | 'int' | 'str'> = {};
+    for (const col of featureColumns) {
+      const dtype = dtypeByName.get(col) ?? 'string';
+      const infType = toInferenceType(dtype);
+      featureTypes[col] = infType;
+      if (firstRow && col in firstRow && firstRow[col] != null) {
+        sampleRequest[col] = firstRow[col];
+      } else {
+        sampleRequest[col] = infType === 'str' ? '' : 0;
+      }
+    }
+    return { sampleRequest, featureTypes };
+  } catch {
+    return { sampleRequest: {}, featureTypes: {} };
+  }
+}
 
 /**
  * Resolve an LLM-supplied artifactPath against the project's execution
@@ -317,6 +371,16 @@ export const registerModel: TrainingToolHandler = async (
 ): Promise<TrainingToolResult> => {
   const { args, run, projectId, datasetId } = ctx;
 
+  // Prefer the dataset the training run actually fit on, not the
+  // upload dataset the client passed in. Preprocessing commits update
+  // `run.activeDatasetId` to the latest derived dataset — that's the
+  // file the training cell's `pd.read_csv(FILENAME)` loaded from. If we
+  // persist the original upload id here, evaluation later reads the raw
+  // CSV and `pipeline.predict(X_test)` crashes with "columns are
+  // missing" because the fitted ColumnTransformer expects the one-hot
+  // encoded schema. Issue #342.
+  const trainedDatasetId = run.activeDatasetId ?? datasetId;
+
   const resolved = resolveExperiment(run, args);
   if ('error' in resolved) return resolved;
   const { experiment } = resolved;
@@ -392,12 +456,23 @@ export const registerModel: TrainingToolHandler = async (
     };
   }
 
+  // Build a sample request payload for the deployment playground. The
+  // non-LLM training path populates this from a Python-side
+  // `sample_row` dict; the LLM path hadn't. Without a sampleRequest,
+  // the deployment schema endpoint returns `{}` and the /predict
+  // playground has nothing to demo. Issue surfaced during the Phase 9
+  // deployment probe.
+  const { sampleRequest, featureTypes } = await buildSampleRequestFromDataset(
+    trainedDatasetId,
+    featureColumns ?? []
+  );
+
   let artifact: ModelArtifact | undefined;
   try {
     const resolvedTemplateId = resolveModelTemplateId(modelType, taskType) ?? `llm-${modelType}`;
     const record = await modelRepository.create({
       projectId,
-      datasetId: datasetId ?? '',
+      datasetId: trainedDatasetId ?? '',
       name: modelName,
       templateId: resolvedTemplateId,
       taskType,
@@ -413,6 +488,8 @@ export const registerModel: TrainingToolHandler = async (
         ? experiment.targetColumn
         : undefined,
       featureColumns,
+      ...(Object.keys(sampleRequest).length > 0 ? { sampleRequest } : {}),
+      ...(Object.keys(featureTypes).length > 0 ? { featureTypes } : {}),
       // Artifact is populated after the permanent copy succeeds below.
       evaluationStatus: 'pending',
       metadata: {

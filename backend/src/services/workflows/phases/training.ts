@@ -1094,7 +1094,13 @@ async function buildTrainingCodeGenerationAction(
 function extractLatestTrainingDraftMetadata(
   state: WorkflowGraphState
 ): TrainingDraftMetadata | null {
-  const latestExperimentId = extractLatestExperimentIdFromHistory(state);
+  // Intentionally NOT pre-filtering by `extractLatestExperimentIdFromHistory(state)`
+  // — that filter was introduced by the sprint11 merge and caused #332:
+  // when a user approves a SECOND model in the same turn, register_model
+  // for the first model wins the reverse scan and the filter then drops
+  // the newer draft because its experimentId !== latestExperimentId.
+  // Callers that need experiment-scoped filtering already do it themselves
+  // (selectTrainingExecutionExperiment + collectTrainingDraftNotebookActivity).
   const callSources = [
     state.toolCallHistory.slice(state.turnStartToolCallCount),
     state.toolCallHistory,
@@ -1113,9 +1119,6 @@ function extractLatestTrainingDraftMetadata(
         continue;
       }
       const experimentId = asString(trainingDraft.experimentId) ?? undefined;
-      if (latestExperimentId && experimentId && experimentId !== latestExperimentId) {
-        continue;
-      }
 
       const segments = rawSegments
         .map((value) => asRecord(value))
@@ -1225,6 +1228,82 @@ function extractTrainingDraftRunStatuses(
   });
 }
 
+/**
+ * Returns the content string of every cell the workflow wrote (or re-wrote)
+ * as part of the given training draft. For any cellId that was written
+ * multiple times (the LLM's mid-turn correction path), the LATEST content
+ * wins. This is the trusted source for "did the LLM actually write a
+ * `joblib.dump(...)` line?" — checking `draft.segments[i].content` would
+ * lie because that array reflects the INITIAL plan, never the live cell.
+ */
+function collectTrainingDraftWrittenContent(
+  state: WorkflowGraphState,
+  draftId: string
+): string[] {
+  const latestByCellId = new Map<string, string>();
+  const anonymousContents: string[] = [];
+
+  for (let index = 0; index < state.toolCallHistory.length; index += 1) {
+    const call = state.toolCallHistory[index];
+    if (!call || !['write_cell', 'edit_cell', 'insert_cell'].includes(call.tool)) {
+      continue;
+    }
+    if (extractTrainingDraftIdFromCall(call) !== draftId) {
+      continue;
+    }
+    const args = asRecord(call.args);
+    const content = asString(args?.content);
+    if (!content) {
+      continue;
+    }
+    const argCellId = asString(args?.cellId);
+    const resultOutput = getOutputRecord(state.toolResultHistory[index]);
+    const resolvedCellId = argCellId
+      ?? asString(resultOutput?.cellId)
+      ?? asString(asRecord(resultOutput?.cell)?.cellId);
+    if (resolvedCellId) {
+      latestByCellId.set(resolvedCellId, content);
+    } else {
+      anonymousContents.push(content);
+    }
+  }
+
+  return [...latestByCellId.values(), ...anonymousContents];
+}
+
+/**
+ * True iff any cell actually written during this training draft contains a
+ * `joblib.dump(...)` call. Unlike checking `draft.segments`, this reflects
+ * the LLM's live, post-correction notebook state.
+ */
+function anyWrittenCellSavesArtifact(state: WorkflowGraphState, draftId: string): boolean {
+  return collectTrainingDraftWrittenContent(state, draftId).some((content) =>
+    /joblib\.dump\s*\(/.test(content)
+  );
+}
+
+/**
+ * Detects whether the current turn has a register_model failure whose error
+ * text indicates a missing artifact (e.g. ENOENT on model.joblib). When true
+ * the caller should force-inject the completion footer so the subsequent
+ * register_model retry can succeed.
+ */
+function hasRegisterModelArtifactFailure(state: WorkflowGraphState): boolean {
+  const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
+  for (let index = currentTurnResults.length - 1; index >= 0; index -= 1) {
+    const result = currentTurnResults[index];
+    if (result.tool !== 'register_model') continue;
+    if (!result.error) return false;
+    const message = typeof result.error === 'string' ? result.error.toLowerCase() : '';
+    if (!message) return false;
+    // Stable substrings of the registrationTools error messages.
+    return message.includes('locate the model artifact')
+      || message.includes('enoent')
+      || (message.includes('artifact') && message.includes('no such'));
+  }
+  return false;
+}
+
 async function buildTrainingWriteCodeAction(
   state: WorkflowGraphState
 ): Promise<import('../../../types/llm.js').ToolCall[]> {
@@ -1254,15 +1333,15 @@ async function buildTrainingWriteCodeAction(
     return [];
   }
   // Training is only "complete" when BOTH the __TRAIN_COMPLETE__ marker was
-  // printed AND the model artifact was actually saved by a prior segment.
-  // If the marker fired but no segment called joblib.dump, we still need to
-  // emit the completion footer so register_model can find model.joblib —
-  // otherwise register_model fails with ENOENT and the repair loop churns.
+  // printed AND the model artifact was actually saved by a cell that was
+  // WRITTEN to the notebook — not merely planned in draft.segments. If the
+  // marker fired but no WRITTEN cell called joblib.dump, we still need to
+  // emit the completion footer so register_model can find model.joblib.
+  // Gap #2 fix: checking draft.segments[i].content here used to wrongly
+  // treat the unwritten "Artifact Save" plan segment as proof of save.
   const hasCompletedRunMarker = draftActivity.runResults.some(isCompletedTrainingRunCell);
-  const anySegmentSavesArtifact = draft.segments.some((segment) =>
-    typeof segment.content === 'string' && /joblib\.dump\s*\(/.test(segment.content)
-  );
-  if (hasCompletedRunMarker && anySegmentSavesArtifact) {
+  const savedArtifactInWrittenCells = anyWrittenCellSavesArtifact(state, draft.draftId);
+  if (hasCompletedRunMarker && savedArtifactInWrittenCells) {
     return [];
   }
   if (isFailedToolResult(draftActivity.runResults.at(-1) ?? null)) {
@@ -1282,43 +1361,47 @@ async function buildTrainingWriteCodeAction(
     return parsedRun.success ? [parsedRun.data] : [];
   }
 
-  if (writtenCellIds.length >= draft.segments.length && runStatuses.length >= draft.segments.length) {
-    // Only skip the completion footer if a prior segment actually saves the
-    // artifact (joblib.dump) AND emits the __TRAIN_COMPLETE__ marker. The LLM
-    // sometimes prints the marker without saving model.joblib, which makes
-    // register_model fail with ENOENT. Treating marker presence as proof of
-    // artifact save was the root cause of that failure.
-    const completionFooterAlreadyExists = draft.segments.some((segment) => {
-      if (segment.title === 'Finalize Model Artifact and Metrics') return true;
-      const content = segment.content;
-      const hasMarker = content.includes('__TRAIN_COMPLETE__|');
-      const hasArtifactSave = /joblib\.dump\s*\(/.test(content);
-      return hasMarker && hasArtifactSave;
+  // Completion-footer injection — fires when ANY of:
+  //   A) all planned segments have been written and run (original condition),
+  //   B) the LLM skipped past the Artifact Save segment into execute_training
+  //      and register_model subsequently failed with "could not locate the
+  //      model artifact" (ENOENT). In case B we force-write the footer so the
+  //      register_model retry has a model.joblib on disk.
+  // We only need to inject if NO written cell already contains joblib.dump.
+  const registerModelFailedOnArtifact = hasRegisterModelArtifactFailure(state);
+  const allPlannedSegmentsRun = writtenCellIds.length >= draft.segments.length
+    && runStatuses.length >= draft.segments.length;
+  if ((allPlannedSegmentsRun || registerModelFailedOnArtifact) && !savedArtifactInWrittenCells) {
+    const completionSegment = buildTrainingCompletionFooterSegment();
+    const completionDraft: TrainingDraftMetadata = {
+      ...draft,
+      segmentIndex: draft.segments.length,
+      segments: [...draft.segments, completionSegment]
+    };
+    const parsedFooterWrite = ToolCallSchema.safeParse({
+      id: `wf-call-auto-write-training-${draft.draftId}-${completionDraft.segmentIndex}`,
+      tool: 'write_cell',
+      args: {
+        title: completionSegment.title,
+        cellType: 'code',
+        content: completionSegment.content,
+        metadata: {
+          phase: 'training',
+          source: 'training-lifecycle',
+          trainingDraft: completionDraft
+        }
+      },
+      rationale: registerModelFailedOnArtifact
+        ? 'register_model failed with ENOENT — inject a save+marker cell so the retry can locate model.joblib.'
+        : 'Append a finalization cell so the training workflow saves the artifact and emits the completion marker.'
     });
-    if (!completionFooterAlreadyExists) {
-      const completionSegment = buildTrainingCompletionFooterSegment();
-      const completionDraft: TrainingDraftMetadata = {
-        ...draft,
-        segmentIndex: draft.segments.length,
-        segments: [...draft.segments, completionSegment]
-      };
-      const parsedFooterWrite = ToolCallSchema.safeParse({
-        id: `wf-call-auto-write-training-${draft.draftId}-${completionDraft.segmentIndex}`,
-        tool: 'write_cell',
-        args: {
-          title: completionSegment.title,
-          cellType: 'code',
-          content: completionSegment.content,
-          metadata: {
-            phase: 'training',
-            source: 'training-lifecycle',
-            trainingDraft: completionDraft
-          }
-        },
-        rationale: 'Append a finalization cell so the training workflow saves the artifact and emits the completion marker.'
-      });
-      return parsedFooterWrite.success ? [parsedFooterWrite.data] : [];
-    }
+    return parsedFooterWrite.success ? [parsedFooterWrite.data] : [];
+  }
+
+  if (allPlannedSegmentsRun) {
+    // All planned segments ran AND a written cell already saved the artifact.
+    // Nothing more to do here — downstream stages (execute_training,
+    // evaluate_results, register_model) handle the rest.
     return [];
   }
 

@@ -5,6 +5,7 @@ import { appLogger } from '../../../logging/logger.js';
 import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
 import { createProjectRepository } from '../../../repositories/projectRepository.js';
 import type { ModelTaskType } from '../../../types/model.js';
+import { findLikelyIdentifierColumns } from '../../columnClassification.js';
 import { inferSpecificModelType } from '../../runtimeDependencies.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
@@ -169,13 +170,23 @@ export const configureExperiment: TrainingToolHandler = async (
     };
   }
 
+  // Family-prefix match is acceptable: a name like "decision_tree_churn_prediction"
+  // (inferred → "decision_tree") paired with modelType="decision_tree_regressor"
+  // or "decision_tree_classifier" is the SAME family — the suffix just makes
+  // the estimator choice more specific. Only reject when the families
+  // genuinely differ (e.g., name says "tabnet" but type is "tabtransformer").
   if (modelTypeFromExperimentName && modelType !== modelTypeFromExperimentName) {
-    return {
-      error:
-        `Experiment name "${experimentName}" implies modelType="${modelTypeFromExperimentName}" `
-        + `but configure_experiment requested "${modelType}". Retry with modelType="${modelTypeFromExperimentName}" `
-        + 'and do not substitute a proxy model.'
-    };
+    const typesInSameFamily =
+      modelType.startsWith(`${modelTypeFromExperimentName}_`)
+      || modelTypeFromExperimentName.startsWith(`${modelType}_`);
+    if (!typesInSameFamily) {
+      return {
+        error:
+          `Experiment name "${experimentName}" implies modelType="${modelTypeFromExperimentName}" `
+          + `but configure_experiment requested "${modelType}". Retry with modelType="${modelTypeFromExperimentName}" `
+          + 'and do not substitute a proxy model.'
+      };
+    }
   }
 
   // Enforce the Feature Engineering pipeline handoff. If the project has
@@ -187,6 +198,40 @@ export const configureExperiment: TrainingToolHandler = async (
   // FE features exist); this handler-level default makes the happy path
   // work even when the LLM forgets.
   const enabledFeatureNames = await loadEnabledFeatureNames(projectId, turn.datasetId ?? undefined);
+  // Load the dataset profile early — used both by the feature-columns
+  // identifier guard below and by the taskType resolver further down.
+  const datasetProfileForExperiment = turn.datasetId
+    ? await datasetRepository.getById(turn.datasetId).catch(() => undefined)
+    : undefined;
+
+  // Identifier guard (issue #336): drop high-cardinality identifier columns
+  // (customer_id, uuid, email, fully-unique PKs, columns with uniqueCount >
+  // max(20, 0.3 * nRows)) from the feature set. The LLM keeps picking them
+  // up despite the prompt contract, and any OneHotEncoder fit on them
+  // explodes at eval time with "columns are missing" when the test split
+  // has disjoint values. Code-level strip guarantees the registered model's
+  // featureColumns never contain a dataset-killer column.
+  const identifierColumnNames: Set<string> = datasetProfileForExperiment
+    ? new Set(
+        findLikelyIdentifierColumns(
+          datasetProfileForExperiment.columns ?? [],
+          datasetProfileForExperiment.nRows ?? 0,
+        ).map((column) => column.name),
+      )
+    : new Set<string>();
+
+  const stripIdentifierColumns = (candidateNames: string[]): { kept: string[]; stripped: string[] } => {
+    const stripped: string[] = [];
+    const kept = candidateNames.filter((name) => {
+      if (identifierColumnNames.has(name)) {
+        stripped.push(name);
+        return false;
+      }
+      return true;
+    });
+    return { kept, stripped };
+  };
+
   let featureColumns: string[] | undefined;
   if (Array.isArray(args.featureColumns)) {
     const rawFeatureColumns = (args.featureColumns as unknown[])
@@ -195,6 +240,7 @@ export const configureExperiment: TrainingToolHandler = async (
     // featureColumns, strip it. A model trained on its own target produces
     // meaningless metrics and breaks evaluation (LLM prep code tries to
     // auto-derive target from `df.columns - features` and finds nothing).
+    let afterTargetStrip = rawFeatureColumns;
     if (effectiveTargetColumn && rawFeatureColumns.includes(effectiveTargetColumn)) {
       appLogger.warn('[configureExperiment] Stripping target from LLM-supplied featureColumns (target leakage guard)', {
         projectId,
@@ -202,22 +248,35 @@ export const configureExperiment: TrainingToolHandler = async (
         targetColumn: effectiveTargetColumn,
         originalFeatureCount: rawFeatureColumns.length,
       });
-      featureColumns = rawFeatureColumns.filter((name) => name !== effectiveTargetColumn);
-    } else {
-      featureColumns = rawFeatureColumns;
+      afterTargetStrip = rawFeatureColumns.filter((name) => name !== effectiveTargetColumn);
     }
+    const { kept, stripped } = stripIdentifierColumns(afterTargetStrip);
+    if (stripped.length > 0) {
+      appLogger.warn('[configureExperiment] Stripping high-cardinality identifier columns from LLM-supplied featureColumns (identifier guard #336)', {
+        projectId,
+        experimentId,
+        stripped,
+      });
+    }
+    featureColumns = kept;
   } else if (enabledFeatureNames.length > 0) {
     // FE features exist. Use ALL dataset columns (minus target) as features,
     // not just the FE-produced columns — the FE pipeline adds derived columns
     // to the existing dataset, so training should use the full column set.
-    const datasetProfile = turn.datasetId
-      ? await datasetRepository.getById(turn.datasetId).catch(() => undefined)
-      : undefined;
-    if (datasetProfile?.columns && datasetProfile.columns.length > 0) {
+    if (datasetProfileForExperiment?.columns && datasetProfileForExperiment.columns.length > 0) {
       const targetCol = effectiveTargetColumn;
-      featureColumns = datasetProfile.columns
+      const autoPopulated = datasetProfileForExperiment.columns
         .map((col) => col.name)
         .filter((name) => name !== targetCol);
+      const { kept, stripped } = stripIdentifierColumns(autoPopulated);
+      if (stripped.length > 0) {
+        appLogger.info('[configureExperiment] Stripping high-cardinality identifier columns from auto-populated featureColumns (identifier guard #336)', {
+          projectId,
+          experimentId,
+          stripped,
+        });
+      }
+      featureColumns = kept;
       appLogger.info('[configureExperiment] Auto-populated featureColumns from dataset columns (FE-derived dataset)', {
         projectId,
         experimentId,
@@ -239,9 +298,7 @@ export const configureExperiment: TrainingToolHandler = async (
   // land on a continuous target (or vice versa). If the LLM omitted it and
   // the profile is unambiguous, we fill it in here so registration and
   // evaluation downstream use a trustworthy value.
-  const datasetProfile = turn.datasetId
-    ? await datasetRepository.getById(turn.datasetId).catch(() => undefined)
-    : undefined;
+  const datasetProfile = datasetProfileForExperiment;
   const targetColumnProfile = effectiveTargetColumn && datasetProfile
     ? datasetProfile.columns.find((col) => col.name === effectiveTargetColumn) ?? null
     : null;

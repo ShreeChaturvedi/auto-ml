@@ -194,11 +194,37 @@ export function useFeatureVersioning({
     return useFeatureStore.getState().currentVersionId[projectId] || undefined;
   }, [projectId]);
 
-  // --- Register sidebar delete handler ---
+  // Sidebar "+" and rename dialog route through the registry. Register
+  // the phase-hook versions so sidebar mutations persist (issues #325 +
+  // #328). Previously only delete was wired; add/rename from the sidebar
+  // mutated only the ephemeral registry and were clobbered on the next
+  // store-sync emit.
+  const addDraftFromRegistry = useCallback((): string | undefined => {
+    createDraftVersion(projectId, 'New Draft Pipeline');
+    clearDraft();
+    clearEphemeralState();
+    toast.success('New Draft Pipeline created');
+    return useFeatureStore.getState().currentVersionId[projectId] || undefined;
+  }, [clearDraft, clearEphemeralState, createDraftVersion, projectId]);
+
+  const renameDraftById = useCallback((versionId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    renameVersion(projectId, versionId, trimmed);
+  }, [projectId, renameVersion]);
+
   useEffect(() => {
-    useWorkbookRegistryStore.getState().setDeleteHandler('feature-engineering', deleteDraftById);
-    return () => useWorkbookRegistryStore.getState().setDeleteHandler('feature-engineering', null);
-  }, [deleteDraftById]);
+    const store = useWorkbookRegistryStore.getState();
+    store.setDeleteHandler('feature-engineering', deleteDraftById);
+    store.setAddHandler('feature-engineering', addDraftFromRegistry);
+    store.setRenameHandler('feature-engineering', renameDraftById);
+    return () => {
+      const s = useWorkbookRegistryStore.getState();
+      s.setDeleteHandler('feature-engineering', null);
+      s.setAddHandler('feature-engineering', null);
+      s.setRenameHandler('feature-engineering', null);
+    };
+  }, [addDraftFromRegistry, deleteDraftById, renameDraftById]);
 
   // --- Clear component-local ephemeral state on version change ---
   const prevVersionIdRef = useRef(currentVersionId);

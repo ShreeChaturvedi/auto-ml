@@ -906,6 +906,10 @@ export async function executeToolsNode(
     uiPayload: null,
     latestMessage: '',
     iteration: state.iteration + 1,
+    // Reset the no-progress stage-hop counter whenever a tool actually runs.
+    // Only the consecutive-hops-without-tool streak matters for detecting
+    // stuck oscillations. Issue #341.
+    stageHopsSinceTool: 0,
     pendingInputKind: pauseDetails?.pendingInputKind ?? null,
     pauseReason: pauseDetails?.pauseReason ?? null,
     nextStep: pauseDetails

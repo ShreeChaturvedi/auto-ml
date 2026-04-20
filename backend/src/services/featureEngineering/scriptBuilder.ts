@@ -39,8 +39,12 @@ export function buildFeatureEngineeringScript(params: {
   lines.push(`dataset_path = resolve_dataset_path(${pyString(datasetFilename)}, ${pyString(datasetId)})`);
 
   const ext = datasetFilename.split('.').pop()?.toLowerCase();
-  if (ext === 'csv') {
-    lines.push(`${dataframeName} = pd.read_csv(dataset_path)`);
+  if (ext === 'tsv' || ext === 'tab') {
+    // Tab-separated — mirrors kernelManager's load_preprocessing_dataset
+    // so FE never chokes on .tsv that the upload layer accepted. Issue #341/#343.
+    lines.push(`${dataframeName} = pd.read_csv(dataset_path, sep='\\t', on_bad_lines='skip', engine='python')`);
+  } else if (ext === 'jsonl' || ext === 'ndjson') {
+    lines.push(`${dataframeName} = pd.read_json(dataset_path, lines=True)`);
   } else if (ext === 'json') {
     lines.push(`try:
     ${dataframeName} = pd.read_json(dataset_path)
@@ -49,7 +53,9 @@ except ValueError:
   } else if (ext === 'xlsx' || ext === 'xls') {
     lines.push(`${dataframeName} = pd.read_excel(dataset_path)`);
   } else {
-    lines.push(`${dataframeName} = pd.read_csv(dataset_path)`);
+    // Default to CSV with lenient parse (matches the ingest-layer defaults)
+    // so ragged / Latin-1 files don't crash the FE script.
+    lines.push(`${dataframeName} = pd.read_csv(dataset_path, on_bad_lines='skip', engine='python')`);
   }
 
   lines.push('');

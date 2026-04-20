@@ -178,6 +178,49 @@ describe('deploymentManager', () => {
     }));
   });
 
+  it('forwards runtimeDependencies from model.metadata to the docker-args builder (xgboost deploy)', async () => {
+    const model = makeModel({
+      modelId: 'xgb-model',
+      algorithm: 'xgboost',
+      metadata: { runtimeDependencies: ['xgboost'] } as Record<string, unknown>,
+    });
+    await persistArtifact(model);
+    mockGetModelById.mockResolvedValue(model);
+
+    await deployModel(model.modelId, model.projectId, 'endpoint');
+
+    expect(mockBuildInferenceDockerRunArgs).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeDependencies: expect.arrayContaining(['xgboost']),
+    }));
+  });
+
+  it('infers runtimeDependencies from model.algorithm when metadata is empty (catboost deploy)', async () => {
+    const model = makeModel({
+      modelId: 'cat-model',
+      algorithm: 'catboost',
+    });
+    await persistArtifact(model);
+    mockGetModelById.mockResolvedValue(model);
+
+    await deployModel(model.modelId, model.projectId, 'endpoint');
+
+    expect(mockBuildInferenceDockerRunArgs).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeDependencies: expect.arrayContaining(['catboost']),
+    }));
+  });
+
+  it('passes empty runtimeDependencies for plain sklearn models (no regression)', async () => {
+    const model = makeModel({ modelId: 'sk-model', algorithm: 'ridge' });
+    await persistArtifact(model);
+    mockGetModelById.mockResolvedValue(model);
+
+    await deployModel(model.modelId, model.projectId, 'endpoint');
+
+    expect(mockBuildInferenceDockerRunArgs).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeDependencies: [],
+    }));
+  });
+
   it('mounts the persisted artifact directory when restarting a stopped deployment', async () => {
     const model = makeModel({
       modelId: '360a43cf-c361-4f42-970b-f83d627b3680',

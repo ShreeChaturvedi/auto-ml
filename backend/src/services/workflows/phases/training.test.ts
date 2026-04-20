@@ -1667,7 +1667,80 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     expect((toolCalls[0].args as { content: string }).content).toContain("joblib.dump(trained_artifact, 'model.joblib')");
   });
 
-  it('skips the completion footer when a prior segment already calls joblib.dump AND emits the marker', async () => {
+  it('injects the completion footer when register_model failed with ENOENT and no written cell saved the artifact', async () => {
+    // Gap #2 regression: the LLM wrote 3 cells (imports, data prep, model fit)
+    // but skipped the planned "Artifact Save" segment and jumped straight to
+    // execute_training → evaluate_results → register_model. register_model
+    // fails with ENOENT because model.joblib was never written. Stage router
+    // bounces back to write_code; this action must force-inject the footer so
+    // the retry succeeds instead of spinning into TRAINING_NO_PROGRESS.
+    const writeCodeStage = trainingPhaseConfig.getStageConfig('write_code');
+    const action = writeCodeStage.deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-imports' } }),
+      makeToolResult('run_cell', { output: { status: 'success', stdout: '', cellId: 'cell-imports' } }),
+      makeToolResult('write_cell', { output: { cellId: 'cell-prep' } }),
+      makeToolResult('run_cell', { output: { status: 'success', stdout: '', cellId: 'cell-prep' } }),
+      makeToolResult('write_cell', { output: { cellId: 'cell-fit' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":1.2}',
+          cellId: 'cell-fit',
+        }
+      }),
+      makeToolResult('execute_training', { output: { status: 'training' } }),
+      makeToolResult('evaluate_results', { output: { status: 'evaluated' } }),
+      makeRegisterModelArtifactFailure(),
+    ]);
+    state.run.currentNode = 'write_code';
+    // 4-segment plan — LLM wrote segments 0,1,2 but skipped segment 3 (the
+    // "Artifact Save" segment). The unwritten plan should NOT be treated as
+    // proof the artifact was saved.
+    state.toolCallHistory = [
+      {
+        id: 'write-imports',
+        tool: 'write_cell',
+        args: {
+          content: 'import joblib',
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-enoent',
+              experimentId: 'exp-enoent',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'import joblib' },
+                { title: 'Dataset Prep', content: 'df = pd.read_csv(...)' },
+                { title: 'Model Fit', content: 'model.fit(X,y)\nprint("__TRAIN_COMPLETE__|" + json.dumps(m))' },
+                { title: 'Artifact Save', content: 'joblib.dump(model, "model.joblib")' },
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-imports', tool: 'run_cell', args: { cellId: 'cell-imports' } },
+      { id: 'write-prep', tool: 'write_cell', args: { content: 'df = pd.read_csv(...)' } },
+      { id: 'run-prep', tool: 'run_cell', args: { cellId: 'cell-prep' } },
+      {
+        id: 'write-fit',
+        tool: 'write_cell',
+        args: {
+          content: 'model.fit(X_train, y_train)\nprint("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))',
+        }
+      },
+      { id: 'run-fit', tool: 'run_cell', args: { cellId: 'cell-fit' } },
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].tool).toBe('write_cell');
+    expect((toolCalls[0].args as { title?: string }).title).toBe('Finalize Model Artifact and Metrics');
+    expect((toolCalls[0].args as { content: string }).content).toContain("joblib.dump(trained_artifact, 'model.joblib')");
+    expect(toolCalls[0].rationale).toMatch(/ENOENT|retry/i);
+  });
+
+  it('skips the completion footer when a written cell already calls joblib.dump AND emits the marker', async () => {
     const writeCodeStage = trainingPhaseConfig.getStageConfig('write_code');
     const action = writeCodeStage.deterministicAction!;
     const state = createTrainingState([
@@ -1686,6 +1759,13 @@ describe('trainingPhaseConfig.getStageConfig', () => {
         id: 'write-complete',
         tool: 'write_cell',
         args: {
+          // Real write_cell tool calls always carry `args.content` — the
+          // authoritative source for what the cell contains after any
+          // mid-turn re-writes. The Gap #2 fix reads from args.content
+          // instead of the frozen trainingDraft.segments plan so that
+          // unwritten planned segments don't falsely imply an artifact
+          // save.
+          content: 'model.fit(X_train, y_train)\njoblib.dump(model, "model.joblib")\nprint("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))',
           metadata: {
             trainingDraft: {
               draftId: 'draft-ok',

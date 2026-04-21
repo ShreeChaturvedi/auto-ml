@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth, requireAuthAllowUnverified, invalidateUserCache } from '../middleware/auth.js';
+import { authAttemptLimiter } from '../middleware/authRateLimit.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
@@ -119,8 +120,13 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   );
 
   // POST /auth/login
+  // Rate-limited per (ip, email) to blunt credential stuffing. See #345 and
+  // backend/src/middleware/authRateLimit.ts. The limiter runs before the
+  // Zod validator so malformed bodies still consume a slot (an attacker
+  // can't sidestep the counter by sending garbage).
   router.post(
     '/auth/login',
+    authAttemptLimiter,
     validateRequest(loginSchema),
     asyncHandler(async (req, res) => {
       const { email, password, rememberMe } = req.body;
@@ -247,8 +253,12 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   );
 
   // POST /auth/forgot-password
+  // Shares the /auth/login rate-limit bucket (same (ip, email) key) — without
+  // this, an attacker could mail-bomb a victim with reset emails or probe
+  // email existence via timing. See #345.
   router.post(
     '/auth/forgot-password',
+    authAttemptLimiter,
     validateRequest(forgotPasswordSchema),
     asyncHandler(async (req, res) => {
       const { email } = req.body;

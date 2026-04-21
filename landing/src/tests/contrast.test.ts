@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 /**
  * WCAG AA contrast audit for the landing page token matrix.
  *
- * Tokens are hardcoded from `landing/src/styles/theme.css` (see spec 2.4). If
- * someone tweaks a grayscale value, this test will flag the regression before
- * it lands in CI.
+ * Parameterized across BOTH themes (dark + light). Tokens are hardcoded
+ * from `landing/src/styles/theme.css` (dark block lines 50-67, light block
+ * lines 89-106). If someone tweaks a grayscale value, this test will flag
+ * the regression before it lands in CI.
  *
  * Thresholds:
  *   - 4.5:1 for body text (<=18.66px / <14px bold)
@@ -25,59 +26,84 @@ function ratio(fg: string, bg: string): number {
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
-const backgrounds = {
-  "--bg": "#0A0A0B",
-  "--surface-0": "#0F1011",
-  "--surface-1": "#131416",
-  "--surface-2": "#1A1B1D",
-} as const;
-
-const foregrounds = {
-  "--text": "#F7F8F8",
-  "--text-muted": "#8A8F98",
-  "--text-dim": "#828794",
+const THEMES = {
+  dark: {
+    backgrounds: {
+      "--bg": "#0A0A0B",
+      "--surface-0": "#0F1011",
+      "--surface-1": "#131416",
+      "--surface-2": "#1A1B1D",
+    },
+    foregrounds: {
+      "--text": "#F7F8F8",
+      "--text-muted": "#8A8F98",
+      "--text-dim": "#828794",
+    },
+  },
+  light: {
+    backgrounds: {
+      "--bg": "#FFFFFF",
+      "--surface-0": "#F7F8F8",
+      "--surface-1": "#F0F1F2",
+      "--surface-2": "#E8E9EB",
+    },
+    foregrounds: {
+      "--text": "#0A0A0B",
+      "--text-muted": "#4A4E54",
+      "--text-dim": "#5A5D64",
+    },
+  },
 } as const;
 
 const AA_BODY = 4.5;
 
-type FgKey = keyof typeof foregrounds;
-type BgKey = keyof typeof backgrounds;
+type ThemeKey = keyof typeof THEMES;
 
-describe("WCAG AA contrast: token matrix", () => {
-  const table: Array<{ fg: FgKey; bg: BgKey; r: number }> = [];
+for (const themeKey of Object.keys(THEMES) as ThemeKey[]) {
+  const { backgrounds, foregrounds } = THEMES[themeKey];
 
-  for (const fg of Object.keys(foregrounds) as FgKey[]) {
-    for (const bg of Object.keys(backgrounds) as BgKey[]) {
-      table.push({
-        fg,
-        bg,
-        r: ratio(foregrounds[fg], backgrounds[bg]),
-      });
+  describe(`WCAG AA contrast: ${themeKey} theme token matrix`, () => {
+    const table: Array<{ fg: string; bg: string; r: number }> = [];
+
+    for (const fg of Object.keys(foregrounds)) {
+      for (const bg of Object.keys(backgrounds)) {
+        table.push({
+          fg,
+          bg,
+          r: ratio(
+            foregrounds[fg as keyof typeof foregrounds],
+            backgrounds[bg as keyof typeof backgrounds],
+          ),
+        });
+      }
     }
-  }
 
-  // Emit the full matrix once for auditing. Vitest surfaces console output
-  // under the test; this makes regressions easy to reason about.
-  it("prints the computed matrix for audit", () => {
-    const rows = table.map(
-      ({ fg, bg, r }) =>
-        `${fg.padEnd(13)} on ${bg.padEnd(12)} = ${r.toFixed(2)}:1  (>= ${AA_BODY.toFixed(1)})`,
-    );
-    console.log(["contrast matrix:", ...rows].join("\n"));
-    expect(rows.length).toBe(
-      Object.keys(foregrounds).length * Object.keys(backgrounds).length,
-    );
+    it("prints the computed matrix for audit", () => {
+      const rows = table.map(
+        ({ fg, bg, r }) =>
+          `${fg.padEnd(13)} on ${bg.padEnd(12)} = ${r.toFixed(2)}:1  (>= ${AA_BODY.toFixed(1)})`,
+      );
+      console.log([`${themeKey} contrast matrix:`, ...rows].join("\n"));
+      expect(rows.length).toBe(
+        Object.keys(foregrounds).length * Object.keys(backgrounds).length,
+      );
+    });
+
+    for (const fg of Object.keys(foregrounds)) {
+      for (const bg of Object.keys(backgrounds)) {
+        const r = ratio(
+          foregrounds[fg as keyof typeof foregrounds],
+          backgrounds[bg as keyof typeof backgrounds],
+        );
+        it(`${fg} on ${bg} meets AA body (>= 4.5:1)`, () => {
+          expect(r).toBeGreaterThanOrEqual(AA_BODY);
+        });
+      }
+    }
   });
+}
 
-  for (const fg of Object.keys(foregrounds) as FgKey[]) {
-    for (const bg of Object.keys(backgrounds) as BgKey[]) {
-      const r = ratio(foregrounds[fg], backgrounds[bg]);
-      it(`${fg} on ${bg} meets AA body (>= 4.5:1)`, () => {
-        expect(r).toBeGreaterThanOrEqual(AA_BODY);
-      });
-    }
-  }
-
+describe("contrast helper sanity", () => {
   it("sanity: luminance(#000000) === 0 and luminance(#ffffff) === 1", () => {
     expect(luminance("#000000")).toBe(0);
     expect(luminance("#ffffff")).toBeCloseTo(1, 5);

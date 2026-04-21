@@ -141,12 +141,34 @@ describe('trainingPhaseConfig.resolveNextStage', () => {
   const resolve = trainingPhaseConfig.resolveNextStage.bind(trainingPhaseConfig);
 
   describe('linear stage progression', () => {
-    it('advances configure_experiment → propose_model', () => {
-      expect(resolve('configure_experiment', [])).toBe('propose_model');
+    it('stays on configure_experiment until configuration succeeds', () => {
+      expect(resolve('configure_experiment', [])).toBe('configure_experiment');
     });
 
-    it('advances propose_model → generate_code', () => {
-      expect(resolve('propose_model', [])).toBe('generate_code');
+    it('advances configure_experiment → propose_model after successful configuration', () => {
+      expect(resolve('configure_experiment', [
+        makeToolResult('configure_experiment', {
+          output: {
+            experimentId: 'exp-1',
+            status: 'configured'
+          }
+        })
+      ])).toBe('propose_model');
+    });
+
+    it('stays on propose_model until a proposal exists', () => {
+      expect(resolve('propose_model', [])).toBe('propose_model');
+    });
+
+    it('stays on propose_model after proposal so approval routing can control codegen', () => {
+      expect(resolve('propose_model', [
+        makeToolResult('propose_training_plan', {
+          output: {
+            experimentId: 'exp-1',
+            status: 'awaiting_approval'
+          }
+        })
+      ])).toBe('propose_model');
     });
 
     it('advances generate_code → write_code', () => {
@@ -175,6 +197,41 @@ describe('trainingPhaseConfig.resolveNextStage', () => {
         makeToolResult('write_cell', { output: { cellId: 'c-1' } }),
         makeRunCellError(),
         makeToolResult('install_package', { output: { success: true, message: 'ok' } })
+      ])).toBe('write_code');
+    });
+
+    it('stays at generate_code after install-only turn with no draft yet (CatBoost case)', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('install_package', { output: { success: true, message: 'Successfully installed catboost' } })
+      ])).toBe('generate_code');
+    });
+
+    it('stays at generate_code after install-only turn with no draft yet (pytorch-tabular case)', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('install_package', { output: { success: true, message: 'Successfully installed pytorch-tabular' } })
+      ])).toBe('generate_code');
+    });
+
+    it('stays at generate_code after a failed install with no draft written', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('install_package', { error: 'pip install failed' })
+      ])).toBe('generate_code');
+    });
+
+    it('advances generate_code → write_code when install followed by a successful draft write_cell', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('install_package', { output: { success: true, message: 'ok' } }),
+        makeToolResult('write_cell', { output: { cellId: 'c-1' } })
+      ])).toBe('write_code');
+    });
+
+    it('advances generate_code → write_code once repair succeeds (latest notebook run is success, despite earlier failures in history)', () => {
+      expect(resolve('generate_code', [
+        makeToolResult('write_cell', { output: { cellId: 'c-1' } }),
+        makeToolResult('write_cell', { output: { cellId: 'c-2' } }),
+        makeRunCellError(),
+        makeToolResult('write_cell', { output: { cellId: 'c-2' } }),
+        makeRunCellSuccessWithoutCompletionMarker(),
       ])).toBe('write_code');
     });
   });
@@ -574,6 +631,41 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
+  it('registers fttransformer when the training prep segments show FTTransformerConfig', async () => {
+    const config = trainingPhaseConfig.getStageConfig('register_model');
+    const action = config.deterministicAction;
+    expect(action).toBeTypeOf('function');
+
+    const state = createTrainingState([
+      makeEvaluateResultsSuccess()
+    ]);
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'fttransformer baseline',
+      modelType: 'neural_network',
+      splitStrategy: 'time_series',
+      evaluationMetrics: { accuracy: 0.87, f1: 0.84 },
+      workflowPrepSegments: [
+        'from pytorch_tabular.models import FTTransformerConfig',
+        'model_config = FTTransformerConfig(task="classification")'
+      ],
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const toolCalls = await action!(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'register_model',
+        args: expect.objectContaining({
+          experimentId: 'exp-1',
+          modelType: 'fttransformer',
+          tags: ['baseline', 'time_series', 'fttransformer'],
+        })
+      })
+    ]);
+  });
+
   it('auto-builds execute/evaluate/register for the next approved experiment after one model is already registered in the same turn', async () => {
     const state = createTrainingState([
       makeToolResult('execute_training', {
@@ -764,6 +856,68 @@ describe('trainingPhaseConfig.getStageConfig', () => {
     ]);
   });
 
+  it('gives up cleanly after 3 failed repair attempts instead of looping to the recursion limit', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'feature_v2.csv',
+      columns: [
+        { name: 'feat1', dtype: 'number' },
+        { name: 'target', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([
+      makeToolResult('run_cell', {
+        output: {
+          status: 'error',
+          stderr: 'Training code cell is too large (117 lines).',
+          cellId: 'cell-1'
+        }
+      })
+    ]);
+    state.run.currentNode = 'generate_code';
+    state.toolCallHistory = [
+      {
+        tool: 'write_cell',
+        args: {
+          cellId: 'cell-1',
+          title: 'Model Fit and Evaluation',
+          content: 'pass',
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              datasetId: 'dataset-1',
+              datasetFilename: 'feature_v2.csv',
+              targetColumn: 'target',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Model Fit and Evaluation', content: 'pass' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'wf-call-auto-rewrite-training-draft-1-0', tool: 'write_cell', args: { cellId: 'cell-1' } },
+      { id: 'wf-call-auto-rewrite-training-draft-1-0', tool: 'write_cell', args: { cellId: 'cell-1' } },
+      { id: 'wf-call-auto-rewrite-training-draft-1-0', tool: 'write_cell', args: { cellId: 'cell-1' } }
+    ] as never;
+
+    const client = {
+      complete: vi.fn(),
+    };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(toolCalls).toEqual([]);
+    expect(client.complete).not.toHaveBeenCalled();
+  });
+
   it('installs missing model libraries before attempting notebook-cell repair', async () => {
     const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
     const action = generateCode.delegatedAction;
@@ -802,6 +956,46 @@ describe('trainingPhaseConfig.getStageConfig', () => {
         tool: 'install_package',
         args: {
           packageName: 'catboost',
+        }
+      })
+    ]);
+  });
+
+  it('installs the transformer runtime dependency before writing FT-Transformer notebook cells', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'feature_v2.csv',
+      columns: [
+        { name: 'feat1', dtype: 'number' },
+        { name: 'target', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([]);
+    state.run.currentNode = 'generate_code';
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'ft-transformer',
+      modelType: 'fttransformer',
+      splitStrategy: 'time_series',
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const client = { complete: vi.fn() };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(client.complete).not.toHaveBeenCalled();
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'install_package',
+        args: {
+          packageName: 'pytorch-tabular',
         }
       })
     ]);
@@ -864,6 +1058,210 @@ describe('trainingPhaseConfig.getStageConfig', () => {
         })
       ])
     }));
+  });
+
+  it('re-prompts code generation when a specific neural architecture is replaced with sklearn MLP code', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'Feature_v1.csv',
+      columns: [
+        { name: 'subject_area', dtype: 'string' },
+        { name: 'usage_count', dtype: 'number' },
+        { name: 'is_power_user', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([]);
+    state.run.currentNode = 'generate_code';
+    state.turn.prompt = 'Train the approved TabTransformer candidate.';
+    state.toolCallHistory = [
+      { id: 'install-1', tool: 'install_package', args: { packageName: 'pytorch-tabular' } }
+    ] as never;
+    state.toolResultHistory = [
+      makeToolResult('install_package', { output: { success: true, message: 'installed' } })
+    ];
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'TabTransformer_TimeAware_Candidate',
+      modelType: 'tabtransformer',
+      splitStrategy: 'time_series',
+      featureColumns: ['subject_area', 'usage_count'],
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const client = {
+      complete: vi.fn()
+        .mockResolvedValueOnce([
+          '# Cell 1: Imports and Config',
+          'from sklearn.neural_network import MLPClassifier',
+          '# Cell 2: Dataset Prep',
+          'print("prep")'
+        ].join('\n'))
+        .mockResolvedValueOnce([
+          '# Cell 1: Imports and Config',
+          'from pytorch_tabular import TabularModel',
+          'from pytorch_tabular.config import DataConfig, TrainerConfig, OptimizerConfig',
+          'from pytorch_tabular.models import TabTransformerConfig',
+          '# Cell 2: Dataset Prep',
+          'print("prep")'
+        ].join('\n'))
+    };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(client.complete).toHaveBeenCalledTimes(2);
+    expect(client.complete.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Approved modelType "tabtransformer" was replaced with sklearn MLP code.')
+        })
+      ])
+    }));
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          content: expect.stringContaining('TabTransformerConfig')
+        })
+      })
+    ]);
+  });
+
+  it('re-prompts code generation when regression code stratifies on y', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'Feature_v1.csv',
+      columns: [
+        { name: 'feature_a', dtype: 'number' },
+        { name: 'usage_count', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([]);
+    state.run.currentNode = 'generate_code';
+    state.turn.prompt = 'Train a linear regression model.';
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'linear regression baseline',
+      modelType: 'linear_regression',
+      taskType: 'regression',
+      splitStrategy: 'train_test',
+      featureColumns: ['feature_a'],
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const client = {
+      complete: vi.fn()
+        .mockResolvedValueOnce([
+          '# Cell 1: Imports and Config',
+          'from sklearn.linear_model import LinearRegression',
+          '# Cell 2: Dataset Prep',
+          'stratify = y',
+          'X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=stratify)',
+        ].join('\n'))
+        .mockResolvedValueOnce([
+          '# Cell 1: Imports and Config',
+          'from sklearn.linear_model import LinearRegression',
+          '# Cell 2: Dataset Prep',
+          'X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)',
+        ].join('\n'))
+    };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(client.complete).toHaveBeenCalledTimes(2);
+    expect(client.complete.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Regression code must not stratify train/test splits on y.')
+        })
+      ])
+    }));
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          content: expect.not.stringContaining('stratify = y')
+        })
+      })
+    ]);
+  });
+
+  it('re-prompts code generation when a classic estimator family is replaced with a proxy model', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'Feature_v1.csv',
+      columns: [
+        { name: 'feature_a', dtype: 'number' },
+        { name: 'usage_count', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([]);
+    state.run.currentNode = 'generate_code';
+    state.turn.prompt = 'Train a DecisionTreeRegressor.';
+    (state.run.metadata as { experiments: Record<string, Record<string, unknown>> }).experiments['exp-1'] = {
+      experimentId: 'exp-1',
+      experimentName: 'decision tree baseline',
+      modelType: 'decision_tree_regressor',
+      taskType: 'regression',
+      splitStrategy: 'train_test',
+      featureColumns: ['feature_a'],
+      updatedAt: '2026-04-09T00:00:00.000Z'
+    };
+
+    const client = {
+      complete: vi.fn()
+        .mockResolvedValueOnce([
+          '# Cell 1: Imports and Config',
+          'from sklearn.ensemble import RandomForestRegressor',
+          '# Cell 2: Dataset Prep',
+          'print("prep")',
+        ].join('\n'))
+        .mockResolvedValueOnce([
+          '# Cell 1: Imports and Config',
+          'from sklearn.tree import DecisionTreeRegressor',
+          '# Cell 2: Dataset Prep',
+          'print("prep")',
+        ].join('\n'))
+    };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(client.complete).toHaveBeenCalledTimes(2);
+    expect(client.complete.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('Approved modelType "decision_tree_regressor" must implement DecisionTreeRegressor.')
+        })
+      ])
+    }));
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          content: expect.stringContaining('DecisionTreeRegressor')
+        })
+      })
+    ]);
   });
 
   it('writes the next segment for the active draft even when a previous model already completed in the same turn', async () => {
@@ -1056,6 +1454,389 @@ describe('trainingPhaseConfig.getStageConfig', () => {
         args: expect.objectContaining({
           title: 'Train',
           content: 'print("train")',
+        })
+      })
+    ]);
+  });
+
+  it('re-prompts notebook repair when the first repair tries to install packages inline', async () => {
+    const generateCode = trainingPhaseConfig.getStageConfig('generate_code');
+    const action = generateCode.delegatedAction;
+    expect(action).toBeTypeOf('function');
+
+    mockGetDatasetById.mockResolvedValue({
+      datasetId: 'dataset-1',
+      projectId: 'project-1',
+      filename: 'feature_v2.csv',
+      columns: [
+        { name: 'feat1', dtype: 'number' },
+        { name: 'target', dtype: 'number' }
+      ]
+    });
+
+    const state = createTrainingState([
+      makeToolResult('run_cell', {
+        output: {
+          status: 'error',
+          stderr: "ModuleNotFoundError: No module named 'torch'",
+          cellId: 'cell-1'
+        }
+      }),
+      makeToolResult('install_package', {
+        output: {
+          success: true,
+          message: 'Successfully installed torch'
+        }
+      })
+    ]);
+    state.run.currentNode = 'generate_code';
+    state.toolCallHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'import torch' },
+                { title: 'Train', content: 'print("train")' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } },
+      { id: 'install-1', tool: 'install_package', args: { packageName: 'torch' } },
+    ] as never;
+
+    const client = {
+      complete: vi.fn()
+        .mockResolvedValueOnce('import subprocess\nsubprocess.check_call([sys.executable, "-m", "pip", "install", "torch"])')
+        .mockResolvedValueOnce('import torch\nprint("ready")')
+    };
+
+    const toolCalls = await action!(client as never, state);
+
+    expect(client.complete).toHaveBeenCalledTimes(2);
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          cellId: 'cell-1',
+          content: 'import torch\nprint("ready")',
+        })
+      })
+    ]);
+  });
+
+  it('appends a finalization cell instead of looping forever when all draft segments ran without the completion marker', async () => {
+    const action = trainingPhaseConfig.getStageConfig('write_code').deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: 'imports ready',
+          stderr: '',
+          cellId: 'cell-1',
+        }
+      }),
+      makeToolResult('write_cell', { output: { cellId: 'cell-2' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: 'model fit complete',
+          stderr: '',
+          cellId: 'cell-2',
+        }
+      })
+    ]);
+    state.toolCallHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'import pandas as pd' },
+                { title: 'Fit', content: 'model.fit(X_train, y_train)' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } },
+      {
+        id: 'write-2',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-1',
+              experimentId: 'exp-1',
+              segmentIndex: 1,
+              segments: [
+                { title: 'Imports', content: 'import pandas as pd' },
+                { title: 'Fit', content: 'model.fit(X_train, y_train)' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-2', tool: 'run_cell', args: { cellId: 'cell-2' } }
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          title: 'Finalize Model Artifact and Metrics',
+          content: expect.stringContaining("__TRAIN_COMPLETE__|"),
+          metadata: expect.objectContaining({
+            trainingDraft: expect.objectContaining({
+              draftId: 'draft-1',
+              segmentIndex: 2,
+              segments: expect.arrayContaining([
+                expect.objectContaining({ title: 'Finalize Model Artifact and Metrics' })
+              ])
+            })
+          })
+        })
+      })
+    ]);
+
+    const footerContent = toolCalls[0].args.content as string;
+    expect(footerContent).toContain('def _is_predictable(value):');
+    expect(footerContent).toContain('hasattr(value, "predict")');
+    expect(footerContent).toContain("isinstance(candidate_value, dict)");
+    expect(footerContent).toContain('No sklearn-compatible trained model or pipeline was found');
+  });
+
+  it('emits the completion footer even when a prior segment printed __TRAIN_COMPLETE__ without calling joblib.dump', async () => {
+    const writeCodeStage = trainingPhaseConfig.getStageConfig('write_code');
+    const action = writeCodeStage.deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":2.97}\nMarker printed but artifact not saved.',
+          cellId: 'cell-1',
+        }
+      })
+    ]);
+    state.run.currentNode = 'write_code';
+    // One-segment draft whose content has the marker but NO joblib.dump.
+    state.toolCallHistory = [
+      {
+        id: 'write-only-marker',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-mk',
+              experimentId: 'exp-mk',
+              segmentIndex: 0,
+              segments: [
+                {
+                  title: 'Model Fit and Evaluation',
+                  content: 'model.fit(X_train, y_train)\nprint("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))'
+                }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-only-marker', tool: 'run_cell', args: { cellId: 'cell-1' } }
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].tool).toBe('write_cell');
+    expect((toolCalls[0].args as { title?: string }).title).toBe('Finalize Model Artifact and Metrics');
+    expect((toolCalls[0].args as { content: string }).content).toContain("joblib.dump(trained_artifact, 'model.joblib')");
+  });
+
+  it('injects the completion footer when register_model failed with ENOENT and no written cell saved the artifact', async () => {
+    // Gap #2 regression: the LLM wrote 3 cells (imports, data prep, model fit)
+    // but skipped the planned "Artifact Save" segment and jumped straight to
+    // execute_training → evaluate_results → register_model. register_model
+    // fails with ENOENT because model.joblib was never written. Stage router
+    // bounces back to write_code; this action must force-inject the footer so
+    // the retry succeeds instead of spinning into TRAINING_NO_PROGRESS.
+    const writeCodeStage = trainingPhaseConfig.getStageConfig('write_code');
+    const action = writeCodeStage.deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-imports' } }),
+      makeToolResult('run_cell', { output: { status: 'success', stdout: '', cellId: 'cell-imports' } }),
+      makeToolResult('write_cell', { output: { cellId: 'cell-prep' } }),
+      makeToolResult('run_cell', { output: { status: 'success', stdout: '', cellId: 'cell-prep' } }),
+      makeToolResult('write_cell', { output: { cellId: 'cell-fit' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":1.2}',
+          cellId: 'cell-fit',
+        }
+      }),
+      makeToolResult('execute_training', { output: { status: 'training' } }),
+      makeToolResult('evaluate_results', { output: { status: 'evaluated' } }),
+      makeRegisterModelArtifactFailure(),
+    ]);
+    state.run.currentNode = 'write_code';
+    // 4-segment plan — LLM wrote segments 0,1,2 but skipped segment 3 (the
+    // "Artifact Save" segment). The unwritten plan should NOT be treated as
+    // proof the artifact was saved.
+    state.toolCallHistory = [
+      {
+        id: 'write-imports',
+        tool: 'write_cell',
+        args: {
+          content: 'import joblib',
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-enoent',
+              experimentId: 'exp-enoent',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'import joblib' },
+                { title: 'Dataset Prep', content: 'df = pd.read_csv(...)' },
+                { title: 'Model Fit', content: 'model.fit(X,y)\nprint("__TRAIN_COMPLETE__|" + json.dumps(m))' },
+                { title: 'Artifact Save', content: 'joblib.dump(model, "model.joblib")' },
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-imports', tool: 'run_cell', args: { cellId: 'cell-imports' } },
+      { id: 'write-prep', tool: 'write_cell', args: { content: 'df = pd.read_csv(...)' } },
+      { id: 'run-prep', tool: 'run_cell', args: { cellId: 'cell-prep' } },
+      {
+        id: 'write-fit',
+        tool: 'write_cell',
+        args: {
+          content: 'model.fit(X_train, y_train)\nprint("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))',
+        }
+      },
+      { id: 'run-fit', tool: 'run_cell', args: { cellId: 'cell-fit' } },
+    ] as never;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].tool).toBe('write_cell');
+    expect((toolCalls[0].args as { title?: string }).title).toBe('Finalize Model Artifact and Metrics');
+    expect((toolCalls[0].args as { content: string }).content).toContain("joblib.dump(trained_artifact, 'model.joblib')");
+    expect(toolCalls[0].rationale).toMatch(/ENOENT|retry/i);
+  });
+
+  it('skips the completion footer when a written cell already calls joblib.dump AND emits the marker', async () => {
+    const writeCodeStage = trainingPhaseConfig.getStageConfig('write_code');
+    const action = writeCodeStage.deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: '__TRAIN_COMPLETE__|{"rmse":0.42}',
+          cellId: 'cell-1',
+        }
+      })
+    ]);
+    state.run.currentNode = 'write_code';
+    state.toolCallHistory = [
+      {
+        id: 'write-complete',
+        tool: 'write_cell',
+        args: {
+          // Real write_cell tool calls always carry `args.content` — the
+          // authoritative source for what the cell contains after any
+          // mid-turn re-writes. The Gap #2 fix reads from args.content
+          // instead of the frozen trainingDraft.segments plan so that
+          // unwritten planned segments don't falsely imply an artifact
+          // save.
+          content: 'model.fit(X_train, y_train)\njoblib.dump(model, "model.joblib")\nprint("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))',
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-ok',
+              experimentId: 'exp-ok',
+              segmentIndex: 0,
+              segments: [
+                {
+                  title: 'Model Fit and Save',
+                  content: 'model.fit(X_train, y_train)\njoblib.dump(model, "model.joblib")\nprint("__TRAIN_COMPLETE__|" + json.dumps(final_metrics))'
+                }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-ok', tool: 'run_cell', args: { cellId: 'cell-1' } }
+    ] as never;
+
+    const toolCalls = await action(state);
+    expect(toolCalls).toEqual([]);
+  });
+
+  it('recovers the active training draft from prior-turn history when resuming write_code', async () => {
+    const writeCodeStage = trainingPhaseConfig.getStageConfig('write_code');
+    const action = writeCodeStage.deterministicAction!;
+    const state = createTrainingState([
+      makeToolResult('write_cell', { output: { cellId: 'cell-1' } }),
+      makeToolResult('run_cell', {
+        output: {
+          status: 'success',
+          stdout: 'imports ready',
+          cellId: 'cell-1',
+        }
+      }),
+    ]);
+    state.run.currentNode = 'write_code';
+    state.toolCallHistory = [
+      {
+        id: 'write-1',
+        tool: 'write_cell',
+        args: {
+          metadata: {
+            trainingDraft: {
+              draftId: 'draft-resume',
+              experimentId: 'exp-1',
+              segmentIndex: 0,
+              segments: [
+                { title: 'Imports', content: 'import pandas as pd' },
+                { title: 'Fit', content: 'model.fit(X_train, y_train)' }
+              ]
+            }
+          }
+        }
+      },
+      { id: 'run-1', tool: 'run_cell', args: { cellId: 'cell-1' } }
+    ] as never;
+    state.turnStartToolCallCount = state.toolCallHistory.length;
+
+    const toolCalls = await action(state);
+
+    expect(toolCalls).toEqual([
+      expect.objectContaining({
+        tool: 'write_cell',
+        args: expect.objectContaining({
+          title: 'Fit',
+          metadata: expect.objectContaining({
+            trainingDraft: expect.objectContaining({
+              draftId: 'draft-resume',
+              segmentIndex: 1,
+            })
+          })
         })
       })
     ]);

@@ -14,6 +14,24 @@ import { ensureMonacoBootstrap } from '@/lib/monaco/bootstrap'
 let monacoInstance: Monaco | null = null;
 let initPromise: Promise<Monaco> | null = null;
 let themesRegistered = false;
+const readyListeners = new Set<() => void>();
+
+/**
+ * Subscribe to Monaco ready-state transitions. The callback fires once Monaco
+ * has finished loading — useful for components that mounted before Monaco
+ * was ready and need to re-apply theme / provider setup once it is.
+ * Returns an unsubscribe function.
+ */
+export function subscribeMonacoReady(cb: () => void): () => void {
+  // If Monaco is already loaded, schedule the callback asynchronously so
+  // subscribers always receive a "first tick" notification in a consistent
+  // ordering, matching useSyncExternalStore semantics.
+  if (monacoInstance) {
+    queueMicrotask(cb);
+  }
+  readyListeners.add(cb);
+  return () => { readyListeners.delete(cb); };
+}
 
 // ── Theme builders ────────────────────────────────────────────────────────
 
@@ -53,6 +71,14 @@ export function registerStaticThemes(monaco: Monaco): void {
     rules: buildThemeRules(STATIC_SYNTAX_PALETTE.light),
     colors: buildEditorColors(STATIC_SYNTAX_PALETTE.light, false),
   });
+  // Pre-register adaptive themes with the static palette so the IDs always
+  // resolve even before `useProjectThemeColor` re-registers them with a
+  // project-specific hue. Without this, a `setTheme('adaptive-light')` call
+  // (from `<Editor theme>` or a component's `onMount`) issued before the
+  // hook's layoutEffect has run silently falls back to Monaco's base theme
+  // and the editor stays stuck on whatever it loaded with.
+  registerAdaptiveTheme(monaco, STATIC_SYNTAX_PALETTE.dark, true);
+  registerAdaptiveTheme(monaco, STATIC_SYNTAX_PALETTE.light, false);
 }
 
 /**
@@ -82,6 +108,7 @@ export async function initMonaco(): Promise<Monaco> {
 
     monacoInstance = monaco;
     console.log('[monaco] Pre-loaded and themes registered');
+    for (const cb of readyListeners) cb();
     return monaco;
   })();
 

@@ -1,0 +1,37 @@
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at top, hsl(0 0% 12%), hsl(0 0% 6%) 55%, hsl(0 0% 4%));
+}
+
+.media,
+.poster,
+.posterOverlay {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.media {
+  background: transparent;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.poster,
+.posterOverlay {
+  user-select: none;
+}
+
+.posterOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}

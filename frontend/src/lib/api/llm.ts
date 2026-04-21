@@ -101,6 +101,16 @@ export async function interruptWorkflowRun(runId: string, reason?: string) {
   });
 }
 
+export async function listWorkflowRuns(projectId: string, phase?: WorkflowPhase) {
+  const query = new URLSearchParams({ projectId });
+  if (phase) {
+    query.set('phase', phase);
+  }
+  return apiRequest<{ projectId: string; phase?: WorkflowPhase; runs: WorkflowState[] }>(
+    `/workflows?${query.toString()}`
+  );
+}
+
 export async function streamFeaturePlan(
   request: LlmPlanRequest,
   onEvent: (event: LlmStreamEvent) => void,

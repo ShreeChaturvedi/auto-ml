@@ -96,6 +96,7 @@ import MarqueeRow from './MarqueeRow.astro';
     letter-spacing: -0.022em;
     line-height: 1.1;
     margin: 0;
+    text-wrap: balance;
   }
   .marquee-headline-muted { color: var(--text-muted); display: block; }
 
@@ -117,14 +118,14 @@ import MarqueeRow from './MarqueeRow.astro';
     left: 0;
     background: linear-gradient(to right,
       var(--bg) 0%,
-      rgba(10, 10, 11, 0.9) 40%,
+      var(--bg) 40%,
       transparent 100%);
   }
   .marquee-fade-right {
     right: 0;
     background: linear-gradient(to left,
       var(--bg) 0%,
-      rgba(10, 10, 11, 0.9) 40%,
+      var(--bg) 40%,
       transparent 100%);
   }
 </style>

@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
+import { appLogger } from '../logging/logger.js';
 import { getOrCreateContainer } from '../services/containerManager.js';
 import { syncWorkspaceDatasets } from '../services/executionWorkspace.js';
 import * as kernelManager from '../services/kernelManager.js';
@@ -46,6 +47,15 @@ export interface OrchestrationResult {
 export interface RichOutput {
   type: string;
   content: string;
+}
+
+function isTransientKernelExecutionFailure(result: {
+  status: string;
+  error?: string;
+}): boolean {
+  return result.status === 'error'
+    && typeof result.error === 'string'
+    && result.error.includes('WebSocket closed unexpectedly during execution');
 }
 
 /**
@@ -109,7 +119,27 @@ export async function orchestrateContainerExecution(
 
   // Step 4: Build and execute script
   const script = config.scriptBuilder();
-  const executionResult = await kernelManager.execute(container, script, config.timeoutMs, config.onOutput);
+  let executionResult = await kernelManager.execute(container, script, config.timeoutMs, config.onOutput);
+  if (isTransientKernelExecutionFailure(executionResult)) {
+    appLogger.warn('[containerOrchestrator] Retrying kernel execution after transient websocket close', {
+      projectId: config.projectId,
+      containerId: container.containerId,
+    });
+    try {
+      if (kernelManager.hasKernel(container)) {
+        await kernelManager.restartKernel(container);
+      } else {
+        await kernelManager.connectKernel(container);
+      }
+      executionResult = await kernelManager.execute(container, script, config.timeoutMs, config.onOutput);
+    } catch (retryError) {
+      appLogger.warn('[containerOrchestrator] Kernel recovery retry failed', {
+        projectId: config.projectId,
+        containerId: container.containerId,
+        error: retryError instanceof Error ? retryError.message : String(retryError),
+      });
+    }
+  }
 
   // Step 5: Return combined result
   return {

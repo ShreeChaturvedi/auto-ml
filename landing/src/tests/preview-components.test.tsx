@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { previewManifest } from '@/components/previews/previewManifest';
 
 const landingRoot = path.resolve(import.meta.dirname, '..');
-const frontendRoot = path.resolve(landingRoot, '../../frontend/src');
 const dioramaRoot = path.resolve(landingRoot, 'components/how-it-works/dioramas');
+const publicRoot = path.resolve(landingRoot, '../public');
+
+function stripPreviewQuery(assetPath: string): string {
+  return assetPath.split('?')[0] ?? assetPath;
+}
 
 describe('preview source guardrails', () => {
   it('mounts the hero preview and how-it-works separately from the page shell', () => {
@@ -17,34 +22,16 @@ describe('preview source guardrails', () => {
     expect(pageSource).not.toContain('LandingPreviewExperience');
   });
 
-  it('mounts the hero preview as a real frontend demo workspace in normal document flow', () => {
+  it('mounts the hero preview as a manifest-backed loop instead of a DOM mock', () => {
     const source = readFileSync(
       path.resolve(landingRoot, 'components/AppPreviewFrame.tsx'),
       'utf8',
     );
 
-    expect(source).toContain('@frontend/demo/landing');
-    expect(source).toContain('<DemoWorkspaceComponent initialPhase="upload" />');
-    expect(source).not.toContain('SharedWorkspacePreviewHost');
-    expect(source).not.toContain('PreviewShell');
-  });
-
-  it('builds the hero preview out of real frontend surfaces without fixed overlay runtime', () => {
-    const source = readFileSync(
-      path.resolve(frontendRoot, 'demo/landing/DemoWorkspace.tsx'),
-      'utf8',
-    );
-
-    expect(source).toContain('AppShell');
-    expect(source).toContain('ProjectWorkspace');
-    expect(source).toContain('path="/project/:projectId/:phase"');
-    expect(source).toContain('element={<ProjectWorkspace />}');
-    expect(source).toContain('data-testid="landing-demo-workspace"');
-    expect(source).not.toContain("pointerEvents: 'none'");
-    expect(source).not.toContain('DemoSidebar');
-    expect(source).not.toContain('TrainingProgressCard');
-    expect(source).not.toContain('OverviewColumnCards');
-    expect(source).not.toContain('FeatureSuggestionCard');
+    expect(source).toContain('PreviewLoop');
+    expect(source).toContain('previewId="hero-montage"');
+    expect(source).not.toContain('IngestMock');
+    expect(source).not.toContain('@frontend/demo/landing');
   });
 
   it('removes the legacy landing preview clone runtime', () => {
@@ -53,75 +40,60 @@ describe('preview source guardrails', () => {
     expect(existsSync(path.resolve(landingRoot, 'islands/PreviewIsland.tsx'))).toBe(false);
   });
 
-  it('builds how-it-works cards from real workspace previews', () => {
-    const workspaceDiorama = readFileSync(path.resolve(dioramaRoot, 'WorkspaceDiorama.tsx'), 'utf8');
-    expect(workspaceDiorama).toContain('/workspace-preview?phase=');
-    expect(workspaceDiorama).toContain('<iframe');
-    expect(workspaceDiorama).toContain('WORKSPACE_PREVIEW_MESSAGE_TYPE');
-    expect(workspaceDiorama).toContain("postMessage(message, '*')");
-    expect(workspaceDiorama).toContain("loading={preloadAll ? 'eager' : 'lazy'}");
-    expect(workspaceDiorama).not.toContain('SharedWorkspacePreviewHost');
+  it('removes the iframe preview page + messaging shim', () => {
+    expect(existsSync(path.resolve(landingRoot, 'pages/workspace-preview.astro'))).toBe(false);
+    expect(existsSync(path.resolve(landingRoot, 'components/WorkspacePreviewPage.tsx'))).toBe(false);
+    expect(existsSync(path.resolve(landingRoot, 'lib/workspacePreviewMessaging.ts'))).toBe(false);
+  });
 
-    const howItWorksSource = readFileSync(
-      path.resolve(landingRoot, 'components/how-it-works/HowItWorks.tsx'),
+  it('builds how-it-works cards from manifest-backed media loops (no iframes)', () => {
+    const workspaceDiorama = readFileSync(
+      path.resolve(dioramaRoot, 'WorkspaceDiorama.tsx'),
       'utf8',
     );
-    expect(howItWorksSource).toContain('preloadAllDioramaPhases={false}');
 
-    const previewPage = readFileSync(path.resolve(landingRoot, 'components/WorkspacePreviewPage.tsx'), 'utf8');
-    expect(previewPage).toContain('DemoWorkspace');
-    expect(previewPage).toContain('enableDemoMode');
-    expect(previewPage).toContain('preloadProjectWorkspacePhase');
-    expect(previewPage).toContain('WORKSPACE_PREVIEW_READY_MESSAGE_TYPE');
-    expect(previewPage).toContain("return 'upload'");
+    expect(workspaceDiorama).toContain('PreviewLoop');
+    expect(workspaceDiorama).toContain('previewIdByPhase');
+    expect(workspaceDiorama).not.toContain('<iframe');
+    expect(workspaceDiorama).not.toContain('/workspace-preview');
+    expect(workspaceDiorama).not.toContain('postMessage');
+    expect(workspaceDiorama).not.toContain('IngestMock');
+    expect(workspaceDiorama).not.toContain('ExploreMock');
+    expect(workspaceDiorama).not.toContain('PreprocessMock');
+    expect(workspaceDiorama).not.toContain('EngineerMock');
+    expect(workspaceDiorama).not.toContain('TrainMock');
+    expect(workspaceDiorama).not.toContain('ExperimentsMock');
+    expect(workspaceDiorama).not.toContain('DeployMock');
+  });
 
-    const sceneFiles = [
-      'IngestDiorama.tsx',
-      'ExploreDiorama.tsx',
-      'PreprocessDiorama.tsx',
-      'EngineerDiorama.tsx',
-      'TrainDiorama.tsx',
-      'ExperimentsDiorama.tsx',
-      'DeployDiorama.tsx',
-    ];
+  it('checks in the committed preview media assets expected by the manifest', () => {
+    for (const asset of Object.values(previewManifest)) {
+      const webmPath = stripPreviewQuery(asset.webmSrc);
+      const mp4Path = stripPreviewQuery(asset.mp4Src);
+      const posterPath = stripPreviewQuery(asset.posterSrc);
 
-    for (const fileName of sceneFiles) {
-      const source = readFileSync(path.resolve(dioramaRoot, fileName), 'utf8');
-      expect(source).toContain('WorkspaceDiorama');
-      expect(source).not.toContain('LineChart');
-      expect(source).not.toContain('barFill');
+      expect(
+        existsSync(path.resolve(publicRoot, `.${webmPath}`)),
+        `${asset.id} is missing ${webmPath}`,
+      ).toBe(true);
+      expect(
+        existsSync(path.resolve(publicRoot, `.${mp4Path}`)),
+        `${asset.id} is missing ${mp4Path}`,
+      ).toBe(true);
+      expect(
+        existsSync(path.resolve(publicRoot, `.${posterPath}`)),
+        `${asset.id} is missing ${posterPath}`,
+      ).toBe(true);
     }
   });
 
-  it('does not use a fixed shared overlay provider for landing previews', () => {
-    expect(existsSync(path.resolve(landingRoot, 'components/LandingPreviewExperience.tsx'))).toBe(false);
-    expect(existsSync(path.resolve(landingRoot, 'components/preview/SharedWorkspacePreviewProvider.tsx'))).toBe(false);
-  });
-
   it('keeps landing theme tokens compatible with real frontend components', () => {
-    const themeSource = readFileSync(path.resolve(landingRoot, 'styles/theme.css'), 'utf8');
+    const themeSource = readFileSync(
+      path.resolve(landingRoot, 'styles/theme.css'),
+      'utf8',
+    );
     expect(themeSource).toContain('--border: 0 0% 18%;');
     expect(themeSource).not.toContain('--border:        rgba(255, 255, 255, 0.06);');
-  });
-
-  it('suppresses overlay primitives in demo mode instead of freezing the whole workspace', () => {
-    const dialogSource = readFileSync(
-      path.resolve(frontendRoot, 'components/ui/dialog.tsx'),
-      'utf8',
-    );
-    expect(dialogSource).toContain('isDemoMode');
-
-    const popoverSource = readFileSync(
-      path.resolve(frontendRoot, 'components/ui/popover.tsx'),
-      'utf8',
-    );
-    expect(popoverSource).toContain('isDemoMode');
-
-    const dropdownSource = readFileSync(
-      path.resolve(frontendRoot, 'components/ui/dropdown-menu.tsx'),
-      'utf8',
-    );
-    expect(dropdownSource).toContain('isDemoMode');
   });
 
   it('keeps notebook deep-dive Monaco-free while reusing notebook output chrome', () => {
@@ -138,7 +110,7 @@ describe('preview source guardrails', () => {
     expect(notebookSource).not.toContain('BarChart');
 
     const frontendNotebookSource = readFileSync(
-      path.resolve(frontendRoot, 'demo/landing/NotebookDeepDivePreview.tsx'),
+      path.resolve(landingRoot, '../../frontend/src/demo/landing/NotebookDeepDivePreview.tsx'),
       'utf8',
     );
     expect(frontendNotebookSource).toContain('computeSyntaxPalette');
@@ -169,7 +141,10 @@ describe('preview source guardrails', () => {
     );
 
     expect(planSource).toContain('PlanViewerPane');
-    expect(planSource).toContain('className="dark"');
+    // Plan viewer wrapper now mirrors the document theme instead of hardcoding
+    // `dark`, so the nested shadcn/prose styles track light-mode toggles.
+    expect(planSource).toContain('className={resolvedTheme}');
+    expect(planSource).toContain('useHtmlThemeClass');
     expect(planSource).toContain('name: \'Retention Recovery\'');
     expect(planSource).not.toContain('Project Plan: Retention Recovery');
     expect(planSource).toContain('className={styles.questionStage}');
@@ -200,12 +175,20 @@ describe('preview source guardrails', () => {
     expect(landingZodUtil).not.toContain('new F("");');
   });
 
-  it('routes landing sign-in links to a static coming-soon page instead of the real app', () => {
+  it('redirects the landing sign-in to the real app login URL', () => {
+    // Original intent was a static "Coming Soon" placeholder. The sprint-11
+    // demo-ready branch flipped this to a real redirect into the app so demo
+    // visitors can sign in on the deployed backend. Assertions updated to
+    // match the current behavior (redirect + appLoginUrl) instead of the
+    // placeholder. The canonical branch migrated from `final-demo` to
+    // `sprint11` via !150 on 2026-04-20; sprint11 is now the frozen
+    // core-app source of truth.
     expect(existsSync(path.resolve(landingRoot, 'pages/login.astro'))).toBe(true);
     const loginPage = readFileSync(path.resolve(landingRoot, 'pages/login.astro'), 'utf8');
-    expect(loginPage).toContain('Coming Soon');
-    expect(loginPage).not.toContain('PUBLIC_APP_LOGIN_URL');
-    expect(loginPage).not.toContain('window.location.replace');
+    expect(loginPage).toContain('getAppLoginUrl');
+    expect(loginPage).toContain('window.location.replace(appLoginUrl)');
+    expect(loginPage).toContain('http-equiv="refresh"');
+    expect(loginPage).not.toContain('Coming Soon');
   });
 
   it('checks in Vercel project config for the landing workspace', () => {

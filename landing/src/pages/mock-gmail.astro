@@ -1,0 +1,171 @@
+---
+// Gmail inbox lookalike. Rendered as a static Astro page (no hydration) so
+// the capture can navigate to it and Playwright's recordVideo catches a
+// stable first paint. One unread row leads into the detail page.
+import Root from '@/layouts/Root.astro';
+import GmailHeader from '@/components/mock/GmailHeader.astro';
+import GmailSidebar from '@/components/mock/GmailSidebar.astro';
+
+// Timestamp intentionally hand-pinned to match the signup capture's frozen
+// clock (2026-04-15 15:30 -04:00). A real page would call `toLocaleString()`
+// but that would desync on rerun.
+const VERIFICATION_ROW = {
+  sender: 'Agentic AutoML',
+  subject: 'Verify your email',
+  preview: 'One last step. Confirm your email to finish setting up your account.',
+  time: '3:30 PM',
+};
+---
+
+<Root title="Inbox (1) - Gmail">
+  <div class="gm-shell">
+    <GmailHeader />
+    <div class="gm-body">
+      <GmailSidebar activeLabel="inbox" />
+
+      <main class="gm-main">
+        <nav class="gm-tabs" aria-label="Mailbox categories">
+          <button class="gm-tab gm-tab-active"><span class="gm-tab-dot gm-tab-dot-primary"></span>Primary</button>
+          <button class="gm-tab"><span class="gm-tab-dot gm-tab-dot-social"></span>Social</button>
+          <button class="gm-tab"><span class="gm-tab-dot gm-tab-dot-promotions"></span>Promotions</button>
+        </nav>
+
+        <ol class="gm-threadlist">
+          <li>
+            <a class="gm-thread gm-thread-unread" href="/mock-gmail/email">
+              <span class="gm-thread-star" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#9AA0A6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+                  <polygon points="12 2 15 9 22 9.5 17 14.5 18.5 22 12 18 5.5 22 7 14.5 2 9.5 9 9 12 2"></polygon>
+                </svg>
+              </span>
+              <span class="gm-thread-sender">{VERIFICATION_ROW.sender}</span>
+              <span class="gm-thread-subject">
+                <strong>{VERIFICATION_ROW.subject}</strong>
+                <span class="gm-thread-preview"> &mdash; {VERIFICATION_ROW.preview}</span>
+              </span>
+              <span class="gm-thread-time">{VERIFICATION_ROW.time}</span>
+            </a>
+          </li>
+        </ol>
+      </main>
+    </div>
+  </div>
+</Root>
+
+<style is:global>
+  body { margin: 0; background: #F6F8FC; }
+</style>
+<style>
+  .gm-shell {
+    min-height: 100vh;
+    background: #F6F8FC;
+    color: #202124;
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .gm-body {
+    display: flex;
+  }
+  .gm-main {
+    flex: 1;
+    background: #FFFFFF;
+    margin: 0 16px 16px 0;
+    border-radius: 16px;
+    min-height: calc(100vh - 80px);
+    overflow: hidden;
+  }
+
+  .gm-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 16px;
+    border-bottom: 1px solid #F0F1F3;
+  }
+  .gm-tab {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 24px;
+    height: 56px;
+    background: transparent;
+    border: 0;
+    font-size: 14px;
+    color: #5F6368;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    font-family: inherit;
+  }
+  .gm-tab-active {
+    color: #1A73E8;
+    border-bottom-color: #1A73E8;
+    font-weight: 600;
+  }
+  .gm-tab-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .gm-tab-dot-primary { background: #1A73E8; }
+  .gm-tab-dot-social { background: #1E8E3E; }
+  .gm-tab-dot-promotions { background: #D93025; }
+
+  .gm-threadlist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .gm-thread {
+    display: grid;
+    grid-template-columns: 48px 200px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    height: 52px;
+    text-decoration: none;
+    color: inherit;
+    border-bottom: 1px solid #F0F1F3;
+    transition: box-shadow 120ms ease-out;
+  }
+  .gm-thread:hover {
+    box-shadow: inset 1px 0 0 #DADCE0, inset -1px 0 0 #DADCE0,
+                0 1px 2px rgba(60,64,67,0.1), 0 1px 3px rgba(60,64,67,0.05);
+    z-index: 1;
+  }
+  .gm-thread-unread {
+    background: #ffffff;
+    font-weight: 500;
+  }
+  .gm-thread-star { display: flex; align-items: center; justify-content: center; }
+  .gm-thread-sender {
+    font-size: 14px;
+    color: #202124;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gm-thread-unread .gm-thread-sender { font-weight: 600; }
+  .gm-thread-subject {
+    font-size: 14px;
+    color: #5F6368;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gm-thread-subject strong {
+    color: #202124;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .gm-thread-preview {
+    color: #5F6368;
+    font-weight: 400;
+  }
+  .gm-thread-time {
+    font-size: 12px;
+    color: #5F6368;
+    white-space: nowrap;
+  }
+  .gm-thread-unread .gm-thread-time { font-weight: 600; color: #202124; }
+</style>

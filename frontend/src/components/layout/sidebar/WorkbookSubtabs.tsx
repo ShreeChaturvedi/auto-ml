@@ -54,7 +54,16 @@ export function WorkbookSubtabs({
 
   const handleRenameConfirm = () => {
     if (!renamingId || !renameValue.trim()) return;
-    updateWorkbook(phase, renamingId, { name: renameValue.trim() });
+    // Prefer the phase hook's registered rename handler — it writes
+    // through to React state + localStorage so the rename persists across
+    // refresh. Fall back to the ephemeral registry mutation when no
+    // handler is registered yet. Issue #325.
+    const registered = useWorkbookRegistryStore.getState().renameHandlers[phase];
+    if (registered) {
+      registered(renamingId, renameValue.trim());
+    } else {
+      updateWorkbook(phase, renamingId, { name: renameValue.trim() });
+    }
     setRenamingId(null);
   };
 

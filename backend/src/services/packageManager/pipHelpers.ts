@@ -13,6 +13,19 @@ import { execDocker } from '../dockerUtils.js';
 import type { PackageInstallEvent } from './types.js';
 
 const PACKAGE_ALIASES = new Map<string, string>([['pytorch', 'torch']]);
+const PYTORCH_CPU_INDEX_URL = 'https://download.pytorch.org/whl/cpu';
+const PYTORCH_CPU_INDEX_PACKAGES = new Set([
+    'torch',
+    'torchaudio',
+    'torchvision',
+    'torchmetrics',
+    'pytorch-lightning',
+    'lightning',
+    'lightning-utilities',
+    'pytorch-tabular',
+    'pytorch-tabnet',
+    'tab-transformer-pytorch',
+]);
 
 export const CONTAINER_PYTHON_SITE_DIR = '/workspace/.python';
 export const PIP_INSTALL_TIMEOUT_MS = 8 * 60 * 1000;
@@ -34,6 +47,16 @@ export function pipInstallBaseArgs(containerId: string): string[] {
         '--prefer-binary', '--no-cache-dir',
         '--target', CONTAINER_PYTHON_SITE_DIR,
     ];
+}
+
+export function pipInstallIndexArgs(requirements: string[]): string[] {
+    const needsPyTorchCpuIndex = requirements.some((requirement) => {
+        const match = /^([A-Za-z0-9._-]+)/.exec(requirement.trim());
+        const base = (match?.[1] ?? requirement).toLowerCase().replace(/_/g, '-');
+        return PYTORCH_CPU_INDEX_PACKAGES.has(base);
+    });
+
+    return needsPyTorchCpuIndex ? ['--extra-index-url', PYTORCH_CPU_INDEX_URL] : [];
 }
 
 export function isMissingBinaryError(details: string): boolean {

@@ -58,6 +58,11 @@ const HomePage = lazy(() =>
 const DevToolsShowcase = lazy(() =>
   import('@/pages/DevToolsShowcase').then((m) => ({ default: m.DevToolsShowcase }))
 );
+const LandingPreviewCapturePage = lazy(() =>
+  import('@/demo/landing/LandingPreviewCapturePage').then((m) => ({
+    default: m.LandingPreviewCapturePage,
+  }))
+);
 
 function MainApp() {
   const isInitialized = useProjectStore((state) => state.isInitialized);
@@ -128,6 +133,17 @@ function App() {
           <Toaster />
         </div>
       </BrowserRouter>
+    );
+  }
+
+  if (import.meta.env.DEV && window.location.pathname === '/dev/landing-preview') {
+    return (
+      <div className="min-h-screen w-full bg-background text-foreground">
+        <Suspense fallback={null}>
+          <LandingPreviewCapturePage />
+        </Suspense>
+        <Toaster />
+      </div>
     );
   }
 

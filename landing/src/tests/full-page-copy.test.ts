@@ -22,7 +22,7 @@ describe('full-page marketing copy', () => {
       'The fastest way to build production ML models,',
       'agentically.',
       'Now supporting GPT 5.4 class reasoning',
-      'Upload a CSV. Describe your goal.',
+      'Upload your data. Describe your goal.',
       'HOW IT WORKS',
       'From raw data to a deployed model',
       '1.0 INGEST',

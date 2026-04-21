@@ -4,11 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "prebenchmark": "npm --prefix ../backend run build && npm --prefix ../frontend run build && npx playwright install --with-deps chromium",
+    "benchmark:prepare": "npm --prefix ../backend run build && npm --prefix ../frontend run build && npx playwright install --with-deps chromium",
+    "prebenchmark": "npm run benchmark:prepare",
     "benchmark": "playwright test",
-    "prebenchmark:headed": "npm --prefix ../backend run build && npm --prefix ../frontend run build && npx playwright install --with-deps chromium",
+    "prebenchmark:headed": "npm run benchmark:prepare",
     "benchmark:headed": "playwright test --headed",
-    "eval": "tsx tests/evalRunner.ts"
+    "eval": "tsx tests/evalRunner.ts",
+    "benchmark:validate": "node --import tsx/esm benchmarks/validate.ts",
+    "benchmark:test": "node --import tsx/esm --test benchmarks/**/*.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0"

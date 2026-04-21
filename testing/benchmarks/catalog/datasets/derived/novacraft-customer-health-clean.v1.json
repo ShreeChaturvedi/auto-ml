@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "derived.novacraft-customer-health-clean.v1",
+  "kind": "derived",
+  "slug": "novacraft-customer-health-clean",
+  "version": 1,
+  "status": "pending",
+  "task": {
+    "type": "classification",
+    "targetColumn": "churn_risk_flag",
+    "primaryMetric": "f1"
+  },
+  "storage": {
+    "root": "testing/benchmarks/data/derived/novacraft-customer-health-clean/v1",
+    "canonicalFile": "canonical/data.csv"
+  },
+  "integrity": {
+    "canonicalSha256": null
+  },
+  "provenance": {
+    "acquisition": "derived",
+    "license": "repo-internal benchmark asset"
+  },
+  "lineage": {
+    "sourceFamily": "testing/fixtures/mock-business"
+  }
+}

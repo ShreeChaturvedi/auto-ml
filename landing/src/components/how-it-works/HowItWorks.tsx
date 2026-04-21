@@ -39,6 +39,7 @@ const DIORAMA_META: Record<PhaseSceneData['dioramaId'], { label: string; phase: 
 
 interface PhaseSceneProps {
   scene: PhaseSceneData;
+  autoplayDiorama?: boolean;
   preloadAllDioramaPhases?: boolean;
 }
 
@@ -47,6 +48,7 @@ interface PhaseSceneProps {
 // identical (counter + headline + diorama).
 function PhaseScene({
   scene,
+  autoplayDiorama = true,
   preloadAllDioramaPhases = true,
 }: PhaseSceneProps) {
   const diorama = DIORAMA_META[scene.dioramaId];
@@ -64,6 +66,7 @@ function PhaseScene({
         <WorkspaceDiorama
           label={diorama.label}
           phase={diorama.phase}
+          autoplay={autoplayDiorama}
           preloadAll={preloadAllDioramaPhases}
         />
       </div>
@@ -74,9 +77,20 @@ function PhaseScene({
 export default function HowItWorks() {
   const reducedMotion = usePrefersReducedMotion();
   const pinRef = useRef<HTMLDivElement>(null);
+  const tocRef = useRef<HTMLOListElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const prevIdxRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // Auto-scroll the horizontal pill strip to keep the active item visible.
+  // Only fires when the strip is actually scrollable (mobile), avoiding
+  // unnecessary scroll-geometry computation on desktop's vertical TOC.
+  useEffect(() => {
+    const toc = tocRef.current;
+    if (!toc || toc.scrollWidth <= toc.clientWidth) return;
+    const active = toc.children[activeIndex] as HTMLElement | undefined;
+    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeIndex]);
 
   useEffect(() => {
     if (reducedMotion || !pinRef.current) return;
@@ -148,7 +162,11 @@ export default function HowItWorks() {
             <li key={scene.code} className={styles.fallbackItem}>
               <span className={styles.fallbackCode}>{scene.code}</span>
               <figure className={styles.fallbackFigure}>
-                <PhaseScene scene={scene} preloadAllDioramaPhases={false} />
+                <PhaseScene
+                  scene={scene}
+                  autoplayDiorama={false}
+                  preloadAllDioramaPhases={false}
+                />
               </figure>
             </li>
           ))}
@@ -175,7 +193,7 @@ export default function HowItWorks() {
       <div ref={pinRef} className={styles.pinContainer}>
         <div className={styles.pinGrid}>
           <nav aria-label="Workflow phases">
-            <ol className={styles.toc} role="tablist">
+            <ol ref={tocRef} className={styles.toc} role="tablist">
               {PHASE_SCENES.map((scene, i) => (
                 <li key={scene.code}>
                   <button

@@ -15,6 +15,7 @@ import './demoWorkspace.css';
 export interface DemoWorkspaceProps {
   initialPhase?: Phase;
   phase?: Phase;
+  initialEntry?: string;
 }
 
 function DemoWorkspaceRouteSync({ phase }: { phase: Phase }) {
@@ -31,10 +32,14 @@ function DemoWorkspaceRouteSync({ phase }: { phase: Phase }) {
   return null;
 }
 
-export function DemoWorkspace({ initialPhase = DEFAULT_PHASE, phase }: DemoWorkspaceProps) {
+export function DemoWorkspace({
+  initialPhase = DEFAULT_PHASE,
+  phase,
+  initialEntry,
+}: DemoWorkspaceProps) {
   const initialEntries = useMemo(
-    () => [`/project/${DEMO_PROJECT_ID}/${initialPhase}`],
-    [initialPhase],
+    () => [initialEntry ?? `/project/${DEMO_PROJECT_ID}/${initialPhase}`],
+    [initialEntry, initialPhase],
   );
 
   const initializedRef = useRef(false);
@@ -45,14 +50,14 @@ export function DemoWorkspace({ initialPhase = DEFAULT_PHASE, phase }: DemoWorks
   }
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="landing-demo-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="automl-ui-theme">
       <TooltipProvider delayDuration={300}>
         <MemoryRouter initialEntries={initialEntries}>
           <div
             className="landing-demo-workspace h-full bg-background text-foreground"
             data-testid="landing-demo-workspace"
           >
-            <AppShell viewportMode="container">
+            <AppShell>
               {phase ? <DemoWorkspaceRouteSync phase={phase} /> : null}
               <Routes>
                 <Route path="/project/:projectId" element={<Navigate to={`/project/${DEMO_PROJECT_ID}/${initialPhase}`} replace />} />

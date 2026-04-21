@@ -223,12 +223,32 @@ export const TEMPLATE_ID_ALIASES: Record<string, string> = {
   'random-forest-classifier': 'random_forest_classifier',
   'random-forest-regressor': 'random_forest_regressor',
   'logistic-regression': 'logistic_regression',
+  ridge: 'ridge_regression',
   'knn-classifier': 'knn_classifier',
   'gradient-boosting-classifier': 'gradient_boosting_classifier',
   // Seeded test models that map to the nearest real template
   'xgboost-classifier': 'gradient_boosting_classifier',
   'xgboost_classifier': 'gradient_boosting_classifier',
 };
+
+const TASK_TYPE_TEMPLATE_FAMILY_ALIASES: Record<string, Partial<Record<ModelTaskType, string>>> = {
+  random_forest: {
+    classification: 'random_forest_classifier',
+    regression: 'random_forest_regressor',
+  },
+};
+
+function findTemplateById(templateId: string): ModelTemplate | undefined {
+  return MODEL_TEMPLATES.find((template) => template.id === templateId);
+}
+
+function normalizeTemplateId(templateId: string): string {
+  return templateId
+    .trim()
+    .toLowerCase()
+    .replace(/^(?:(?:seed|llm)-)+/, '')
+    .replace(/-/g, '_');
+}
 
 /**
  * Infer the ML task type from the target column's dtype and cardinality.
@@ -273,16 +293,43 @@ export function buildTemplateSummary(): string {
   return `[Available model templates:\n${lines.join('\n')}]`;
 }
 
-export function getModelTemplate(templateId: string): ModelTemplate | undefined {
-  // 1. Exact match
-  const exact = MODEL_TEMPLATES.find((t) => t.id === templateId);
-  if (exact) return exact;
+export function resolveModelTemplateId(
+  templateId: string,
+  taskType?: ModelTaskType,
+): string | undefined {
+  if (!templateId.trim()) {
+    return undefined;
+  }
 
-  // 2. Explicit alias (covers known legacy IDs)
-  const aliased = TEMPLATE_ID_ALIASES[templateId];
-  if (aliased) return MODEL_TEMPLATES.find((t) => t.id === aliased);
+  const normalizedTemplateId = normalizeTemplateId(templateId);
+  const candidates = new Set([templateId, normalizedTemplateId]);
 
-  // 3. Normalize: hyphens → underscores, strip common prefixes (seed-, etc.)
-  const normalized = templateId.replace(/^seed-/, '').replace(/-/g, '_');
-  return MODEL_TEMPLATES.find((t) => t.id === normalized);
+  for (const candidate of candidates) {
+    const exact = findTemplateById(candidate);
+    if (exact) {
+      return exact.id;
+    }
+
+    const aliased = TEMPLATE_ID_ALIASES[candidate];
+    if (aliased && findTemplateById(aliased)) {
+      return aliased;
+    }
+  }
+
+  const taskTypeAlias = taskType
+    ? TASK_TYPE_TEMPLATE_FAMILY_ALIASES[normalizedTemplateId]?.[taskType]
+    : undefined;
+  if (taskTypeAlias && findTemplateById(taskTypeAlias)) {
+    return taskTypeAlias;
+  }
+
+  return undefined;
+}
+
+export function getModelTemplate(
+  templateId: string,
+  taskType?: ModelTaskType,
+): ModelTemplate | undefined {
+  const resolvedTemplateId = resolveModelTemplateId(templateId, taskType);
+  return resolvedTemplateId ? findTemplateById(resolvedTemplateId) : undefined;
 }

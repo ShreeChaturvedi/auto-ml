@@ -3,9 +3,12 @@ import { isAbsolute, join, resolve, sep } from 'node:path';
 
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
+import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
 import { createModelRepository } from '../../../repositories/modelRepository.js';
+import type { DatasetProfileColumn } from '../../../types/dataset.js';
 import type { ModelArtifact, ModelTaskType } from '../../../types/model.js';
 import { runEvaluation } from '../../evaluationService.js';
+import { resolveModelTemplateId } from '../../modelTemplates.js';
 import {
   extractSuccessfulRuntimeDependenciesFromHistory,
   inferRuntimeDependenciesFromModelType,
@@ -21,6 +24,59 @@ import {
 } from './workflowPrepSegments.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
+const datasetRepositoryForSampleRequest = createDatasetRepository(env.datasetMetadataPath);
+
+/**
+ * Build a `sampleRequest` payload AND `featureTypes` map for the deployment
+ * playground from the trained dataset's first sample row + column profile.
+ *
+ * Returns:
+ *   - sampleRequest: { featureName: sample_value_from_first_row }
+ *   - featureTypes: { featureName: 'number' | 'boolean' | 'string' }
+ *     (used by the inference server's Pydantic model so the /predict
+ *     endpoint accepts strings for categorical fields instead of
+ *     rejecting everything as non-float).
+ *
+ * Missing sample values fall back to 0 (numeric-looking names) or ''.
+ */
+async function buildSampleRequestFromDataset(
+  datasetId: string | undefined,
+  featureColumns: string[]
+): Promise<{ sampleRequest: Record<string, unknown>; featureTypes: Record<string, 'float' | 'int' | 'str'> }> {
+  if (!datasetId || featureColumns.length === 0) return { sampleRequest: {}, featureTypes: {} };
+  try {
+    const dataset = await datasetRepositoryForSampleRequest.getById(datasetId);
+    const firstRow = dataset?.sample?.[0] as Record<string, unknown> | undefined;
+    const columnProfiles = dataset?.columns ?? [];
+    const dtypeByName = new Map<string, string>(
+      columnProfiles.map((col) => [col.name, (col.dtype ?? 'string').toLowerCase()])
+    );
+    // Inference server Pydantic schema uses the Python-like type names
+    // 'float' / 'int' / 'str'. Map dataset dtypes accordingly. Booleans
+    // go to 'int' (0/1) so FastAPI accepts the JSON payload cleanly
+    // without special-casing.
+    const toInferenceType = (dtype: string): 'float' | 'int' | 'str' => {
+      if (dtype === 'float' || dtype === 'number') return 'float';
+      if (dtype === 'integer' || dtype === 'int' || dtype === 'boolean' || dtype === 'bool') return 'int';
+      return 'str';
+    };
+    const sampleRequest: Record<string, unknown> = {};
+    const featureTypes: Record<string, 'float' | 'int' | 'str'> = {};
+    for (const col of featureColumns) {
+      const dtype = dtypeByName.get(col) ?? 'string';
+      const infType = toInferenceType(dtype);
+      featureTypes[col] = infType;
+      if (firstRow && col in firstRow && firstRow[col] != null) {
+        sampleRequest[col] = firstRow[col];
+      } else {
+        sampleRequest[col] = infType === 'str' ? '' : 0;
+      }
+    }
+    return { sampleRequest, featureTypes };
+  } catch {
+    return { sampleRequest: {}, featureTypes: {} };
+  }
+}
 
 /**
  * Resolve an LLM-supplied artifactPath against the project's execution
@@ -154,6 +210,84 @@ function resolveRegistrationMetrics(
   return normalizeMetricsRecord(experiment.trainingMetrics);
 }
 
+// Threshold above which a numeric target column is treated as continuous
+// regression rather than categorical classification. Low-cardinality
+// integers (e.g., 1-5 rating, 0-10 class IDs) stay ambiguous so the LLM
+// must declare intent explicitly.
+const CLASSIFICATION_MAX_UNIQUE = 20;
+const BINARY_VALUE_MARKERS = new Set(['0', '1', 'true', 'false', '0.0', '1.0']);
+
+export type TaskTypeInferenceVerdict = {
+  taskType: ModelTaskType | 'ambiguous';
+  reason: string;
+};
+
+/** Task-type inference from a target column's statistical profile. */
+export function inferTaskTypeFromTargetProfile(
+  column: DatasetProfileColumn | null | undefined,
+): TaskTypeInferenceVerdict {
+  if (!column) {
+    return { taskType: 'ambiguous', reason: 'target column profile unavailable' };
+  }
+
+  if (column.dtype === 'string') {
+    return { taskType: 'classification', reason: 'string/categorical dtype' };
+  }
+  if (column.dtype === 'boolean') {
+    return { taskType: 'classification', reason: 'boolean dtype' };
+  }
+  if (column.dtype === 'date') {
+    return { taskType: 'regression', reason: 'date dtype (time-series regression)' };
+  }
+
+  const unique = column.uniqueCount ?? 0;
+  const topKeys = (column.topValues ?? []).map((entry) => String(entry.value).trim().toLowerCase());
+  const isBinary01 = unique > 0 && unique <= 2 && topKeys.length > 0
+    && topKeys.every((key) => BINARY_VALUE_MARKERS.has(key));
+  if (isBinary01) {
+    return { taskType: 'classification', reason: 'binary 0/1 target' };
+  }
+
+  if (column.dtype === 'integer' && unique > 0 && unique <= CLASSIFICATION_MAX_UNIQUE) {
+    return {
+      taskType: 'ambiguous',
+      reason: `low-cardinality integer target (${unique} unique values) — could be ordinal classification or count regression`,
+    };
+  }
+
+  if ((column.dtype === 'integer' || column.dtype === 'float') && unique > CLASSIFICATION_MAX_UNIQUE) {
+    return {
+      taskType: 'regression',
+      reason: `continuous ${column.dtype} target with ${unique} unique values`,
+    };
+  }
+
+  if (column.dtype === 'float') {
+    return {
+      taskType: 'regression',
+      reason: 'float target (default to regression unless binary 0/1)',
+    };
+  }
+
+  return { taskType: 'ambiguous', reason: 'numeric target with insufficient signal for auto-detection' };
+}
+
+export function formatTargetProfileForPrompt(
+  column: DatasetProfileColumn | null | undefined,
+): string | null {
+  if (!column) return null;
+  const verdict = inferTaskTypeFromTargetProfile(column);
+  const parts = [`${column.name} (${column.dtype})`];
+  if (typeof column.uniqueCount === 'number') {
+    parts.push(`${column.uniqueCount.toLocaleString('en-US')} unique values`);
+  }
+  if (typeof column.min === 'number' && typeof column.max === 'number') {
+    parts.push(`range [${column.min}, ${column.max}]`);
+  }
+  parts.push(`inferred task type: ${verdict.taskType} (${verdict.reason})`);
+  return `Target profile: ${parts.join(' — ')}`;
+}
+
 function detectTaskTypeFromMetrics(metrics: Record<string, number>): ModelTaskType | undefined {
   const keys = new Set(Object.keys(metrics).map((key) => key.toLowerCase()));
   if (keys.has('silhouette') || keys.has('davies_bouldin') || keys.has('calinski_harabasz')) {
@@ -181,12 +315,23 @@ function detectTaskTypeFromMetrics(metrics: Record<string, number>): ModelTaskTy
   return undefined;
 }
 
+function isModelTaskType(value: unknown): value is ModelTaskType {
+  return value === 'classification' || value === 'regression' || value === 'clustering';
+}
+
 /** Best-effort task type inference from experiment metadata + metrics. */
 function inferTaskType(
   experiment: Record<string, unknown>,
   explicitModelType: string | undefined,
   metrics: Record<string, number>
 ): ModelTaskType {
+  // 1. Trust the value configure_experiment already stored (authoritative —
+  //    validated against the target column profile at the time of the call).
+  const storedTaskType = experiment.taskType;
+  if (isModelTaskType(storedTaskType)) {
+    return storedTaskType;
+  }
+
   const modelType = String(
     explicitModelType
     ?? experiment.modelType
@@ -194,18 +339,30 @@ function inferTaskType(
     ?? ''
   ).toLowerCase();
 
-  // Classification checks come before regression so model types like
-  // "logistic_regression" are not misclassified as regression.
+  // 2. Narrow regex on explicit classifier/regressor/clusterer model suffixes.
+  //    Classification rules come first so "logistic_regression" is not
+  //    mis-routed to regression by the trailing "regression" token.
   if (/classif|classifier|logistic|svc|svm|naive_bayes|knn/.test(modelType)) return 'classification';
   if (/cluster|kmeans|dbscan|hierarch|gmm|gaussian_mixture|birch/.test(modelType)) return 'clustering';
   if (/regress|regressor|svr|ridge|lasso|elastic/.test(modelType)) return 'regression';
 
+  // 3. Target column profile — authoritative for ambiguous bare model names
+  //    like "catboost", "xgboost", "lightgbm" where the suffix is missing.
+  const targetColumnProfile = experiment.targetColumnProfile;
+  if (targetColumnProfile && typeof targetColumnProfile === 'object') {
+    const verdict = inferTaskTypeFromTargetProfile(targetColumnProfile as DatasetProfileColumn);
+    if (verdict.taskType !== 'ambiguous') {
+      return verdict.taskType;
+    }
+  }
+
+  // 4. Metrics keys as a last hint.
   const inferredFromMetrics = detectTaskTypeFromMetrics(metrics);
   if (inferredFromMetrics) {
     return inferredFromMetrics;
   }
 
-  // If a target column is set, it's supervised; default to classification.
+  // 5. Supervised training with no signal: default to classification.
   return 'classification';
 }
 
@@ -213,6 +370,16 @@ export const registerModel: TrainingToolHandler = async (
   ctx: TrainingToolContext
 ): Promise<TrainingToolResult> => {
   const { args, run, projectId, datasetId } = ctx;
+
+  // Prefer the dataset the training run actually fit on, not the
+  // upload dataset the client passed in. Preprocessing commits update
+  // `run.activeDatasetId` to the latest derived dataset — that's the
+  // file the training cell's `pd.read_csv(FILENAME)` loaded from. If we
+  // persist the original upload id here, evaluation later reads the raw
+  // CSV and `pipeline.predict(X_test)` crashes with "columns are
+  // missing" because the fitted ColumnTransformer expects the one-hot
+  // encoded schema. Issue #342.
+  const trainedDatasetId = run.activeDatasetId ?? datasetId;
 
   const resolved = resolveExperiment(run, args);
   if ('error' in resolved) return resolved;
@@ -289,13 +456,25 @@ export const registerModel: TrainingToolHandler = async (
     };
   }
 
+  // Build a sample request payload for the deployment playground. The
+  // non-LLM training path populates this from a Python-side
+  // `sample_row` dict; the LLM path hadn't. Without a sampleRequest,
+  // the deployment schema endpoint returns `{}` and the /predict
+  // playground has nothing to demo. Issue surfaced during the Phase 9
+  // deployment probe.
+  const { sampleRequest, featureTypes } = await buildSampleRequestFromDataset(
+    trainedDatasetId,
+    featureColumns ?? []
+  );
+
   let artifact: ModelArtifact | undefined;
   try {
+    const resolvedTemplateId = resolveModelTemplateId(modelType, taskType) ?? `llm-${modelType}`;
     const record = await modelRepository.create({
       projectId,
-      datasetId: datasetId ?? '',
+      datasetId: trainedDatasetId ?? '',
       name: modelName,
-      templateId: `llm-${modelType}`,
+      templateId: resolvedTemplateId,
       taskType,
       library: 'llm-guided',
       algorithm: modelType,
@@ -309,6 +488,8 @@ export const registerModel: TrainingToolHandler = async (
         ? experiment.targetColumn
         : undefined,
       featureColumns,
+      ...(Object.keys(sampleRequest).length > 0 ? { sampleRequest } : {}),
+      ...(Object.keys(featureTypes).length > 0 ? { featureTypes } : {}),
       // Artifact is populated after the permanent copy succeeds below.
       evaluationStatus: 'pending',
       metadata: {

@@ -1,4 +1,4 @@
-import { apiFetch, apiRequest } from './client';
+import { ApiError, apiFetch, apiRequest } from './client';
 import type {
   EvaluationResult,
   ShapResult,
@@ -7,8 +7,33 @@ import type {
   ExperimentInsightType,
 } from '@/types/experiments';
 
-export async function fetchEvaluation(modelId: string): Promise<EvaluationResult> {
-  return apiRequest<EvaluationResult>(`/experiments/${modelId}/evaluation`);
+export async function fetchEvaluation(modelId: string): Promise<EvaluationResult | undefined> {
+  const response = await apiFetch(`/experiments/${modelId}/evaluation`);
+
+  if (response.status === 202 || response.status === 204 || response.status === 404) {
+    return undefined;
+  }
+
+  if (!response.ok) {
+    const cloned = response.clone();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = await cloned.text();
+    }
+    const errorMessage =
+      payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+        ? payload.error
+        : response.statusText || 'Evaluation request failed';
+    throw new ApiError(
+      `Request to ${response.url} failed with status ${response.status}: ${errorMessage}`,
+      response.status,
+      payload,
+    );
+  }
+
+  return (await response.json()) as EvaluationResult;
 }
 
 export async function retryEvaluation(modelId: string): Promise<{ ok: boolean; evaluationStatus: string }> {
@@ -17,12 +42,62 @@ export async function retryEvaluation(modelId: string): Promise<{ ok: boolean; e
   });
 }
 
-export async function fetchShap(modelId: string): Promise<ShapResult> {
-  return apiRequest<ShapResult>(`/experiments/${modelId}/shap`);
+export async function fetchShap(modelId: string): Promise<ShapResult | undefined> {
+  const response = await apiFetch(`/experiments/${modelId}/shap`);
+
+  if (response.status === 202 || response.status === 204 || response.status === 404) {
+    return undefined;
+  }
+
+  if (!response.ok) {
+    const cloned = response.clone();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = await cloned.text();
+    }
+    const errorMessage =
+      payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+        ? payload.error
+        : response.statusText || 'SHAP request failed';
+    throw new ApiError(
+      `Request to ${response.url} failed with status ${response.status}: ${errorMessage}`,
+      response.status,
+      payload,
+    );
+  }
+
+  return (await response.json()) as ShapResult;
 }
 
-export async function fetchErrorAnalysis(modelId: string): Promise<ErrorAnalysisResult> {
-  return apiRequest<ErrorAnalysisResult>(`/experiments/${modelId}/error-analysis`);
+export async function fetchErrorAnalysis(modelId: string): Promise<ErrorAnalysisResult | undefined> {
+  const response = await apiFetch(`/experiments/${modelId}/error-analysis`);
+
+  if (response.status === 202 || response.status === 204 || response.status === 404) {
+    return undefined;
+  }
+
+  if (!response.ok) {
+    const cloned = response.clone();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = await cloned.text();
+    }
+    const errorMessage =
+      payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+        ? payload.error
+        : response.statusText || 'Error analysis request failed';
+    throw new ApiError(
+      `Request to ${response.url} failed with status ${response.status}: ${errorMessage}`,
+      response.status,
+      payload,
+    );
+  }
+
+  return (await response.json()) as ErrorAnalysisResult;
 }
 
 /** Returns raw Response for NDJSON streaming (apiRequest parses JSON; we need the raw stream). */

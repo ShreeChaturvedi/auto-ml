@@ -114,6 +114,25 @@ describe('buildTrainingRequest', () => {
     expect(userMessage?.content).toContain('call propose_training_plan and stop for approval');
   });
 
+  it('forces a corrected configure_experiment retry when proxy-model substitution is rejected', () => {
+    const request = buildTrainingRequest({
+      dataset,
+      prompt: 'Train a decision tree regressor to predict monthly_spend.',
+      currentNode: 'configure_experiment',
+      toolResults: [
+        {
+          tool: 'configure_experiment',
+          error: 'Experiment name "Decision Tree Regressor for monthly_spend" implies modelType="decision_tree_regressor" but configure_experiment requested "random_forest_regressor". Retry with modelType="decision_tree_regressor" and do not substitute a proxy model.'
+        }
+      ]
+    });
+
+    const userMessage = request.messages.find((message) => message.role === 'user');
+    expect(userMessage?.content).toContain('substituted the wrong model family');
+    expect(userMessage?.content).toContain('modelType="decision_tree_regressor"');
+    expect(userMessage?.content).toContain('Do NOT respond with fallback prose');
+  });
+
   it('includes the selected dataset and target controls in the request context', () => {
     const request = buildTrainingRequest({
       dataset,

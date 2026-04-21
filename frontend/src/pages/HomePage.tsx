@@ -1,6 +1,5 @@
 import { useState, useLayoutEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { BookOpen, FolderOpen } from 'lucide-react';
+import { ArrowUpRight, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -148,27 +147,23 @@ export function HomePage() {
             </EmptyTitle>
             <EmptyDescription className="empty-state-enter" style={{ animationDelay: '300ms' }}>
               {projects.length === 0
-                ? 'Start your first ML workflow by creating a new project or importing one.'
-                : 'Select a project from the sidebar to continue working, or create/import a new one.'}
+                ? 'Start your first ML workflow by creating a new project.'
+                : 'Select a project from the sidebar to continue working, or create a new one.'}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="empty-state-enter" style={{ animationDelay: '400ms' }}>
-            <div className="flex gap-2">
-              <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
-              <Button variant="outline">Import Project</Button>
-            </div>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>Create Project</Button>
           </EmptyContent>
-          <Button
-            variant="link"
-            asChild
-            className="text-muted-foreground empty-state-enter"
-            size="sm"
+          <a
+            className="empty-state-enter inline-flex items-center gap-1 rounded-sm text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             style={{ animationDelay: '500ms' }}
+            href="https://agentic-automl.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Learn More (opens landing page in new tab)"
           >
-            <Link to="/docs">
-              Learn More <BookOpen className="h-4 w-4" />
-            </Link>
-          </Button>
+            Learn More <ArrowUpRight className="h-4 w-4" />
+          </a>
           <ProjectDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} />
         </Empty>
       </div>

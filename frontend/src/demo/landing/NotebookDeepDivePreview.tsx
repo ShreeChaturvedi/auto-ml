@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { CellOutputRenderer } from '@/components/training/CellOutputRenderer';
 import { buildOutputCopyText } from '@/components/training/cellOutputUtils';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useHtmlThemeClass } from '@/hooks/useHtmlThemeClass';
 import { getEditorChromeColors } from '@/lib/color/editorColors';
 import { computeSyntaxPalette, setSynVarsFromPalette } from '@/lib/color/syntaxPalette';
 
@@ -13,7 +14,6 @@ import type { CellOutput, NotebookCell } from '@/types/notebook';
 const NOW = '2026-04-13T15:30:00.000Z';
 const NOTEBOOK_ID = 'landing-standalone-notebook';
 const NOTEBOOK_SYNTAX_HUE = 240;
-const NOTEBOOK_EDITOR_CHROME = getEditorChromeColors(true);
 
 const DESCRIBE_TABLE = {
   columns: ['stat', 'mrr_usd', 'avg_session_minutes', 'api_calls'],
@@ -66,14 +66,20 @@ const CELLS: NotebookCell[] = [
 
 export function NotebookDeepDivePreview() {
   const previewRef = useRef<HTMLDivElement>(null);
+  const theme = useHtmlThemeClass();
+  const isDark = theme === 'dark';
+  const editorChromeColors = useMemo(() => getEditorChromeColors(isDark), [isDark]);
 
+  // Re-apply the syntax palette whenever the theme flips so Python token
+  // colors (keyword/function/string/etc.) track the toggle instead of
+  // staying stuck on the mount-time palette.
   useLayoutEffect(() => {
-    if (!previewRef.current) {
-      return;
-    }
-
-    setSynVarsFromPalette(previewRef.current, computeSyntaxPalette(NOTEBOOK_SYNTAX_HUE, true));
-  }, []);
+    if (!previewRef.current) return;
+    setSynVarsFromPalette(
+      previewRef.current,
+      computeSyntaxPalette(NOTEBOOK_SYNTAX_HUE, isDark),
+    );
+  }, [isDark]);
 
   return (
     <div ref={previewRef} className="flex h-full flex-col gap-3 overflow-auto p-4">
@@ -81,7 +87,7 @@ export function NotebookDeepDivePreview() {
         <LandingNotebookCell
           key={cell.cellId}
           cell={cell}
-          editorChromeColors={NOTEBOOK_EDITOR_CHROME}
+          editorChromeColors={editorChromeColors}
         />
       ))}
     </div>

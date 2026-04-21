@@ -460,10 +460,23 @@ export const WorkflowPhaseTree = memo(function WorkflowPhaseTree({
 
     const registryPhase = phase as WorkbookPhase;
     const registry = useWorkbookRegistryStore.getState();
+
+    // Prefer the phase hook's registered add handler — it writes through
+    // to React state + localStorage so the new workbook survives a
+    // refresh. Fall back to the ephemeral registry mutation only when no
+    // handler is registered yet (phase panel not mounted). Issue #325.
+    const registered = registry.addHandlers[registryPhase];
+    if (registered) {
+      const newId = registered();
+      if (newId) {
+        navigate(`/project/${projectId}/${phase}?workbook=${newId}`);
+      }
+      return;
+    }
+
     const existing = registry[registryPhase];
     const newId = createWorkbookId();
     const newName = nextWorkbookName(existing);
-
     registry.addWorkbook(registryPhase, { id: newId, name: newName, notebookId: null });
     navigate(`/project/${projectId}/${phase}?workbook=${newId}`);
   }, [projectId, navigate]);

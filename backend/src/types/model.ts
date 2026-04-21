@@ -1,4 +1,4 @@
-export type ModelTaskType = 'classification' | 'regression' | 'clustering';
+export type ModelTaskType = 'classification' | 'regression' | 'clustering' | 'forecasting';
 export type ModelStatus = 'completed' | 'failed';
 
 export interface ModelTemplateParamOption {

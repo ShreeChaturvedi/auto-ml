@@ -22,8 +22,7 @@ vi.mock('@monaco-editor/react', () => ({
 }));
 
 vi.mock('@/lib/monaco/preloader', () => ({
-  initMonaco: vi.fn().mockResolvedValue(undefined),
-  getMonacoIfReady: vi.fn(() => null)
+  initMonaco: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock('@/lib/api/notebooks', async (importOriginal) => {

@@ -153,7 +153,20 @@ async function processCsvJsonUpload(
 ): Promise<void> {
   const buffer = await readFile(tempFilePath);
 
-  const rows = await parseDatasetRows(buffer, fileType, req.file!.originalname);
+  // Parse failures on malformed CSV / JSON should surface as 400 with a
+  // structured error body — NOT 500. Issue #338.
+  let rows: Record<string, unknown>[];
+  try {
+    rows = await parseDatasetRows(buffer, fileType, req.file!.originalname);
+  } catch (err) {
+    await cleanupTempFile(tempFilePath);
+    const detail = err instanceof Error ? err.message : String(err);
+    res.status(400).json({
+      error: `Failed to parse dataset file: ${req.file!.originalname}`,
+      detail,
+    });
+    return;
+  }
   if (rows.length === 0) {
     await cleanupTempFile(tempFilePath);
     res.status(400).json({ error: 'Dataset has no rows to process' });

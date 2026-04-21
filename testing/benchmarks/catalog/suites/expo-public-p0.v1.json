@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "id": "expo-public-p0.v1",
+  "lane": "public-p0",
+  "entries": [
+    {
+      "datasetRef": "public.adult-income.v1",
+      "repetitions": 3,
+      "qualityGate": {
+        "metric": "accuracy",
+        "policy": "tbd"
+      }
+    },
+    {
+      "datasetRef": "public.titanic.v1",
+      "repetitions": 3,
+      "qualityGate": {
+        "metric": "accuracy",
+        "policy": "tbd"
+      }
+    },
+    {
+      "datasetRef": "public.ames-housing.v1",
+      "repetitions": 3,
+      "qualityGate": {
+        "metric": "rmse",
+        "policy": "tbd"
+      }
+    },
+    {
+      "datasetRef": "public.credit-card-fraud.v1",
+      "repetitions": 3,
+      "qualityGate": {
+        "metric": "roc_auc",
+        "policy": "tbd"
+      }
+    },
+    {
+      "datasetRef": "public.spaceship-titanic.v1",
+      "repetitions": 3,
+      "qualityGate": {
+        "metric": "accuracy",
+        "policy": "tbd"
+      }
+    }
+  ]
+}

@@ -25,7 +25,7 @@ describe('marketing DOM (post-build)', () => {
   });
 
   it('contains the subhead', () => {
-    expect(readDist()).toContain('Upload a CSV. Describe your goal.');
+    expect(readDist()).toContain('Upload your data. Describe your goal.');
   });
 
   it('contains the pulse announcement', () => {
@@ -38,6 +38,9 @@ describe('marketing DOM (post-build)', () => {
 
   it('contains all 3 nav link labels', () => {
     const html = readDist();
+    // "Quick Look" replaces the old nav label. "Product" still renders in the
+    // footer column heading, so it must remain present in the built HTML.
+    expect(html).toContain('Quick Look');
     expect(html).toContain('Product');
     expect(html).toContain('Features');
     expect(html).toContain('How it works');

@@ -226,11 +226,35 @@ export function usePreprocessingTabs({
     reserveNextWorkbookName
   });
 
+  // Sidebar "+" and rename dialog route through the registry. Register the
+  // phase-hook versions so sidebar mutations persist (issues #325 + #327).
+  // Previously only delete was registered; add/rename mutations from the
+  // sidebar landed only in the ephemeral registry and were clobbered on
+  // the next `useEffect` sync tick (see line 108 setWorkbooks).
+  const addTabFromRegistry = useCallback((): string | undefined => {
+    const newId = handleNewTab?.();
+    return newId ?? undefined;
+  }, [handleNewTab]);
+
+  const renameTabById = useCallback((id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, name: trimmed } : t)));
+  }, [setTabs]);
+
   useEffect(() => {
     if (!tabsReady) return;
-    useWorkbookRegistryStore.getState().setDeleteHandler('preprocessing', deleteTabById);
-    return () => useWorkbookRegistryStore.getState().setDeleteHandler('preprocessing', null);
-  }, [deleteTabById, tabsReady]);
+    const store = useWorkbookRegistryStore.getState();
+    store.setDeleteHandler('preprocessing', deleteTabById);
+    store.setAddHandler('preprocessing', addTabFromRegistry);
+    store.setRenameHandler('preprocessing', renameTabById);
+    return () => {
+      const s = useWorkbookRegistryStore.getState();
+      s.setDeleteHandler('preprocessing', null);
+      s.setAddHandler('preprocessing', null);
+      s.setRenameHandler('preprocessing', null);
+    };
+  }, [addTabFromRegistry, deleteTabById, renameTabById, tabsReady]);
 
   // ---- Apply initial tab/notebook from URL search params ------------------
 

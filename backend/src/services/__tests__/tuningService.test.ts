@@ -620,6 +620,59 @@ describe('runTuningStudy', () => {
     expect(res.end).toHaveBeenCalled();
   });
 
+  it('passes taskType when resolving llm-prefixed template IDs', async () => {
+    const res = makeMockRes();
+    const model = makeModelRecord({
+      templateId: 'llm-random_forest',
+      taskType: 'regression',
+    });
+    const template = makeTemplate({
+      id: 'random_forest_regressor',
+      taskType: 'regression',
+      modelClass: 'RandomForestRegressor',
+      metrics: ['rmse', 'mae', 'r2'],
+      parameters: [
+        { key: 'n_estimators', label: 'Trees', type: 'number', default: 200, min: 10, max: 1000, step: 10 },
+        { key: 'max_depth', label: 'Max depth', type: 'number', default: 10, min: 2, max: 50 },
+      ],
+      defaultParams: { n_estimators: 200, max_depth: 10, random_state: 42 },
+    });
+    const container = makeContainer();
+
+    mockModelGetById.mockResolvedValue(model);
+    mockGetModelTemplate.mockReturnValue(template);
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockGetOrCreateContainer.mockResolvedValue(container);
+    mockExecute.mockResolvedValue({
+      container,
+      executionResult: { status: 'error', stderr: 'boom', error: 'boom', executionMs: 100 },
+    });
+
+    await runTuningStudy('test-project', 'test-model-id', 1, 'r2', 600, res as never);
+
+    expect(mockGetModelTemplate).toHaveBeenCalledWith('llm-random_forest', 'regression');
+  });
+
+  it('writes explicit unsupported errors for llm model types without templates', async () => {
+    const res = makeMockRes();
+    const model = makeModelRecord({
+      templateId: 'llm-lightgbm',
+      algorithm: 'lightgbm',
+      taskType: 'regression',
+    });
+    mockModelGetById.mockResolvedValue(model);
+    mockGetModelTemplate.mockReturnValue(undefined);
+
+    await runTuningStudy('test-project', 'test-model-id', 10, 'r2', 600, res as never);
+
+    const writtenLines = parseChunks(res);
+    expect(writtenLines).toHaveLength(1);
+    expect(writtenLines[0].type).toBe('error');
+    expect(writtenLines[0].message).toContain('Tuning is not supported for model type "lightgbm"');
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalled();
+  });
+
   it('writes error when dataset not found', async () => {
     const res = makeMockRes();
     const model = makeModelRecord();
@@ -803,6 +856,60 @@ describe('runTuningStudy', () => {
     expect(createArg.metadata.tuning.metric).toBe('accuracy');
     expect(createArg.featureTypes).toEqual({ feat1: 'float', feat2: 'str' });
     expect(createArg.sampleRequest).toEqual({ feat1: 1.5, feat2: 'north' });
+  });
+
+  it('persists the resolved canonical template id for tuned children from legacy llm source models', async () => {
+    const model = makeModelRecord({
+      modelId: 'source-model-id',
+      name: 'Legacy Random Forest',
+      templateId: 'llm-random_forest',
+      taskType: 'regression',
+      algorithm: 'RandomForestRegressor',
+      metrics: { r2: 0.81 },
+    });
+    const { container } = setupRunMocks(model);
+    const res = makeMockRes();
+    const template = makeTemplate({
+      id: 'random_forest_regressor',
+      taskType: 'regression',
+      modelClass: 'RandomForestRegressor',
+      metrics: ['rmse', 'mae', 'r2'],
+      parameters: [
+        { key: 'n_estimators', label: 'Trees', type: 'number', default: 200, min: 10, max: 1000, step: 10 },
+        { key: 'max_depth', label: 'Max depth', type: 'number', default: 10, min: 2, max: 50 },
+      ],
+      defaultParams: { n_estimators: 200, max_depth: 10, random_state: 42 },
+    });
+
+    mockGetModelTemplate.mockReturnValue(template);
+
+    const { readFile: mockReadFile } = await import('node:fs/promises');
+    vi.mocked(mockReadFile).mockResolvedValue(JSON.stringify({
+      best_params: { n_estimators: 300, max_depth: 15 },
+      best_value: 0.92,
+      best_trial_number: 7,
+      optimization_history: { trial_numbers: [0, 1], values: [0.85, 0.92], best_values: [0.85, 0.92] },
+      param_importances: { params: ['n_estimators'], importances: [0.8] },
+    }));
+
+    mockModelCreate.mockResolvedValue({
+      ...model,
+      modelId: 'new-tuned-model-id',
+      templateId: template.id,
+      parameters: { n_estimators: 300, max_depth: 15 },
+    });
+
+    mockExecute.mockImplementation(async (config: unknown) => {
+      const cfg = config as { onOutput?: (output: { type: string; content: string }) => void };
+      cfg.onOutput?.({ type: 'text', content: '{"type": "done"}\n' });
+      return { container, executionResult: { status: 'success', stderr: '', executionMs: 10000 } };
+    });
+
+    await runTuningStudy('test-project', 'source-model-id', 2, 'r2', 600, res as never);
+
+    expect(mockModelCreate).toHaveBeenCalledTimes(1);
+    expect(mockModelCreate.mock.calls[0][0].templateId).toBe('random_forest_regressor');
+    expect(mockModelCreate.mock.calls[0][0].templateId).not.toBe(model.templateId);
   });
 
   it('stores tuned artifacts under the created model id and updates the persisted artifact path', async () => {

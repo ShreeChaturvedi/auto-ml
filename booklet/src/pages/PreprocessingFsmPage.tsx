@@ -27,7 +27,7 @@ export const PreprocessingFsmPage: React.FC<{
         letterSpacing: TYPE.body.tracking,
         lineHeight: TYPE.body.lh,
         color: COLORS.INK,
-        maxWidth: "6.4in",
+        maxWidth: "5.5in",
         margin: "0 0 20px",
       }}
     >
@@ -37,7 +37,7 @@ export const PreprocessingFsmPage: React.FC<{
     <div
       style={{
         width: "100%",
-        height: "5.6in",
+        height: "6.7in",
         background: COLORS.PAPER_ELEVATED,
         border: `0.75pt solid ${COLORS.HAIRLINE}`,
         borderRadius: 6,
@@ -45,7 +45,7 @@ export const PreprocessingFsmPage: React.FC<{
         boxSizing: "border-box",
       }}
     >
-      <PreprocessingFSM width={600} height={360} />
+      <PreprocessingFSM width={960} height={920} />
     </div>
   </BodyPage>
 );

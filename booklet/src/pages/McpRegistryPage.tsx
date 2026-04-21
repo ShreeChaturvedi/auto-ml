@@ -27,7 +27,7 @@ export const McpRegistryPage: React.FC<{
         letterSpacing: TYPE.body.tracking,
         lineHeight: TYPE.body.lh,
         color: COLORS.INK,
-        maxWidth: "6.4in",
+        maxWidth: "5.5in",
         margin: "0 0 16px",
       }}
     >
@@ -37,13 +37,13 @@ export const McpRegistryPage: React.FC<{
     <div
       style={{
         width: "100%",
-        height: "6in",
+        height: "6.8in",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      <MCPToolRegistry width={520} height={520} />
+      <MCPToolRegistry width={580} height={580} />
     </div>
   </BodyPage>
 );

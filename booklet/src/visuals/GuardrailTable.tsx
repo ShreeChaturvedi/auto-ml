@@ -1,89 +1,140 @@
 import React from "react";
 import { COLORS, FONTS } from "../theme";
-import { GUARDRAIL, GUARDRAIL_ROWS } from "../content";
+import { GUARDRAIL, GUARDRAIL_ROWS, GUARDRAIL_DETAIL } from "../content";
 import { ChartCard } from "./ChartCard";
 
 /**
  * 5-row guardrail table + 2 summary bars, ported from
  * `poster/src/visuals/GuardrailTable.tsx`. Sizes trimmed for booklet scale.
+ *
+ * `detailed` adds an inline validator-family chip and a mono catchNote under
+ * each flaw — editorial density for the booklet that the poster omits.
  */
 
-const ROW_H = 22;
-const COL_TEMPLATE = "1fr 48px 48px";
 const COL_GAP = 12;
+const COL_TEMPLATE = "1fr 48px 48px";
+const COL_TEMPLATE_DETAILED = "1fr 86px 48px 48px";
 
-export const GuardrailTable: React.FC<{ accent?: string }> = ({
-  accent = COLORS.ACCENT,
-}) => (
-  <ChartCard>
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: COL_TEMPLATE,
-        columnGap: COL_GAP,
-        alignItems: "center",
-        paddingBottom: 6,
-        borderBottom: `0.5pt solid ${COLORS.HAIRLINE}`,
-      }}
-    >
-      <div style={axisLabelStyle}>Data flaw</div>
-      <div style={{ ...axisLabelStyle, textAlign: "center" }}>Ours</div>
-      <div style={{ ...axisLabelStyle, textAlign: "center" }}>sklearn</div>
-    </div>
+export const GuardrailTable: React.FC<{
+  accent?: string;
+  detailed?: boolean;
+}> = ({ accent = COLORS.ACCENT, detailed = false }) => {
+  const template = detailed ? COL_TEMPLATE_DETAILED : COL_TEMPLATE;
+  const rowH = detailed ? 32 : 22;
+  return (
+    <ChartCard>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: template,
+          columnGap: COL_GAP,
+          alignItems: "center",
+          paddingBottom: 6,
+          borderBottom: `0.5pt solid ${COLORS.HAIRLINE}`,
+        }}
+      >
+        <div style={axisLabelStyle}>Data flaw</div>
+        {detailed && <div style={axisLabelStyle}>Validator</div>}
+        <div style={{ ...axisLabelStyle, textAlign: "center" }}>Ours</div>
+        <div style={{ ...axisLabelStyle, textAlign: "center" }}>sklearn</div>
+      </div>
 
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      {GUARDRAIL_ROWS.map((row, i) => (
-        <div
-          key={row.id}
-          style={{
-            display: "grid",
-            gridTemplateColumns: COL_TEMPLATE,
-            columnGap: COL_GAP,
-            alignItems: "center",
-            height: ROW_H,
-            borderBottom:
-              i < GUARDRAIL_ROWS.length - 1
-                ? `0.5pt solid ${COLORS.HAIRLINE}`
-                : "none",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: FONTS.SANS,
-              fontSize: 10,
-              fontWeight: 500,
-              color: COLORS.INK,
-              letterSpacing: "-0.005em",
-              lineHeight: 1.2,
-            }}
-          >
-            {row.label}
-          </div>
-          <StatusDot caught={row.us} />
-          <StatusDot caught={row.sklearn} />
-        </div>
-      ))}
-    </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {GUARDRAIL_ROWS.map((row, i) => {
+          const detail = detailed ? GUARDRAIL_DETAIL[row.id] : undefined;
+          return (
+            <div
+              key={row.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: template,
+                columnGap: COL_GAP,
+                alignItems: "center",
+                minHeight: rowH,
+                paddingTop: detailed ? 5 : 0,
+                paddingBottom: detailed ? 5 : 0,
+                borderBottom:
+                  i < GUARDRAIL_ROWS.length - 1
+                    ? `0.5pt solid ${COLORS.HAIRLINE}`
+                    : "none",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: FONTS.SANS,
+                    fontSize: 10,
+                    fontWeight: 500,
+                    color: COLORS.INK,
+                    letterSpacing: "-0.005em",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {row.label}
+                </div>
+                {detail && (
+                  <div
+                    style={{
+                      fontFamily: FONTS.MONO,
+                      fontSize: 8.5,
+                      fontWeight: 500,
+                      color: COLORS.INK_SUBTLE,
+                      letterSpacing: "0.02em",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {detail.catchNote}
+                  </div>
+                )}
+              </div>
+              {detailed && (
+                <div
+                  style={{
+                    fontFamily: FONTS.MONO,
+                    fontSize: 8.5,
+                    fontWeight: 500,
+                    color: COLORS.INK_MUTED,
+                    letterSpacing: "0.04em",
+                    lineHeight: 1,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {detail?.validator ?? "—"}
+                </div>
+              )}
+              <StatusDot caught={row.us} />
+              <StatusDot caught={row.sklearn} />
+            </div>
+          );
+        })}
+      </div>
 
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        paddingTop: 12,
-        marginTop: 6,
-        borderTop: `0.5pt solid ${COLORS.HAIRLINE}`,
-      }}
-    >
-      <SummaryRow label="Ours" value={GUARDRAIL.usTotal} color={accent} />
-      <SummaryRow
-        label="sklearn"
-        value={GUARDRAIL.sklearnTotal}
-        color={COLORS.NEUTRAL_500}
-      />
-    </div>
-  </ChartCard>
-);
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          paddingTop: 12,
+          marginTop: 6,
+          borderTop: `0.5pt solid ${COLORS.HAIRLINE}`,
+        }}
+      >
+        <SummaryRow label="Ours" value={GUARDRAIL.usTotal} color={accent} />
+        <SummaryRow
+          label="sklearn"
+          value={GUARDRAIL.sklearnTotal}
+          color={COLORS.NEUTRAL_500}
+        />
+      </div>
+    </ChartCard>
+  );
+};
 
 const StatusDot: React.FC<{ caught: boolean }> = ({ caught }) => (
   <div

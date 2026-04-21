@@ -4,21 +4,21 @@ import { INSIDE } from "../content";
 import { shadowIdFor } from "./primitives";
 
 /**
- * MCP tool registry — page 18. Central MCP hub with 20 tools arrayed around
- * it on two concentric rings, clustered into 6 category sectors.
+ * MCP tool registry — page 18. Central MCP hub with 20 tools laid out in
+ * four quadrant CLUSTERS around it (not in radial arcs, which collide for
+ * long tool names). Each cluster is a vertical list of chips connected to
+ * the hub by a colored spoke.
  *
- * Layout conventions:
- *   • The 5 "most-used" tools sit on the inner ring and each carries a
- *     highlighter halo + italic serif margin caption.
- *   • The remaining 15 tools orbit on the outer ring, staggered by one of
- *     two radii per sector so their chips never overlap.
- *   • Tools cluster clockwise from 12 o'clock: inspect (top), transform
- *     (top-right), execute (bottom-right), search (bottom), validate
- *     (bottom-left), plan (top-left).
+ *   Cluster layout on a 5.6"×7" canvas:
+ *     TL  inspect  (4 tools)        TR  transform (6 tools)
+ *     BL  validate (4 tools)        BR  execute   (2 tools)
+ *                                       + search  (2 tools)
+ *   Plan (2 tools) flanks the hub horizontally: propose_plan on the left
+ *   of the hub, request_approval on the right.
  *
- * Labels use full words ("TRANSFORM", "VALIDATE") and the chip widths are
- * sized from the label string so long names like `run_notebook_cell` fit
- * without truncation.
+ * The 5 most-used tools (`get_dataset_profile`, `edit_cell`,
+ * `run_notebook_cell`, `propose_plan`, `request_approval`) get a
+ * highlighter halo + italic serif margin caption.
  */
 
 type Category = "inspect" | "transform" | "validate" | "execute" | "plan" | "search";
@@ -32,97 +32,119 @@ const CATEGORY_COLOR: Record<Category, string> = {
   search:    COLORS.NEUTRAL_600,
 };
 
-// Clockwise sector centers (radians, 0 = right). Each category owns a 60°
-// slice; tools within the slice are spread across it evenly.
-const SECTOR: Record<Category, number> = {
-  inspect:   -Math.PI / 2,                     // 12 o'clock
-  transform: -Math.PI / 2 + Math.PI / 3,       //  2 o'clock
-  execute:   -Math.PI / 2 + (2 * Math.PI) / 3, //  4 o'clock
-  search:     Math.PI / 2,                     //  6 o'clock
-  validate:  -Math.PI / 2 + (4 * Math.PI) / 3, //  8 o'clock
-  plan:      -Math.PI / 2 + (5 * Math.PI) / 3, // 10 o'clock
-};
-
 const HIGHLIGHT_TOOLS: Record<string, string> = {
-  get_dataset_profile: "samples 20 rows on upload",
-  edit_cell:           "patches notebook in place",
-  run_notebook_cell:   "executes in container, streams output",
-  propose_plan:        "drafts 3-step plan from prompt",
+  get_dataset_profile: "samples 20 rows",
+  edit_cell:           "patches in place",
+  run_notebook_cell:   "streams output",
+  propose_plan:        "drafts 3-step plan",
   request_approval:    "blocks until user commits",
 };
 
-// Order categories appear in the bottom legend (reading order).
+// Legend reading order = the order labels read around the page.
 const LEGEND_ORDER: Array<{ key: Category; label: string }> = [
+  { key: "plan",      label: "PLAN"      },
   { key: "inspect",   label: "INSPECT"   },
   { key: "transform", label: "TRANSFORM" },
   { key: "execute",   label: "EXECUTE"   },
-  { key: "search",    label: "SEARCH"    },
   { key: "validate",  label: "VALIDATE"  },
-  { key: "plan",      label: "PLAN"      },
+  { key: "search",    label: "SEARCH"    },
 ];
 
 const SHADOW = shadowIdFor("mcp");
+
+// Design-space canvas; draws the diagram inside a 700×620 box then scales to
+// fit the consumer's width×height. This keeps tool chips + hub + captions
+// in a stable coordinate system regardless of render size.
+const DW = 700;
+const DH = 620;
+
+// Each cluster is anchored at a corner of the canvas. The chips stack
+// vertically from the anchor toward the hub so longer names still fit.
+type Cluster = {
+  anchorX: number;
+  anchorY: number;
+  direction: "tl" | "tr" | "bl" | "br"; // which corner this cluster lives in
+};
+
+// Clusters pushed in from the canvas edge so captions for the outermost
+// highlighted chip (get_dataset_profile, edit_cell, run_notebook_cell) have
+// room to land above the chip (between chip and the cluster eyebrow label)
+// without colliding with the next chip below.
+const CLUSTERS: Record<Exclude<Category, "plan" | "search">, Cluster> = {
+  inspect:   { anchorX: 100, anchorY: 160, direction: "tl" },
+  transform: { anchorX: DW - 100, anchorY: 160, direction: "tr" },
+  validate:  { anchorX: 100, anchorY: DH - 140, direction: "bl" },
+  execute:   { anchorX: DW - 100, anchorY: DH - 160, direction: "br" },
+};
+
+const HUB_X = DW / 2;
+const HUB_Y = DH / 2 - 16;
+const HUB_R = 46;
+
+// Row pitch for the vertical chip stacks inside each cluster.
+const ROW_PITCH = 32;
 
 export const MCPToolRegistry: React.FC<{
   width: number;
   height: number;
 }> = ({ width, height }) => {
-  const cx = width / 2;
-  const cy = height / 2 - 14; // leave room for the legend strip at the bottom
-  const minDim = Math.min(width, height);
-  const innerR = minDim * 0.26;
-  const outerR = minDim * 0.40;
-  const outerRAlt = minDim * 0.46; // staggered ring for overlap avoidance
+  const sx = width / DW;
+  const sy = height / DH;
+  const s = Math.min(sx, sy);
+  const offX = (width - DW * s) / 2;
+  const offY = (height - DH * s) / 2;
 
-  const tools = INSIDE.mcpRegistry.tools;
-  const inner = tools.filter((t) => t.name in HIGHLIGHT_TOOLS);
-  const outer = tools.filter((t) => !(t.name in HIGHLIGHT_TOOLS));
+  type Tool = { name: string; category: string };
+  const tools: Tool[] = INSIDE.mcpRegistry.tools as unknown as Tool[];
+  const isHighlighted = (name: string) => name in HIGHLIGHT_TOOLS;
 
-  // Group outer tools by category, then place them within each sector.
-  const outerByCategory = outer.reduce<Record<Category, typeof outer>>(
+  // Partition tools by category for cluster layout.
+  const byCategory = tools.reduce<Record<Category, Tool[]>>(
     (acc, t) => {
       const c = t.category as Category;
-      acc[c] = acc[c] ?? [];
-      acc[c].push(t);
+      (acc[c] ??= []).push(t);
       return acc;
     },
     { inspect: [], transform: [], validate: [], execute: [], plan: [], search: [] },
   );
 
-  // Build positioned outer chips. For each sector, spread tools ±25° around
-  // the sector center and alternate radii to avoid row collisions.
-  const outerPlaced = (Object.keys(outerByCategory) as Category[]).flatMap((cat) => {
-    const list = outerByCategory[cat];
-    const center = SECTOR[cat];
-    const spread = (25 * Math.PI) / 180;
-    return list.map((t, i) => {
-      const fraction = list.length === 1 ? 0 : i / (list.length - 1) - 0.5;
-      const angle = center + fraction * spread;
-      const r = i % 2 === 0 ? outerR : outerRAlt;
-      return {
-        ...t,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        angle,
-      };
+  // Build cluster-placed tools for the 4 quadrant clusters.
+  type Placed = Tool & { x: number; y: number; highlighted: boolean };
+  const clusterPlaced: Placed[] = [];
+  (Object.keys(CLUSTERS) as Array<keyof typeof CLUSTERS>).forEach((cat) => {
+    const c = CLUSTERS[cat];
+    const list = byCategory[cat];
+    list.forEach((t, i) => {
+      // Stack vertically from the anchor; TL/TR clusters stack downward,
+      // BL/BR clusters stack upward so the cluster grows away from the hub.
+      const verticalDir = c.direction.startsWith("t") ? 1 : -1;
+      const y = c.anchorY + verticalDir * i * ROW_PITCH;
+      clusterPlaced.push({ ...t, x: c.anchorX, y, highlighted: isHighlighted(t.name) });
     });
   });
 
-  const innerPlaced = inner.map((t) => {
-    const angle = SECTOR[t.category as Category];
-    return {
-      ...t,
-      x: cx + Math.cos(angle) * innerR,
-      y: cy + Math.sin(angle) * innerR,
-      angle,
-    };
+  // Plan tools flank the hub horizontally: propose_plan on the left edge of
+  // the hub, request_approval on the right. Both at the hub's vertical
+  // centerline.
+  const planPlaced: Placed[] = byCategory.plan.map((t) => {
+    const x = t.name === "propose_plan" ? HUB_X - 130 : HUB_X + 130;
+    return { ...t, x, y: HUB_Y - 70, highlighted: isHighlighted(t.name) };
   });
+
+  // Search tools sit directly below the hub on the bottom axis.
+  const searchPlaced: Placed[] = byCategory.search.map((t, i) => {
+    const x = HUB_X - 74 + i * 148;
+    return { ...t, x, y: HUB_Y + 126, highlighted: isHighlighted(t.name) };
+  });
+
+  const all = [...clusterPlaced, ...planPlaced, ...searchPlaced];
 
   return (
     <svg
-      width={width}
-      height={height}
+      width="100%"
+      height="100%"
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
       shapeRendering="geometricPrecision"
       style={{ display: "block" }}
     >
@@ -138,207 +160,213 @@ export const MCPToolRegistry: React.FC<{
         </filter>
       </defs>
 
-      {/* Concentric scaffold rings */}
-      <circle cx={cx} cy={cy} r={innerR} fill="none" stroke={COLORS.HAIRLINE} strokeWidth={0.75} strokeDasharray="2 4" opacity={0.5} />
-      <circle cx={cx} cy={cy} r={outerR} fill="none" stroke={COLORS.HAIRLINE} strokeWidth={0.75} strokeDasharray="2 4" opacity={0.4} />
-      <circle cx={cx} cy={cy} r={outerRAlt} fill="none" stroke={COLORS.HAIRLINE} strokeWidth={0.5} strokeDasharray="2 4" opacity={0.3} />
-
-      {/* Faint radial spokes marking sector centers */}
-      {(Object.keys(SECTOR) as Category[]).map((cat) => {
-        const a = SECTOR[cat];
-        const x1 = cx + Math.cos(a) * innerR;
-        const y1 = cy + Math.sin(a) * innerR;
-        const x2 = cx + Math.cos(a) * outerRAlt;
-        const y2 = cy + Math.sin(a) * outerRAlt;
-        return (
-          <line
-            key={`spoke-${cat}`}
-            x1={x1}
-            y1={y1}
-            x2={x2}
-            y2={y2}
-            stroke={CATEGORY_COLOR[cat]}
-            strokeWidth={0.75}
-            opacity={0.2}
-          />
-        );
-      })}
-
-      {/* Hub → inner chip spokes */}
-      {innerPlaced.map((t) => (
-        <line
-          key={`link-${t.name}`}
-          x1={cx}
-          y1={cy}
-          x2={t.x}
-          y2={t.y}
-          stroke={CATEGORY_COLOR[t.category as Category]}
-          strokeWidth={1.5}
-          opacity={0.6}
-        />
-      ))}
-
-      {/* Outer chips */}
-      {outerPlaced.map((t) => (
-        <ChipSmall
-          key={t.name}
-          x={t.x}
-          y={t.y}
-          label={t.name}
-          color={CATEGORY_COLOR[t.category as Category]}
-        />
-      ))}
-
-      {/* Inner chips with highlighter rings + serif margin captions */}
-      {innerPlaced.map((t) => {
-        const cap = HIGHLIGHT_TOOLS[t.name] ?? "";
-        const unitX = Math.cos(t.angle);
-        const unitY = Math.sin(t.angle);
-        const captionDist = 78;
-        const captionX = t.x + unitX * captionDist;
-        const captionY = t.y + unitY * captionDist;
-        const anchor: "start" | "middle" | "end" =
-          unitX > 0.3 ? "start" : unitX < -0.3 ? "end" : "middle";
-        return (
-          <g key={`inner-${t.name}`}>
-            {/* Highlighter halo — subtle, readable */}
-            <circle
-              cx={t.x}
-              cy={t.y}
-              r={30}
-              fill="none"
-              stroke={CATEGORY_COLOR[t.category as Category]}
-              strokeWidth={1.25}
-              opacity={0.35}
-              strokeDasharray="2 3"
-            />
-            <ChipLarge
-              x={t.x}
-              y={t.y}
-              label={t.name}
-              color={CATEGORY_COLOR[t.category as Category]}
-            />
-            {/* italic serif caption */}
+      <g transform={`translate(${offX}, ${offY}) scale(${s})`}>
+        {/* Cluster quadrant labels — no dashed backdrop rect (previously
+            clipped the plan chips flanking the hub). Each label sits at the
+            canvas corner the cluster occupies; the spokes + chip colors do
+            the clustering work. Pushed well outside the chip stack to leave
+            room for the italic margin caption on the outermost highlighted
+            chip in each cluster. */}
+        {(Object.keys(CLUSTERS) as Array<keyof typeof CLUSTERS>).map((cat) => {
+          const c = CLUSTERS[cat];
+          const labelY = c.direction.startsWith("t")
+            ? c.anchorY - 60
+            : c.anchorY + 50;
+          return (
             <text
-              x={captionX}
-              y={captionY}
-              textAnchor={anchor}
+              key={`label-${cat}`}
+              x={c.anchorX}
+              y={labelY}
+              textAnchor="middle"
+              fontFamily={FONTS.MONO}
+              fontSize={11}
+              fontWeight={700}
+              fill={CATEGORY_COLOR[cat]}
+              style={{ letterSpacing: "0.2em", textTransform: "uppercase" }}
+            >
+              {cat}
+            </text>
+          );
+        })}
+
+        {/* Hub → tool spokes. Each spoke runs from the hub perimeter to the
+            chip center, colored by the tool's category. */}
+        {all.map((t) => {
+          const dx = t.x - HUB_X;
+          const dy = t.y - HUB_Y;
+          const d = Math.sqrt(dx * dx + dy * dy) || 1;
+          const ux = dx / d;
+          const uy = dy / d;
+          const x1 = HUB_X + ux * HUB_R;
+          const y1 = HUB_Y + uy * HUB_R;
+          return (
+            <line
+              key={`spoke-${t.name}`}
+              x1={x1}
+              y1={y1}
+              x2={t.x}
+              y2={t.y}
+              stroke={CATEGORY_COLOR[t.category as Category]}
+              strokeWidth={t.highlighted ? 1.5 : 0.75}
+              opacity={t.highlighted ? 0.6 : 0.35}
+            />
+          );
+        })}
+
+        {/* Chips — halo sizes track the chip width so long-label chips get
+            a proportionally wider highlighter. */}
+        {all.map((t) => {
+          // Keep width formula in sync with Chip component.
+          const chipW = Math.max(100, t.name.length * 6.8 + 22);
+          const haloW = chipW + 16;
+          const haloH = 34;
+          return (
+            <g key={`chip-${t.name}`}>
+              {t.highlighted && (
+                <rect
+                  x={t.x - haloW / 2}
+                  y={t.y - haloH / 2}
+                  width={haloW}
+                  height={haloH}
+                  rx={haloH / 2}
+                  fill="none"
+                  stroke={CATEGORY_COLOR[t.category as Category]}
+                  strokeWidth={1.25}
+                  opacity={0.4}
+                  strokeDasharray="2 3"
+                />
+              )}
+              <Chip
+                x={t.x}
+                y={t.y}
+                label={t.name}
+                color={CATEGORY_COLOR[t.category as Category]}
+                emphasis={t.highlighted}
+              />
+            </g>
+          );
+        })}
+
+        {/* Italic serif margin captions for the 5 highlighted tools. Each
+            caption is placed in the gutter between the chip and the hub,
+            positioned so it never overlaps its chip or the hub. */}
+        {all.filter((t) => t.highlighted).map((t) => {
+          const cap = HIGHLIGHT_TOOLS[t.name] ?? "";
+          // Caption placement per highlighted tool (hand-tuned for the
+          // fixed 5-tool set).
+          //  • get_dataset_profile: TL cluster, caption pushed right-of-chip
+          //    on the same row; reads into the gutter between TL and the
+          //    hub.
+          //  • edit_cell: TR cluster, caption pushed left-of-chip on the
+          //    same row.
+          //  • run_notebook_cell: BR execute cluster; caption above-left of
+          //    the chip so it lands above the EXECUTE eyebrow.
+          //  • propose_plan/request_approval: flanking the hub at a row of
+          //    their own; captions above the chip in the empty space.
+          // Captions land ABOVE each highlighted chip in the gap between
+          // the cluster eyebrow label and the top of the chip stack. Same
+          // for the flanking plan chips. For run_notebook_cell (bottom of
+          // the execute stack), the caption goes BELOW the chip toward the
+          // EXECUTE eyebrow label.
+          const PLACE: Record<string, { dx: number; dy: number; anchor: "start" | "middle" | "end" }> = {
+            propose_plan:        { dx: 0, dy: -22, anchor: "middle" },
+            request_approval:    { dx: 0, dy: -22, anchor: "middle" },
+            get_dataset_profile: { dx: 0, dy: -24, anchor: "middle" },
+            edit_cell:           { dx: 0, dy: -24, anchor: "middle" },
+            run_notebook_cell:   { dx: 0, dy:  28, anchor: "middle" },
+          };
+          const p = PLACE[t.name] ?? { dx: 0, dy: -22, anchor: "middle" as const };
+          return (
+            <text
+              key={`cap-${t.name}`}
+              x={t.x + p.dx}
+              y={t.y + p.dy}
+              textAnchor={p.anchor}
               fontFamily={FONTS.SERIF}
               fontStyle="italic"
-              fontSize={13}
+              fontSize={12}
               fontWeight={400}
               fill={COLORS.INK_MUTED}
               style={{ letterSpacing: "0.005em" }}
             >
               {cap}
             </text>
-          </g>
-        );
-      })}
+          );
+        })}
 
-      {/* Hub */}
-      <g filter={`url(#${SHADOW})`}>
-        <circle cx={cx} cy={cy} r={52} fill={COLORS.INK} />
-        <text
-          x={cx}
-          y={cy - 4}
-          textAnchor="middle"
-          fontFamily={FONTS.SANS}
-          fontSize={18}
-          fontWeight={700}
-          fill={COLORS.PAPER}
-          style={{ letterSpacing: "0.14em", textTransform: "uppercase" }}
-        >
-          MCP
-        </text>
-        <text
-          x={cx}
-          y={cy + 14}
-          textAnchor="middle"
-          fontFamily={FONTS.MONO}
-          fontSize={10}
-          fontWeight={500}
-          fill="rgba(255,255,255,0.72)"
-          style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}
-        >
-          registry
-        </text>
+        {/* Hub */}
+        <g filter={`url(#${SHADOW})`}>
+          <circle cx={HUB_X} cy={HUB_Y} r={HUB_R} fill={COLORS.INK} />
+          <text
+            x={HUB_X}
+            y={HUB_Y - 2}
+            textAnchor="middle"
+            fontFamily={FONTS.SANS}
+            fontSize={20}
+            fontWeight={700}
+            fill={COLORS.PAPER}
+            style={{ letterSpacing: "0.14em", textTransform: "uppercase" }}
+          >
+            MCP
+          </text>
+          <text
+            x={HUB_X}
+            y={HUB_Y + 16}
+            textAnchor="middle"
+            fontFamily={FONTS.MONO}
+            fontSize={10}
+            fontWeight={500}
+            fill="rgba(255,255,255,0.72)"
+            style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}
+          >
+            registry
+          </text>
+        </g>
+
+        {/* Legend — category swatches spread across the full width */}
+        <Legend width={DW} y={DH - 16} />
       </g>
-
-      {/* Legend — category swatches spread across the full width */}
-      <Legend width={width} y={height - 14} />
     </svg>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Chip primitives — width is derived from the label length so no string
-// can truncate. Height + typography bumped to match the poster's chip scale.
+// Chip — unified chip primitive with an `emphasis` boolean for highlighted
+// tools. Width derived from label length; no truncation possible.
 // ---------------------------------------------------------------------------
 
-const ChipLarge: React.FC<{
+const Chip: React.FC<{
   x: number;
   y: number;
   label: string;
   color: string;
-}> = ({ x, y, label, color }) => {
-  const w = Math.max(110, label.length * 8 + 28);
-  const h = 28;
+  emphasis: boolean;
+}> = ({ x, y, label, color, emphasis }) => {
+  const w = Math.max(100, label.length * 6.8 + 22);
+  const h = emphasis ? 24 : 22;
   return (
-    <g transform={`translate(${x - w / 2}, ${y - h / 2})`} filter={`url(#${shadowIdFor("mcp")})`}>
+    <g
+      transform={`translate(${x - w / 2}, ${y - h / 2})`}
+      filter={emphasis ? `url(#${shadowIdFor("mcp")})` : undefined}
+    >
       <rect
         x={0}
         y={0}
         width={w}
         height={h}
-        rx={14}
-        fill={COLORS.PAPER}
+        rx={h / 2}
+        fill={emphasis ? COLORS.PAPER : COLORS.PAPER_ELEVATED}
         stroke={color}
-        strokeWidth={1.75}
+        strokeWidth={emphasis ? 1.75 : 1.25}
       />
-      <circle cx={14} cy={h / 2} r={5} fill={color} />
+      {emphasis && <circle cx={11} cy={h / 2} r={3.5} fill={color} />}
       <text
-        x={26}
-        y={h / 2 + 4.5}
+        x={emphasis ? 20 : w / 2}
+        y={h / 2 + 3.5}
+        textAnchor={emphasis ? "start" : "middle"}
         fontFamily={FONTS.MONO}
-        fontSize={12}
-        fontWeight={700}
-        fill={COLORS.INK}
-        style={{ letterSpacing: "0.02em" }}
-      >
-        {label}
-      </text>
-    </g>
-  );
-};
-
-const ChipSmall: React.FC<{
-  x: number;
-  y: number;
-  label: string;
-  color: string;
-}> = ({ x, y, label, color }) => {
-  const w = Math.max(92, label.length * 7 + 16);
-  const h = 22;
-  return (
-    <g transform={`translate(${x - w / 2}, ${y - h / 2})`}>
-      <rect
-        x={0}
-        y={0}
-        width={w}
-        height={h}
-        rx={11}
-        fill={COLORS.PAPER_ELEVATED}
-        stroke={color}
-        strokeWidth={1.25}
-      />
-      <text
-        x={w / 2}
-        y={h / 2 + 4}
-        textAnchor="middle"
-        fontFamily={FONTS.MONO}
-        fontSize={11}
-        fontWeight={600}
+        fontSize={emphasis ? 11 : 10}
+        fontWeight={emphasis ? 700 : 600}
         fill={COLORS.INK}
         style={{ letterSpacing: "0.02em" }}
       >
@@ -355,21 +383,26 @@ const ChipSmall: React.FC<{
 // ---------------------------------------------------------------------------
 
 const Legend: React.FC<{ width: number; y: number }> = ({ width, y }) => {
-  const pad = 18;
-  const inner = width - pad * 2;
-  const step = inner / LEGEND_ORDER.length;
+  const charW = 7.0;
+  const dotW = 14;
+  const gap = 20;
+  const items = LEGEND_ORDER.map((item) => ({
+    ...item,
+    w: dotW + item.label.length * charW,
+  }));
+  const totalW = items.reduce((a, b) => a + b.w, 0) + gap * (items.length - 1);
+  let cursor = (width - totalW) / 2;
   return (
     <g>
-      {LEGEND_ORDER.map((item, i) => {
-        const x = pad + step * i + step / 2;
-        return (
-          <g key={item.key} transform={`translate(${x}, ${y})`}>
-            <circle cx={-40} cy={0} r={5} fill={CATEGORY_COLOR[item.key]} />
+      {items.map((item) => {
+        const g = (
+          <g key={item.key} transform={`translate(${cursor}, ${y})`}>
+            <circle cx={4} cy={0} r={4} fill={CATEGORY_COLOR[item.key]} />
             <text
-              x={-28}
+              x={14}
               y={4}
               fontFamily={FONTS.MONO}
-              fontSize={11}
+              fontSize={10}
               fontWeight={700}
               fill={COLORS.INK}
               style={{ letterSpacing: "0.16em", textTransform: "uppercase" }}
@@ -378,6 +411,8 @@ const Legend: React.FC<{ width: number; y: number }> = ({ width, y }) => {
             </text>
           </g>
         );
+        cursor += item.w + gap;
+        return g;
       })}
     </g>
   );

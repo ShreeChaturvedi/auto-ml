@@ -1,6 +1,5 @@
 import React from "react";
 import { COLORS, FONTS } from "../theme";
-import { INSIDE } from "../content";
 import { shadowIdFor } from "./primitives";
 
 /**
@@ -104,9 +103,10 @@ export const SandboxArchitecture: React.FC<{
 
   return (
     <svg
-      width={width}
-      height={height}
+      width="100%"
+      height="100%"
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
       shapeRendering="geometricPrecision"
       style={{ display: "block" }}
     >
@@ -130,6 +130,7 @@ export const SandboxArchitecture: React.FC<{
           refY="5"
           markerWidth="8"
           markerHeight="8"
+          markerUnits="userSpaceOnUse"
           orient="auto-start-reverse"
         >
           <path d="M 0 0 L 10 5 L 0 10 Z" fill={COLORS.INK} />
@@ -164,26 +165,28 @@ export const SandboxArchitecture: React.FC<{
             rx={14}
             fill="url(#sbx-hatch)"
             stroke={COLORS.MIAMI_RED}
-            strokeWidth={1.5}
-            strokeDasharray="6 5"
+            strokeWidth={1.75}
+            strokeDasharray="7 5"
           />
-          {/* Paper panel behind the eyebrow so the dashed line "cuts" cleanly */}
+          {/* Paper panel behind the eyebrow so the dashed line "cuts" cleanly.
+              Positioned on the right side of the top edge so the center pipe
+              has a clear sightline through the boundary. */}
           <rect
-            x={DW / 2 - 56}
+            x={CONTENT_RIGHT - 108}
             y={BOUNDARY_Y - 10}
-            width={112}
+            width={96}
             height={20}
-            fill={COLORS.PAPER}
+            fill={COLORS.PAPER_ELEVATED}
           />
           <text
-            x={DW / 2}
+            x={CONTENT_RIGHT - 60}
             y={BOUNDARY_Y + 4}
             textAnchor="middle"
             fontFamily={FONTS.MONO}
             fontSize={11}
             fontWeight={700}
             fill={COLORS.MIAMI_RED}
-            style={{ letterSpacing: "0.24em", textTransform: "uppercase" }}
+            style={{ letterSpacing: "0.28em", textTransform: "uppercase" }}
           >
             Sandbox
           </text>
@@ -211,18 +214,10 @@ export const SandboxArchitecture: React.FC<{
           />
         ))}
 
-        {/* Approval-gate callout pinned to the top-right of the sandbox
-            boundary — echoes INSIDE.sandbox.approvalGate so the metaphor
-            that "every cell is yours to read, edit, or reject" is anchored
-            visually to the sandbox container. */}
-        <ApprovalGateInline
-          x={CONTENT_RIGHT - 260}
-          y={BOUNDARY_Y - 66}
-          width={260}
-          text={INSIDE.sandbox.approvalGate}
-          anchorX={CONTENT_RIGHT - 10}
-          anchorY={BOUNDARY_Y}
-        />
+        {/* Approval-gate callout is rendered as a sibling ApprovalGateCallout
+            on SandboxPage.tsx to keep this diagram focused on the runtime
+            cross-section. Duplicating it inside the SVG muddied the
+            boundary-crossing metaphor during visual QA. */}
       </g>
     </svg>
   );
@@ -280,21 +275,21 @@ const Layer: React.FC<LayerSpec & { shadowId: string }> = ({
 const Pipe: React.FC<{ x: number; y1: number; y2: number; thick?: boolean }> = ({
   x, y1, y2, thick = false,
 }) => {
-  const w = thick ? 8 : 4;
+  const w = thick ? 3 : 2;
   const color = thick ? COLORS.INK : COLORS.HAIRLINE_STRONG;
-  const opacity = thick ? 1 : 0.65;
+  const opacity = thick ? 1 : 0.7;
   return (
     <g>
       <line
         x1={x}
         y1={y1}
         x2={x}
-        y2={y2 - 4}
+        y2={y2 - 3}
         stroke={color}
         strokeWidth={w}
         strokeLinecap="round"
         opacity={opacity}
-        markerEnd={thick ? "url(#sbx-pipe-arrow)" : undefined}
+        markerEnd="url(#sbx-pipe-arrow)"
       />
     </g>
   );
@@ -316,21 +311,24 @@ const DimensionCallout: React.FC<{
 }> = ({ y, targetX, labelX, label, value }) => {
   const accent = COLORS.ACCENT;
   const tickLen = 5;
+  // Leader starts where the text ends (labelX + maxLabelW) and runs right
+  // to the layer edge. Stroke bumped to 0.75 for print legibility.
+  const leaderStart = labelX + 115;
   return (
     <g>
       {/* leader line */}
       <line
-        x1={labelX + 110}
+        x1={leaderStart}
         y1={y}
         x2={targetX - 2}
         y2={y}
         stroke={accent}
-        strokeWidth={0.5}
+        strokeWidth={0.75}
       />
-      {/* terminator ticks — perpendicular to the leader */}
-      <line x1={labelX + 110} y1={y - tickLen} x2={labelX + 110} y2={y + tickLen} stroke={accent} strokeWidth={0.75} />
-      <line x1={targetX - 2} y1={y - tickLen} x2={targetX - 2} y2={y + tickLen} stroke={accent} strokeWidth={0.75} />
-      {/* label block */}
+      {/* terminator ticks — perpendicular to the leader at both ends */}
+      <line x1={leaderStart} y1={y - tickLen} x2={leaderStart} y2={y + tickLen} stroke={accent} strokeWidth={1} />
+      <line x1={targetX - 2} y1={y - tickLen} x2={targetX - 2} y2={y + tickLen} stroke={accent} strokeWidth={1} />
+      {/* label block — eyebrow above, value below */}
       <text
         x={labelX}
         y={y - 4}
@@ -357,83 +355,3 @@ const DimensionCallout: React.FC<{
   );
 };
 
-// ---------------------------------------------------------------------------
-// Inline approval-gate callout — a small dotted panel that echoes the
-// booklet's ApprovalGateCallout HTML component but lives inside the SVG so
-// it can be tethered to the sandbox boundary with an L-shaped leader.
-// ---------------------------------------------------------------------------
-
-const ApprovalGateInline: React.FC<{
-  x: number;
-  y: number;
-  width: number;
-  text: string;
-  anchorX: number;
-  anchorY: number;
-}> = ({ x, y, width, text, anchorX, anchorY }) => {
-  const h = 54;
-  // Wrap the text roughly by words to fit the width (rough 18 chars per line
-  // at the current serif size + width). We only need 2 lines max.
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let current = "";
-  for (const w of words) {
-    if ((current + " " + w).trim().length > 30) {
-      lines.push(current.trim());
-      current = w;
-    } else {
-      current = (current + " " + w).trim();
-    }
-  }
-  if (current) lines.push(current);
-  const shown = lines.slice(0, 2);
-
-  // L-shaped leader: callout bottom → horizontal → down to anchor corner.
-  const fromX = x + width / 2;
-  const fromY = y + h;
-  return (
-    <g>
-      <rect
-        x={x}
-        y={y}
-        width={width}
-        height={h}
-        rx={4}
-        fill={COLORS.PAPER}
-        stroke={COLORS.INK}
-        strokeWidth={0.75}
-        strokeDasharray="2 2"
-      />
-      <text
-        x={x + 12}
-        y={y + 18}
-        fontFamily={FONTS.MONO}
-        fontSize={9}
-        fontWeight={700}
-        fill={COLORS.INK}
-        style={{ letterSpacing: "0.18em", textTransform: "uppercase" }}
-      >
-        Pending approval
-      </text>
-      {shown.map((line, i) => (
-        <text
-          key={i}
-          x={x + 12}
-          y={y + 32 + i * 12}
-          fontFamily={FONTS.SERIF}
-          fontStyle="italic"
-          fontSize={11}
-          fontWeight={400}
-          fill={COLORS.INK}
-          style={{ letterSpacing: "0" }}
-        >
-          {line}
-        </text>
-      ))}
-      {/* L leader */}
-      <line x1={fromX} y1={fromY} x2={fromX} y2={anchorY - 8} stroke={COLORS.INK} strokeWidth={0.5} strokeDasharray="2 2" />
-      <line x1={fromX} y1={anchorY - 8} x2={anchorX - 4} y2={anchorY - 8} stroke={COLORS.INK} strokeWidth={0.5} strokeDasharray="2 2" />
-      <circle cx={anchorX - 4} cy={anchorY - 8} r={2} fill={COLORS.INK} />
-    </g>
-  );
-};

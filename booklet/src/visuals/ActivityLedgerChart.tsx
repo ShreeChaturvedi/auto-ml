@@ -38,15 +38,19 @@ export const ActivityLedgerChart: React.FC<{
   const totalWidth = labelWidth + trackWidth + pctColumnWidth + 10;
   const gridlineLeft = labelWidth + (GRIDLINE_PCT / TRACK_MAX_PCT) * trackWidth;
 
+  // Reserve space below the rows so the "25% REF" label clears the last bar
+  // instead of overlapping the hero "Model training" row.
+  const labelSpace = 14;
+
   return (
-    <div style={{ width: totalWidth, position: "relative" }}>
+    <div style={{ width: totalWidth, position: "relative", paddingBottom: labelSpace }}>
       <div
         aria-hidden
         style={{
           position: "absolute",
           left: gridlineLeft,
           top: 0,
-          bottom: 16,
+          bottom: labelSpace + 2,
           width: 0,
           borderLeft: `1pt dotted ${COLORS.NEUTRAL_600}`,
           pointerEvents: "none",

@@ -11,6 +11,10 @@
  * These two specs are left as `.skip` so a future engineer can re-enable
  * them if the guard is reintroduced. The landing CI must stay green in
  * the meantime (Phase 6 of the 2026-04-20 plan).
+ *
+ * NOTE 2026-04-20: the canonical branch has since migrated from
+ * `final-demo` to `sprint11` after the former was retired via !150.
+ * sprint11 is the current source of truth for the frozen core-app tree.
  */
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';

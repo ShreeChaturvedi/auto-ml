@@ -180,7 +180,9 @@ describe('preview source guardrails', () => {
     // demo-ready branch flipped this to a real redirect into the app so demo
     // visitors can sign in on the deployed backend. Assertions updated to
     // match the current behavior (redirect + appLoginUrl) instead of the
-    // placeholder (frozen core app on `final-demo` is authoritative).
+    // placeholder. The canonical branch migrated from `final-demo` to
+    // `sprint11` via !150 on 2026-04-20; sprint11 is now the frozen
+    // core-app source of truth.
     expect(existsSync(path.resolve(landingRoot, 'pages/login.astro'))).toBe(true);
     const loginPage = readFileSync(path.resolve(landingRoot, 'pages/login.astro'), 'utf8');
     expect(loginPage).toContain('getAppLoginUrl');

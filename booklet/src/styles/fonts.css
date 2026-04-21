@@ -1,0 +1,15 @@
+/* Plus Jakarta Sans + Instrument Serif come from `@fontsource/*` npm packages
+ * imported in main.tsx; vite bundles the .woff2 binaries into /assets so
+ * print-time rendering never depends on a CDN.
+ *
+ * Monaspace Neon is served from /public/fonts/MonaspaceNeon.woff2, copied
+ * verbatim from /poster/public/fonts/ so mono digits match across the three
+ * artifacts. */
+
+@font-face {
+  font-family: "Monaspace Neon";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: block;
+  src: url("/fonts/MonaspaceNeon.woff2") format("woff2");
+}

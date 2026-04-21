@@ -6,6 +6,7 @@ export const TEST_USER: SafeUser = {
   name: 'Test User',
   role: 'user',
   email_verified: true,
+  auth_provider: 'password',
   created_at: new Date('2026-01-01T00:00:00Z'),
   updated_at: new Date('2026-01-01T00:00:00Z'),
   last_login_at: null
@@ -17,6 +18,7 @@ export const TEST_USER_B: SafeUser = {
   name: 'Other User',
   role: 'user',
   email_verified: true,
+  auth_provider: 'password',
   created_at: new Date('2026-01-01T00:00:00Z'),
   updated_at: new Date('2026-01-01T00:00:00Z'),
   last_login_at: null

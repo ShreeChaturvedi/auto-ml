@@ -51,6 +51,7 @@ const verifiedUser: User = {
   name: 'A',
   role: 'user',
   email_verified: true,
+  auth_provider: 'password',
   created_at: new Date(),
   updated_at: new Date(),
   last_login_at: null

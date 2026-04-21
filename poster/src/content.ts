@@ -152,16 +152,16 @@ export const LEDGER_CARDS = [
 // ---------------------------------------------------------------------------
 
 export const JOURNEY = {
-  commits: 1989,
+  commits: 2123,
   issues: 324,
-  mrs: 115,
+  mrs: 153,
   activeDays: 61,
   months: 11,
   loc: 462678,
   files: 2264,
   peakCallout: "+420 commits · week of Apr 5",
   totalsLine:
-    "1,989 commits · 324 issues · 115 MRs · 61 active days · 11 months",
+    "2,123 commits · 324 issues · 153 MRs · 61 active days · 11 months",
 } as const;
 
 /** 17 Sun-anchored weekly buckets (video/config/journey-content.ts:41-59). */

@@ -4,6 +4,18 @@
   "buildCommand": "npm run build:landing",
   "outputDirectory": "landing/dist",
   "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/repo",
+      "destination": "https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain",
+      "permanent": true
+    },
+    {
+      "source": "/repo/",
+      "destination": "https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

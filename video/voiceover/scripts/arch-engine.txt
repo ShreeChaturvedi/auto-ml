@@ -1,0 +1,11 @@
+{{TITLE}} One **graph**, six **nodes**, and every phase of the product uses it.
+
+{{CODE_IN}} Under the hood it is a **LangGraph** **state graph**.
+
+{{NODES}} Each turn prepares the context, invokes the model, executes whatever tools the model called, and then either pauses for a human, completes cleanly, or fails loudly.
+
+{{ROUTER}} A router reads the current state and chooses the next node, which means there are no loops the system did not authorize.
+
+{{REDUCERS}} State **reducers** merge each turn back in, so we never re-enter the graph in a weird place.
+
+{{PILL}} One graph, three phases, twenty-nine stages.

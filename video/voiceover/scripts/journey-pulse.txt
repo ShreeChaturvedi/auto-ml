@@ -1,0 +1,5 @@
+{{EYEBROW}} Eleven months of work, in **three phases**.
+
+{{COUNTERS}} Nearly two thousand commits, three hundred twenty-four issues, and a hundred fifteen merge requests.
+
+{{PEAK}} The peak week landed **four hundred twenty commits**, the week we shipped this demo.

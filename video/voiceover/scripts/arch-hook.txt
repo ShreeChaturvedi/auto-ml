@@ -1,0 +1,7 @@
+{{EYEBROW}} Now to the **backend**.
+
+{{LINE1}} A chatbot that writes **code** is easy to build.
+
+{{LINE2}} A chatbot that writes code, **runs** it, **fails**, **recovers**, and **commits** the result is a very different piece of software.
+
+{{CLOSER}} This is the machinery that makes that second version feel **boring**.

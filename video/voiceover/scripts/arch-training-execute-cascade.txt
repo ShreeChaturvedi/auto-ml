@@ -1,0 +1,29 @@
+{{TITLE}} Generate, run, fail, recover.
+
+{{GEN}} Stage four is **generate_code**, which drops a draft into the notebook.
+
+{{WRITE}} Stage five is **write_code**, which commits that draft to a real cell.
+
+{{EXEC1}} Stage six is **execute_training**, which runs the cell inside a sandboxed kernel.
+
+{{FAIL}} And on the first run, it **fails**, with a **ModuleNotFoundError** for **xgboost**.
+
+{{PARSE}} The executor reads the traceback and pulls the missing module name out of it.
+
+{{INSTALL}} Then it calls **install_package** **out-of-band**, outside the model's turn, so the model never sees the plumbing.
+
+{{RETRY}} After the install, it re-runs the **same cell**, with the same ID and the same arguments.
+
+{{EXEMPT}} Our identical-call guard makes an exception for **run_cell**, because re-running a cell after a fix is **normal** behavior, not a stuck loop.
+
+{{MARKER}} Training finishes and the cell prints a **marker** to stdout.
+
+{{CODE_IN}} Double underscore, **TRAIN_COMPLETE**, a pipe character, and then the JSON payload.
+
+{{LASTINDEXOF}} We scan stdout with **last-index-of**, because earlier failed runs printed their own markers, and the last one wins.
+
+{{EVAL}} Stage seven is **evaluate_results**, which reads the metrics out of that payload.
+
+{{REG}} Stage eight is **register_model**, which writes the result into the model registry.
+
+{{CASCADE}} One graph, three phases, twenty-nine stages, one registered model.

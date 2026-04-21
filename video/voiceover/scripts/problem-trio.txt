@@ -1,0 +1,9 @@
+{{HEADING}} A modern machine learning workflow lives in **six** different tools.
+
+{{TOOLS}} Jupyter, dbt, pandas, sklearn, MLflow, and Streamlit, spread across **four** languages and roughly **eleven** context switches an hour.
+
+{{SKILLS}} The person who owns that stack needs **five** disciplines at once, from SQL and Python to statistics, containers, and MLOps, and the average engineer honestly covers **one and a half** of them.
+
+{{AUTOML}} Classical AutoML papers over the gap by optimizing the model and hiding the decisions underneath. When to drop rows, how to encode, when to regularize, the things a production team has to be able to defend.
+
+{{CLOSER}} Three problems, and **one** workspace that solves all of them.

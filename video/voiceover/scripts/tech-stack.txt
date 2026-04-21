@@ -1,0 +1,7 @@
+{{HEADLINE}} The design is a **probabilistic core** running inside a **deterministic shell**.
+
+{{L1}} There is an experience layer on top, {{L2}} an orchestration layer underneath it, {{L3}} an **intelligence** layer that is the only part of the system allowed to guess, {{L4}} and an execution layer on the bottom.
+
+{{TELEMETRY}} **Fifteen hundred and fifty tests** run green on every commit, ninety-seven percent of the code is covered, and every layer writes a **receipt** when it does work.
+
+{{CLOSER}} We did not automate the eighty percent. We made it **auditable**.

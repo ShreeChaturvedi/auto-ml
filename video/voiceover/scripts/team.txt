@@ -1,0 +1,7 @@
+{{HEADING}} **Two engineers** built this.
+
+{{COL1}} I'm **Shree**, and I built the agentic workflow, the LangGraph state machine, and the UI system that sits on top of it.
+
+{{COL2}} **Ayush** built the notebook runtime, the Docker sandbox that runs every cell, and the evaluation harness we score the platform against.
+
+{{HOLD}} Between the two of us, every layer of the product has an author.

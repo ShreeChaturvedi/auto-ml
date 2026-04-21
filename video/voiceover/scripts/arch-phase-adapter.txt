@@ -1,0 +1,9 @@
+{{TITLE}} Same engine, with different rules per **phase**.
+
+{{CARDS}} Preprocessing has nine stages, feature engineering has ten, and training has ten of its own.
+
+{{CODE_IN}} Each stage declares its own tool **allowlist**.
+
+{{EXEC}} Inside **execute_training**, for example, the model can call execute_training and nothing else.
+
+{{CLOSE}} The stage is a fence, and the model stays inside it.

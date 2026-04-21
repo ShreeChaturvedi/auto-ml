@@ -1,0 +1,3 @@
+{{EYEBROW}} Yes, we used **AI** to build an AI product, and we are upfront about it.
+
+{{CARDS}} **OpenAI** drove the core engine, **Gemini** paired with us on the frontend, and **Cursor** helped triage {{ISSUES}}**three hundred twenty-four** issues across the year.

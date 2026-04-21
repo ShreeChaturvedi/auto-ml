@@ -1,0 +1,5 @@
+{{HEADER}} The **foundation** phase, sprints one through four.
+
+{{HERO}} A working backend, a UI shell, and natural-language SQL running end to end by February.
+
+{{MILES}} A hundred thirty-four commits and nine months of plumbing that nobody sees.

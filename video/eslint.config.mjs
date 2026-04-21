@@ -1,7 +1,11 @@
 import { makeConfig } from "@remotion/eslint-config-flat";
 
-const conf = makeConfig({
-  remotionDir: ["remotion/**"],
+const config = makeConfig({
+  remotionDir: ["remotion/**", "presentation/**"],
 });
 
-export default conf;
+export default [
+  // Root-level `.cjs` files in this workspace are one-off capture diagnostics.
+  { ignores: ["*.cjs"] },
+  ...config,
+];

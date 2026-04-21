@@ -29,7 +29,11 @@ export const previewManifest = {
     'hero-montage',
     'hero',
     'Product workflow montage showing upload, exploration, preprocessing, training, and deployment.',
-    'auto',
+    // 'metadata' keeps LCP clean: browser fetches moov + a few seconds of
+    // frames (~1-2 MB) during page load instead of the full body. Autoplay
+    // streams the rest on demand. 'auto' was fine for the 352 KB Remotion
+    // montage but would block LCP with the 15 MB long-form walkthrough.
+    'metadata',
   ),
   ingest: asset(
     'ingest',

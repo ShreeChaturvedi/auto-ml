@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PreviewLoop } from './PreviewLoop';
@@ -70,6 +70,28 @@ describe('PreviewLoop', () => {
     rerender(<PreviewLoop previewId="explore" />);
 
     expect(loadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the poster overlay again when the preview source changes', () => {
+    const { container, rerender } = render(<PreviewLoop previewId="ingest" />);
+    const video = container.querySelector('video');
+
+    expect(video).not.toBeNull();
+    expect(container.querySelectorAll('img')).toHaveLength(1);
+
+    Object.defineProperty(video!, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 0.3,
+    });
+
+    fireEvent.timeUpdate(video!);
+
+    expect(container.querySelectorAll('img')).toHaveLength(0);
+
+    rerender(<PreviewLoop previewId="explore" />);
+
+    expect(container.querySelectorAll('img')).toHaveLength(1);
   });
 
   it('retries playback when a phase preview becomes visible', () => {

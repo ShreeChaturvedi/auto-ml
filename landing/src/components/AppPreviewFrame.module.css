@@ -9,6 +9,10 @@
 .ringWrapper {
   position: relative;
   width: 100%;
+  /* 16:10 frame is slightly taller-per-width than the 16:9 hero source, so
+     `object-fit: cover` on the video crops ~5% off each horizontal side —
+     which exactly matches the in-video dark margins around the recorded app
+     UI. Net effect: the visible app chrome fills the frame edge-to-edge. */
   aspect-ratio: 16 / 10;
   border-radius: 17px;
   isolation: isolate;

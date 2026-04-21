@@ -30,11 +30,13 @@ export function PreviewLoop({
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const asset = getPreviewAsset(previewId);
+  const assetKey = `${asset.mp4Src}|${asset.posterSrc}|${asset.webmSrc}`;
   const [isInViewport, setIsInViewport] = useState(true);
-  const [hasVisibleFrame, setHasVisibleFrame] = useState(false);
+  const [visibleFrameAssetKey, setVisibleFrameAssetKey] = useState<string | null>(null);
   const gatePlaybackByViewport = asset.slotKind === 'phase';
   const playbackVisible = !gatePlaybackByViewport || isInViewport;
   const isPhasePreview = asset.slotKind === 'phase';
+  const hasVisibleFrame = visibleFrameAssetKey === assetKey;
   const showPosterOnly = reducedMotion || posterOnly;
   const effectivePreload = preload ?? asset.preloadStrategy;
 
@@ -72,13 +74,14 @@ export function PreviewLoop({
 
     const visibleThreshold = isPhasePreview ? PHASE_LOOP_VISIBLE_START_SECONDS : 0.04;
     if (video.currentTime >= visibleThreshold) {
-      setHasVisibleFrame(true);
+      setVisibleFrameAssetKey((currentAssetKey) =>
+        currentAssetKey === assetKey ? currentAssetKey : assetKey,
+      );
     }
-  }, [isPhasePreview]);
+  }, [assetKey, isPhasePreview]);
 
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsInViewport(true);
+    if (!gatePlaybackByViewport || typeof IntersectionObserver === 'undefined') {
       return;
     }
 
@@ -98,7 +101,7 @@ export function PreviewLoop({
     observer.observe(target);
 
     return () => observer.disconnect();
-  }, []);
+  }, [gatePlaybackByViewport]);
 
   const attemptPlayback = useCallback(() => {
     const video = videoRef.current;
@@ -119,10 +122,6 @@ export function PreviewLoop({
       });
     }
   }, [active, alignPhaseLoopWindow, playbackVisible, showPosterOnly]);
-
-  useEffect(() => {
-    setHasVisibleFrame(false);
-  }, [asset.mp4Src, asset.posterSrc, asset.webmSrc]);
 
   useEffect(() => {
     const video = videoRef.current;

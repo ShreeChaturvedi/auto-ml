@@ -1,5 +1,6 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -372,11 +373,218 @@ function exportHeroMontage(heroInputs: Record<HeroPresetId, string>) {
   ]);
 }
 
+// Transcode a prerecorded, long-form hero walkthrough into the landing hero
+// assets. Unlike `exportHeroMontage` (which stitches short Remotion captures
+// at near-lossless CRF 16), this path tunes for ~7 minutes of real UI content:
+// lower-quality CRF so file sizes stay under budget, threaded VP9 so the
+// 2-pass encode finishes in minutes not hours, and a configurable poster
+// offset since there's no montage midpoint to target.
+//
+// The source is a concatenation of UI recordings where the active content
+// area shifts between clips (full app vs. centered modal vs. sparse
+// workspace). A single uniform crop either leaves dark padding for the
+// tight-modal clips or clips real content for the full-app clips. We instead
+// apply per-scene crops via filter_complex: each segment is trimmed, cropped,
+// scaled to a uniform 1280x800, fps-normalized, then concat'd back together.
+//
+// Scene boundaries and crop boxes were derived by dense-sampling the source
+// at 1 Hz, measuring the content bounding box per sample with a PIL scan
+// (r+g+b>40 threshold), classifying samples into wide / narrow / modal runs,
+// and for each run picking the largest 16:10 rectangle that fits INSIDE the
+// *inner* bbox (max-left, max-top, min-right, min-bot across samples, with a
+// 5% robust percentile to ignore single-frame transition outliers). Because
+// the crop edges sit inside content, the output has zero dark padding at the
+// frame edges. Exception: the alembic-modal scene shows an isolated card on
+// a pure-black backdrop — no inscribed crop preserves the whole modal, so we
+// circumscribe it instead (a thin band of backdrop remains at the edges).
+//
+// All crops are 16:10 exact with even w/h (x264 yuv420p requires even dims),
+// so the downstream scale=1280:800 is a pure linear resample.
+type HeroSceneCrop = {
+  start: number; // source seconds, inclusive
+  end: number; // source seconds, exclusive
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+const HERO_SCENE_CROPS: ReadonlyArray<HeroSceneCrop> = [
+  // Dashboard + "New Project" modal + "Create project" flow. Sidebar takes up
+  // the leftmost ~140px, right side is dim dashboard content.
+  { start: 0.0, end: 57.75, x: 146, y: 32, w: 1632, h: 1020 },
+  // Explorer with CSV tabs + SQL editor pane. Full edge-to-edge app chrome.
+  { start: 57.75, end: 112.75, x: 102, y: 4, w: 1712, h: 1070 },
+  // "Select a dataset" modal over the processing workbook.
+  { start: 112.75, end: 117.75, x: 116, y: 20, w: 1680, h: 1050 },
+  // Processing / Feature Engineering / Training full-workflow — edge-to-edge.
+  { start: 117.75, end: 309.75, x: 96, y: 4, w: 1712, h: 1070 },
+  // Alembic package detail modal (circumscribed — keeps the full modal visible
+  // at the cost of a small amount of black backdrop at the frame edges).
+  { start: 309.75, end: 311.75, x: 414, y: 200, w: 1088, h: 680 },
+  // Back to full-workflow — Training → Experiments list views.
+  { start: 311.75, end: 429.75, x: 106, y: 10, w: 1696, h: 1060 },
+  // Experiment detail with feature-importance chart + tail. Slightly narrower
+  // content than the earlier wide scenes.
+  { start: 429.75, end: 466.05, x: 120, y: 28, w: 1664, h: 1040 },
+];
+
+const HERO_OUTPUT_SIZE = { width: 1280, height: 800 } as const;
+const HERO_OUTPUT_FPS = 30;
+
+// Build a filter_complex string that:
+//   1. trims [0:v] into one branch per scene
+//   2. applies that scene's crop, scales to 1280x800, normalizes fps/SAR/pixfmt
+//   3. concat=n=<N>:v=1:a=0 all branches into [vout]
+// Scene end boundaries use trim=end=<t>; the final scene is left open-ended
+// so we don't truncate if the source duration drifts by a frame or two.
+function buildHeroFilterComplex(): string {
+  const { width: OW, height: OH } = HERO_OUTPUT_SIZE;
+  const parts: string[] = [];
+  HERO_SCENE_CROPS.forEach((s, i) => {
+    const isLast = i === HERO_SCENE_CROPS.length - 1;
+    const trim = isLast
+      ? `trim=start=${s.start.toFixed(3)}`
+      : `trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)}`;
+    parts.push(
+      `[0:v]${trim},setpts=PTS-STARTPTS,` +
+        `crop=${s.w}:${s.h}:${s.x}:${s.y},` +
+        `scale=${OW}:${OH}:flags=lanczos,` +
+        `fps=${HERO_OUTPUT_FPS},setsar=1,format=yuv420p` +
+        `[v${i}]`,
+    );
+  });
+  const concatInputs = HERO_SCENE_CROPS.map((_, i) => `[v${i}]`).join('');
+  parts.push(
+    `${concatInputs}concat=n=${HERO_SCENE_CROPS.length}:v=1:a=0[vout]`,
+  );
+  return parts.join(';');
+}
+
+// Pick the right scene for a given source timestamp so the poster uses the
+// correct crop for its frame.
+function heroSceneAt(tSeconds: number): HeroSceneCrop {
+  for (const s of HERO_SCENE_CROPS) {
+    if (tSeconds >= s.start && tSeconds < s.end) return s;
+  }
+  const fallback = HERO_SCENE_CROPS[HERO_SCENE_CROPS.length - 1];
+  if (!fallback) throw new Error('HERO_SCENE_CROPS must not be empty');
+  return fallback;
+}
+
+function transcodeHeroFromSource(srcPath: string) {
+  const outputMp4 = path.join(LANDING_PREVIEW_DIR, 'hero-montage.mp4');
+  const outputWebm = path.join(LANDING_PREVIEW_DIR, 'hero-montage.webm');
+  const outputPoster = path.join(LANDING_PREVIEW_DIR, 'hero-montage.webp');
+
+  const filterComplex = buildHeroFilterComplex();
+
+  ffmpeg([
+    '-y',
+    '-i',
+    srcPath,
+    '-an',
+    '-filter_complex',
+    filterComplex,
+    '-map',
+    '[vout]',
+    '-c:v',
+    'libx264',
+    '-profile:v',
+    'main',
+    '-level',
+    '4.0',
+    '-pix_fmt',
+    'yuv420p',
+    '-preset',
+    'slow',
+    '-crf',
+    '28',
+    '-g',
+    '60',
+    '-keyint_min',
+    '60',
+    '-movflags',
+    '+faststart',
+    outputMp4,
+  ]);
+
+  const passLog = path.join(os.tmpdir(), 'hero-vp9pass');
+  const nullSink = process.platform === 'win32' ? 'NUL' : '/dev/null';
+  const vp9Base = [
+    '-y',
+    '-i',
+    srcPath,
+    '-an',
+    '-filter_complex',
+    filterComplex,
+    '-map',
+    '[vout]',
+    '-c:v',
+    'libvpx-vp9',
+    '-b:v',
+    '0',
+    // VP9 CRF is quality-equivalent to ~(crf - 10) on x264's scale, so CRF 38
+    // here tracks the H.264 CRF 28 target above. CRF 35 produced a WebM
+    // larger than the MP4 it's supposed to alternate with.
+    '-crf',
+    '38',
+    '-deadline',
+    'good',
+    '-cpu-used',
+    '2',
+    '-row-mt',
+    '1',
+    '-tile-columns',
+    '2',
+    '-g',
+    '60',
+    '-passlogfile',
+    passLog,
+  ];
+  ffmpeg([...vp9Base, '-pass', '1', '-f', 'null', nullSink]);
+  ffmpeg([...vp9Base, '-pass', '2', outputWebm]);
+
+  // Poster: default to 260s (deep into the full-workflow sections) unless the
+  // caller specifies HERO_POSTER_OFFSET. Apply the crop box for whichever
+  // scene contains that timestamp so the poster matches the video's framing.
+  const posterOffset = Number.parseFloat(
+    process.env.HERO_POSTER_OFFSET ?? '260',
+  );
+  const posterScene = heroSceneAt(posterOffset);
+  ffmpeg([
+    '-y',
+    '-ss',
+    posterOffset.toFixed(3),
+    '-i',
+    srcPath,
+    '-frames:v',
+    '1',
+    '-vf',
+    `crop=${posterScene.w}:${posterScene.h}:${posterScene.x}:${posterScene.y},` +
+      `scale=${HERO_OUTPUT_SIZE.width}:${HERO_OUTPUT_SIZE.height}:flags=lanczos`,
+    '-q:v',
+    '82',
+    outputPoster,
+  ]);
+}
+
 async function main() {
+  // Escape hatches:
+  //   HERO_SOURCE_PATH=<path>  — skip Playwright capture of hero presets and
+  //                              transcode this file as the hero instead.
+  //   HERO_ONLY=1              — skip phase previews entirely; useful when
+  //                              paired with HERO_SOURCE_PATH to re-emit just
+  //                              the hero without disturbing phase assets.
+  //   HERO_POSTER_OFFSET=<s>   — seconds offset for the hero WebP poster.
+  const heroSourcePath = process.env.HERO_SOURCE_PATH;
+  const heroOnly = process.env.HERO_ONLY === '1';
+  const needsFrontend = !heroSourcePath || !heroOnly;
+
   await mkdir(RAW_CAPTURE_DIR, { recursive: true });
   await mkdir(LANDING_PREVIEW_DIR, { recursive: true });
 
-  const frontendProc = await ensureFrontendServer();
+  const frontendProc = needsFrontend ? await ensureFrontendServer() : null;
   const frontendCleanup = () => {
     if (frontendProc && !frontendProc.killed) {
       frontendProc.kill('SIGTERM');
@@ -387,20 +595,29 @@ async function main() {
     const previewAssetVersion = new Date().toISOString().replace(/[-:.]/g, '');
     const heroInputs = {} as Record<HeroPresetId, string>;
 
-    for (const preset of HERO_PRESETS) {
-      console.log(`[landing-previews] capturing ${preset}...`);
-      heroInputs[preset] = await capturePreset(preset);
+    if (!heroSourcePath) {
+      for (const preset of HERO_PRESETS) {
+        console.log(`[landing-previews] capturing ${preset}...`);
+        heroInputs[preset] = await capturePreset(preset);
+      }
     }
 
-    for (const preset of PHASE_PRESETS) {
-      console.log(`[landing-previews] capturing ${preset}...`);
-      const inputPath = await capturePreset(preset);
-      console.log(`[landing-previews] exporting ${preset} assets...`);
-      exportLoopAssets(inputPath, preset);
+    if (!heroOnly) {
+      for (const preset of PHASE_PRESETS) {
+        console.log(`[landing-previews] capturing ${preset}...`);
+        const inputPath = await capturePreset(preset);
+        console.log(`[landing-previews] exporting ${preset} assets...`);
+        exportLoopAssets(inputPath, preset);
+      }
     }
 
-    console.log('[landing-previews] exporting hero montage...');
-    exportHeroMontage(heroInputs);
+    if (heroSourcePath) {
+      console.log(`[landing-previews] transcoding hero from ${heroSourcePath}...`);
+      transcodeHeroFromSource(heroSourcePath);
+    } else {
+      console.log('[landing-previews] exporting hero montage...');
+      exportHeroMontage(heroInputs);
+    }
     await writePreviewVersionFile(previewAssetVersion);
     console.log(`[landing-previews] preview asset version: ${previewAssetVersion}`);
   } finally {

@@ -1,0 +1,208 @@
+
+[Faculty] 0 already sent; 32 to send; 32 total.
+
+[1/32] Dr. Alomari <alomarhw@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_alomarhw_at_miamioh.edu.eml
+    ✓ sent id=19db13a67e0d03ad thread=19db13a67e0d03ad
+    ⚠ could not delete draft r-698070022313072360: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[2/32] Prof. Amjad <amjadm@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_amjadm_at_miamioh.edu.eml
+    ✓ sent id=19db13aa035d3b00 thread=19db13aa035d3b00
+    ⚠ could not delete draft r6796815569201018993: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[3/32] Dr. Bhunia <bhunias@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_bhunias_at_miamioh.edu.eml
+    ✓ sent id=19db13ada9c20f5d thread=19db13ada9c20f5d
+    ⚠ could not delete draft r-6646433964939676549: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[4/32] Prof. Borror <borrorkn@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_borrorkn_at_miamioh.edu.eml
+    ✓ sent id=19db13b1afb5db9d thread=19db13b1afb5db9d
+    ⚠ could not delete draft r8436137798173762555: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[5/32] Dr. Campbell <campbest@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_campbest_at_miamioh.edu.eml
+    ✓ sent id=19db13b58fb6c3c9 thread=19db13b58fb6c3c9
+    ⚠ could not delete draft r-9123464474817935857: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[6/32] Prof. Cruez <cruezrl@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_cruezrl_at_miamioh.edu.eml
+    ✓ sent id=19db13b95c613011 thread=19db13b95c613011
+    ⚠ could not delete draft r-8677861733948936041: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[7/32] Dr. Femiani <femianjc@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_femianjc_at_miamioh.edu.eml
+    ✓ sent id=19db13bce775fa59 thread=19db13bce775fa59
+    ⚠ could not delete draft r8923193239925096938: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[8/32] Dr. Feng <fengx17@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_fengx17_at_miamioh.edu.eml
+    ✓ sent id=19db13c1173f90af thread=19db13c1173f90af
+    ⚠ could not delete draft r-1446061098617343533: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[9/32] Dr. Ferrenberg <ferrenam@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_ferrenam_at_miamioh.edu.eml
+    ✓ sent id=19db13c4f4673f7e thread=19db13c4f4673f7e
+    ⚠ could not delete draft r-5259118970694688368: json parse error: Expecting value: line 1 column 1 (char 0)
+
+    … sleeping 10s
+
+[Faculty] 9 already sent; 23 to send; 32 total.
+
+[1/23] Dr. Goodman <goodmag@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_goodmag_at_miamioh.edu.eml
+    ✓ sent id=19db148d2204e241 thread=19db148d2204e241
+    ✓ deleted placeholder draft r6489356560051444004
+    … sleeping 10s
+
+[2/23] Dr. Inclezan <inclezd@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_inclezd_at_miamioh.edu.eml
+    ✓ sent id=19db1490cd68403c thread=19db1490cd68403c
+    ✓ deleted placeholder draft r-5204088974564770156
+    … sleeping 10s
+
+[3/23] Dr. Jiang <jiangh34@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_jiangh34_at_miamioh.edu.eml
+    ✓ sent id=19db1494535ecff9 thread=19db1494535ecff9
+    ✓ deleted placeholder draft r1419989459442869564
+    … sleeping 10s
+
+[4/23] Dr. Johnson <johnsok9@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_johnsok9_at_miamioh.edu.eml
+    ✓ sent id=19db14984f0893e3 thread=19db14984f0893e3
+    ✓ deleted placeholder draft r5170081126503664700
+    … sleeping 10s
+
+[5/23] Dr. Johnson <john1819@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_john1819_at_miamioh.edu.eml
+    ✓ sent id=19db149c20fe84f8 thread=19db149c20fe84f8
+    ✓ deleted placeholder draft r-3812400542677732615
+    … sleeping 10s
+
+[6/23] Dr. Khamaiseh <khamaisy@miamioh.edu> [tmpl A+]
+    built 15.81 MB → .tmp/faculty-drafts/send_khamaisy_at_miamioh.edu.eml
+    ✓ sent id=19db14a0201352dc thread=19db14a0201352dc
+    ✓ deleted placeholder draft r4143435824523878670
+    … sleeping 10s
+
+[7/23] Prof. Krumpe <krumpenj@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_krumpenj_at_miamioh.edu.eml
+    ✓ sent id=19db14a3dc29eb85 thread=19db14a3dc29eb85
+    ✓ deleted placeholder draft r-1370459987069045183
+    … sleeping 10s
+
+[8/23] Prof. Kulekci <kulekcs@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_kulekcs_at_miamioh.edu.eml
+    ✓ sent id=19db14a7b452a83b thread=19db14a7b452a83b
+    ✓ deleted placeholder draft r-4693094991628003877
+    … sleeping 10s
+
+[9/23] Dr. Kulekci <kulekcmo@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_kulekcmo_at_miamioh.edu.eml
+    ✓ sent id=19db14ab21f8448a thread=19db14ab21f8448a
+    ✓ deleted placeholder draft r-8638431036823245973
+    … sleeping 10s
+
+[10/23] Dr. Li <lis11@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_lis11_at_miamioh.edu.eml
+    ✓ sent id=19db14af244f44b7 thread=19db14af244f44b7
+    ✓ deleted placeholder draft r-2186974388943559576
+    … sleeping 10s
+
+[11/23] Prof. Loncala <loncaljt@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_loncaljt_at_miamioh.edu.eml
+    ✓ sent id=19db14b33ff5c03f thread=19db14b33ff5c03f
+    ✓ deleted placeholder draft r-6310684571191564595
+    … sleeping 10s
+
+[12/23] Dr. Ma <mal18@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_mal18_at_miamioh.edu.eml
+    ✓ sent id=19db14b7829e3af4 thread=19db14b7829e3af4
+    ✓ deleted placeholder draft r-6397202577069340573
+    … sleeping 10s
+
+[13/23] Prof. MacNaughton <macnaumr@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_macnaumr_at_miamioh.edu.eml
+    ✓ sent id=19db14bbb519061d thread=19db14bbb519061d
+    ✓ deleted placeholder draft r-5628919781782911196
+    … sleeping 10s
+
+[14/23] Prof. Mattox <mattoxj@miamioh.edu> [tmpl A]
+    built 15.81 MB → .tmp/faculty-drafts/send_mattoxj_at_miamioh.edu.eml
+    ✓ sent id=19db14bf800fe7a7 thread=19db14bf800fe7a7
+    ✓ deleted placeholder draft r1287709675663443015
+    … sleeping 10s
+
+[15/23] Dr. Rao <raodm@miamioh.edu> [tmpl A]
+    built 15.81 MB → .tmp/faculty-drafts/send_raodm_at_miamioh.edu.eml
+    ✓ sent id=19db14c3513d150f thread=19db14c3513d150f
+    ✓ deleted placeholder draft r448754635888172759
+    … sleeping 10s
+
+[16/23] Dr. Raychoudhury <raychov@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_raychov_at_miamioh.edu.eml
+    ✓ sent id=19db14c6f0744400 thread=19db14c6f0744400
+    ✓ deleted placeholder draft r-6508745557760775672
+    … sleeping 10s
+
+[17/23] Dr. Sevkli <sevkliaz@miamioh.edu> [tmpl B]
+    built 15.81 MB → .tmp/faculty-drafts/send_sevkliaz_at_miamioh.edu.eml
+    ✓ sent id=19db14cafa8ef216 thread=19db14cafa8ef216
+    ✓ deleted placeholder draft r-293575690808867734
+    … sleeping 10s
+
+[18/23] Dr. Sobel <sobelae@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_sobelae_at_miamioh.edu.eml
+    ✓ sent id=19db14cedc5dac7c thread=19db14cedc5dac7c
+    ✓ deleted placeholder draft r-1754104703278237685
+    … sleeping 10s
+
+[19/23] Dr. Vendome <vendomcg@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_vendomcg_at_miamioh.edu.eml
+    ✓ sent id=19db14d2780dcc4a thread=19db14d2780dcc4a
+    ✓ deleted placeholder draft r566146856018383178
+    … sleeping 10s
+
+[20/23] Dr. Walden <waldenjw@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_waldenjw_at_miamioh.edu.eml
+    ✓ sent id=19db14d649372b91 thread=19db14d649372b91
+    ✓ deleted placeholder draft r2073664947566163935
+    … sleeping 10s
+
+[21/23] Dr. Yu <honggangyu@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_honggangyu_at_miamioh.edu.eml
+    ✓ sent id=19db14da0533e6b3 thread=19db14da0533e6b3
+    ✓ deleted placeholder draft r-775197029126412400
+    … sleeping 10s
+
+[22/23] Dr. Zhang <zhang981@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_zhang981_at_miamioh.edu.eml
+    ✓ sent id=19db14de5e3308f5 thread=19db14de5e3308f5
+    ✓ deleted placeholder draft r3273485839283726261
+    … sleeping 10s
+
+[23/23] Dr. Zmuda <zmudam@miamioh.edu> [tmpl C]
+    built 15.81 MB → .tmp/faculty-drafts/send_zmudam_at_miamioh.edu.eml
+    ✓ sent id=19db14e20ac93ba3 thread=19db14e20ac93ba3
+    ✓ deleted placeholder draft r-975461064796673075
+
+[Faculty] Finished. Total sent this run: 23.
+
+All requested steps completed.

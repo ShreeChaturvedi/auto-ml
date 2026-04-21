@@ -1,0 +1,1208 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - img [ref=e5]
+    - img [ref=e31]
+    - generic [ref=e35]: miami cse · expo 2026
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - text: AGENTIC
+        - text: AUTOML
+      - generic [ref=e38]: we automate the 80% that isn’t training.
+      - generic [ref=e39]: A printed system card · Vol. 01
+      - generic [ref=e40]: MIAMI UNIVERSITY · CSE 449 · SENIOR DESIGN PROJECT · 2026
+      - generic [ref=e41]: agentic-automl.vercel.app
+  - generic [ref=e42]:
+    - img
+    - generic [ref=e43]: Welcome.
+    - generic [ref=e44]: Agentic AutoML automates the 80% of machine-learning work that isn't training — cleaning, engineering, shipping. In our benchmarks it gets from a raw CSV to a deployed model 7× faster than manual Jupyter, while catching 16 of 20 synthetic data flaws (sklearn catches 3). This booklet walks the why, the how, what's inside, what we measured, and how we built it.
+    - generic [ref=e45]: agentic-automl.vercel.app
+  - generic [ref=e47]:
+    - generic [ref=e48]:
+      - generic [ref=e49]: Vol. 01 · System Card
+      - heading "Agentic AutoML Platform" [level=1] [ref=e50]
+      - paragraph [ref=e51]: From dataset to deployed models, agentically and autonomously.
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]: Authors
+          - generic [ref=e55]: Shree Chaturvedi · Ayush Yadav
+        - generic [ref=e56]:
+          - generic [ref=e57]: Advisor
+          - generic [ref=e58]: Samer Khamaiseh, Ph.D.
+        - generic [ref=e59]:
+          - generic [ref=e60]: Course
+          - generic [ref=e61]: CSE 449 · Senior Design Project
+        - generic [ref=e62]:
+          - generic [ref=e63]: Date
+          - generic [ref=e64]: April 2026
+        - generic [ref=e65]:
+          - generic [ref=e66]: Edition
+          - generic [ref=e67]: Expo · first printing
+      - generic [ref=e69]:
+        - text: © 2026 · MIAMI UNIVERSITY · CSE 449 · SENIOR DESIGN PROJECT · 2026
+        - text: Typeset in Plus Jakarta Sans, Instrument Serif, Monaspace Neon.
+        - text: Printed on 80 lb uncoated text · saddle-stitched.
+    - generic [ref=e70]:
+      - generic [ref=e71]: Contents
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - generic [ref=e75]: "01"
+          - generic [ref=e76]:
+            - generic [ref=e77]: WHY
+            - generic [ref=e78]: the 80% problem
+          - generic [ref=e79]: 04 – 07
+        - generic [ref=e80]:
+          - generic [ref=e82]: "02"
+          - generic [ref=e83]:
+            - generic [ref=e84]: HOW
+            - generic [ref=e85]: plan-with-agent loop
+          - generic [ref=e86]: 08 – 15
+        - generic [ref=e87]:
+          - generic [ref=e89]: "03"
+          - generic [ref=e90]:
+            - generic [ref=e91]: INSIDE
+            - generic [ref=e92]: FSM · MCP · sandbox
+          - generic [ref=e93]: 16 – 19
+        - generic [ref=e94]:
+          - generic [ref=e96]: "04"
+          - generic [ref=e97]:
+            - generic [ref=e98]: PROOF
+            - generic [ref=e99]: 7× · top 15%
+          - generic [ref=e100]: 20 – 22
+        - generic [ref=e101]:
+          - generic [ref=e103]: "05"
+          - generic [ref=e104]:
+            - generic [ref=e105]: BUILD
+            - generic [ref=e106]: 11 months · 2 engineers
+          - generic [ref=e107]: 23 – 26
+  - generic [ref=e108]:
+    - generic [ref=e109]: "01"
+    - generic [ref=e110]: WHY
+    - generic [ref=e111]: data science is mostly not data science
+    - img [ref=e114]:
+      - generic [ref=e188]: CSV
+      - generic [ref=e192]: ENV · DAY-TO-DAY
+      - generic [ref=e193]: 1 OF 20 · ML
+    - generic [ref=e194]: 01 / 05
+  - generic [ref=e195]:
+    - generic [ref=e196]: §01 · WHY
+    - heading "The 80% Problem." [level=1] [ref=e197]
+    - paragraph [ref=e198]: Data scientists spend 80% of their time on everything except training models.
+    - generic [ref=e200]:
+      - generic [ref=e201]: 25% ref
+      - generic [ref=e202]:
+        - generic [ref=e203]:
+          - generic [ref=e204]: Data cleansing
+          - generic [ref=e207]: 26%
+        - generic [ref=e208]:
+          - generic [ref=e209]: Data preparation
+          - generic [ref=e212]: 20%
+        - generic [ref=e213]:
+          - generic [ref=e214]: Data visualization
+          - generic [ref=e217]: 14%
+        - generic [ref=e218]:
+          - generic [ref=e219]: Model deployment
+          - generic [ref=e222]: 11%
+        - generic [ref=e223]:
+          - generic [ref=e224]: Reporting / other
+          - generic [ref=e227]: 9%
+        - generic [ref=e228]:
+          - generic [ref=e229]: Model training
+          - generic [ref=e232]: 20%
+    - generic [ref=e233]:
+      - paragraph [ref=e234]: "Before a single `fit()` call, a practitioner has cleaned, merged, relabeled, visualized, sanity-checked, re-cleaned, prepped splits, and debugged feature pipelines. Training itself is a thin slice at the top of the stack."
+      - paragraph [ref=e235]: "The same survey that gives us the 80% figure breaks the other 80 into six buckets: cleansing, prep, viz, deployment, reporting, and the glue between them. None of those tasks are the idea behind the model — they're the scaffolding around it."
+    - paragraph [ref=e236]: The pattern has been stable for a decade. It's what makes 'doing data science' feel so different from 'learning data science.'
+    - generic [ref=e237]: source · Anaconda State of Data Science 2022 · n = 3,493
+    - generic [ref=e238]:
+      - generic [ref=e239]: WHY
+      - generic [ref=e240]: pg 05 / 28
+  - generic [ref=e241]:
+    - generic [ref=e242]: §01 · WHY NOW
+    - heading "Three things unlocked at once." [level=1] [ref=e243]
+    - generic [ref=e244]:
+      - generic [ref=e245]:
+        - generic [ref=e246]:
+          - generic [ref=e247]: 01 / models
+          - generic [ref=e248]: LLMs finally read tabular schemas well.
+        - paragraph [ref=e249]: Models finally read tabular schemas with function calling, typed JSON, and reliable tool-call fidelity — a 2024 unlock, not a 2022 one.
+        - separator [ref=e250]
+        - generic [ref=e251]:
+          - generic [ref=e252]: 02 / protocols
+          - generic [ref=e253]: MCP gives agents a durable tool contract.
+        - paragraph [ref=e254]: Protocols give agents a durable tool contract. MCP standardizes how an agent sees the product's capabilities, logs every call, and enforces allowlists per stage.
+        - separator [ref=e255]
+        - generic [ref=e256]:
+          - generic [ref=e257]: 03 / runtime
+          - generic [ref=e258]: Sandboxed Python is fast and safe enough now.
+        - paragraph [ref=e259]: Runtime is now fast and safe enough. Containerized Jupyter kernels start in under a second; a bad cell fails inside the sandbox instead of trashing the notebook.
+      - complementary [ref=e260]:
+        - generic [ref=e261]: BY THE STACK
+        - list [ref=e262]:
+          - listitem [ref=e263]: "GPT-4o-mini: tool-call fidelity"
+          - listitem [ref=e264]: "MCP registry: 20+ tools"
+          - listitem [ref=e265]: "Docker: 2GB RAM · 1 CPU"
+          - listitem [ref=e266]: "Jupyter Kernel Gateway: < 1s"
+    - generic [ref=e267]:
+      - generic [ref=e268]: WHY
+      - generic [ref=e269]: pg 06 / 28
+  - generic [ref=e270]:
+    - generic [ref=e271]: §01 · WHAT CHANGED
+    - heading "Notebook-as-ritual → agent-as-colleague." [level=1] [ref=e272]
+    - img
+    - generic [ref=e273]:
+      - generic [ref=e274]:
+        - generic [ref=e275]: BEFORE
+        - list [ref=e276]:
+          - listitem [ref=e277]:
+            - generic [ref=e278]: "01"
+            - text: A 40-cell notebook, rewritten for every dataset.
+          - listitem [ref=e279]:
+            - generic [ref=e280]: "02"
+            - text: Copy-paste from Stack Overflow and past projects.
+          - listitem [ref=e281]:
+            - generic [ref=e282]: "03"
+            - text: Silent data flaws — dates parsed as integers, row indices treated as features.
+          - listitem [ref=e283]:
+            - generic [ref=e284]: "04"
+            - text: No record of what was tried, or why it was rejected.
+          - listitem [ref=e285]:
+            - generic [ref=e286]: "05"
+            - text: Deployment lives in a separate codebase the data scientist has never opened.
+      - generic [ref=e287]:
+        - generic [ref=e288]: WITH AAMT
+        - list [ref=e289]:
+          - listitem [ref=e290]:
+            - generic [ref=e291]: "01"
+            - text: An agent plans the workflow in natural language, in your project's context.
+          - listitem [ref=e292]:
+            - generic [ref=e293]: "02"
+            - text: It writes the cells itself, citing the pandas / sklearn docs it used.
+          - listitem [ref=e294]:
+            - generic [ref=e295]: "03"
+            - text: 16/20 guardrail score vs sklearn's 3/20 — we catch 8 of 10 seeded flaws to sklearn's partial 1.
+          - listitem [ref=e296]:
+            - generic [ref=e297]: "04"
+            - text: Every proposal, approval, and revision is captured as a durable run artifact.
+          - listitem [ref=e298]:
+            - generic [ref=e299]: "05"
+            - text: The champion model ships as a downloadable notebook and serving endpoint.
+    - generic [ref=e301]:
+      - generic [ref=e302]: PENDING APPROVAL
+      - generic [ref=e303]: "Your call: which workflow do you want to be in?"
+    - generic [ref=e304]:
+      - generic [ref=e305]: WHY
+      - generic [ref=e306]: pg 07 / 28
+  - generic [ref=e307]:
+    - generic [ref=e308]: "02"
+    - generic [ref=e309]: HOW
+    - generic [ref=e310]: talk to it · plan with it · own the notebook
+    - img [ref=e313]:
+      - generic [ref=e321]: CHAT
+      - generic [ref=e348]: PLAN · 03 / 04
+      - generic [ref=e382]: §02 · HOW
+      - generic [ref=e383]: CHAT → PLAN → RUN
+    - generic [ref=e384]: 02 / 05
+  - generic [ref=e385]:
+    - generic [ref=e386]: §02 · HOW · THREE PILLARS
+    - heading "Three ways to work the notebook." [level=1] [ref=e387]
+    - generic [ref=e388]:
+      - generic [ref=e389]:
+        - generic [ref=e390]: CHAT
+        - heading "Talk to your data like a colleague." [level=2] [ref=e391]
+        - paragraph [ref=e392]: Ask for a profile, a feature idea, or a model recommendation. The agent reads your dataset, drafts the cells, and explains its reasoning in the same pane.
+        - generic [ref=e393]: → ask in English
+      - generic [ref=e394]:
+        - generic [ref=e395]: PLAN
+        - heading "Plan with it, not around it." [level=2] [ref=e396]
+        - paragraph [ref=e397]: Every multi-step task surfaces as a plan card — a numbered list of proposed cells. You approve, revise, or reject before anything runs.
+        - generic [ref=e398]: → approve or revise
+      - generic [ref=e399]:
+        - generic [ref=e400]: NOTEBOOK
+        - heading "Own the notebook that ships." [level=2] [ref=e401]
+        - paragraph [ref=e402]: Approved cells land in a real Jupyter notebook you can edit, re-run, or download. There's no hidden agent state — the notebook is the record.
+        - generic [ref=e403]: → edit and ship
+    - generic [ref=e404]:
+      - generic [ref=e405]: THE 6-PHASE LOOP
+      - img [ref=e406]:
+        - generic [ref=e408]:
+          - generic [ref=e410]: "01"
+          - generic [ref=e411]: Upload
+        - generic [ref=e412]:
+          - generic [ref=e414]: "02"
+          - generic [ref=e415]: Explore
+        - generic [ref=e416]:
+          - generic [ref=e418]: "03"
+          - generic [ref=e419]: Preprocess
+        - generic [ref=e420]:
+          - generic [ref=e422]: "04"
+          - generic [ref=e423]: Features
+        - generic [ref=e424]:
+          - generic [ref=e426]: "05"
+          - generic [ref=e427]: Train
+        - generic [ref=e428]:
+          - generic [ref=e430]: "06"
+          - generic [ref=e431]: Experiments
+        - generic [ref=e432]: upload
+        - generic [ref=e433]: to ship.
+    - generic [ref=e434]:
+      - generic [ref=e435]: HOW
+      - generic [ref=e436]: pg 09 / 28
+  - generic [ref=e437]:
+    - generic [ref=e438]: PHASE 01 · HOW
+    - heading "Upload & Ingest" [level=1] [ref=e439]
+    - paragraph [ref=e440]: Drop a CSV or pull from Postgres, name the project, pick a theme.
+    - img
+    - generic [ref=e442]:
+      - generic [ref=e447]: agentic-automl.vercel.app
+      - generic [ref=e450]:
+        - generic [ref=e451]: PENDING SCREENSHOT
+        - generic [ref=e452]: Upload area showing drag-drop zone, file preview card, and the project theme-color picker visible in the upper-right.
+        - generic [ref=e453]:
+          - text: drop file at
+          - generic [ref=e454]: public/screenshots/phase-01-upload.png
+    - generic:
+      - img [ref=e455]
+      - generic [ref=e459]: CSV · JSON · XLSX up to 300 MB.
+    - generic:
+      - img [ref=e460]
+      - generic [ref=e464]: Profile samples 20 rows before Postgres commits.
+    - generic:
+      - img [ref=e465]
+      - generic [ref=e469]: Theme color propagates to every visible surface.
+    - generic [ref=e470]:
+      - generic [ref=e471]:
+        - generic [ref=e472]:
+          - generic [ref=e473]:
+            - generic [ref=e474]: UPLOAD MAX
+            - generic [ref=e475]: 300 MB
+          - generic [ref=e476]:
+            - generic [ref=e477]: FORMATS
+            - generic [ref=e478]: CSV · JSON · XLSX
+          - generic [ref=e479]:
+            - generic [ref=e480]: DTYPES SNIFFED
+            - generic [ref=e481]: 6 canonical
+        - generic [ref=e482]:
+          - generic [ref=e483]: "tool_call: get_dataset_profile"
+          - generic [ref=e484]:
+            - generic [ref=e485]: "datasetId:"
+            - text: "\"ds_8af2\""
+          - generic [ref=e486]:
+            - generic [ref=e487]: "sample:"
+            - text: "20"
+          - generic [ref=e488]: first call on every new ingest — primes the planner's schema cache.
+      - generic [ref=e489]:
+        - generic [ref=e490]:
+          - generic [ref=e491]: "01"
+          - text: Upload
+        - generic [ref=e492]:
+          - generic [ref=e493]: "02"
+          - text: Explore
+        - generic [ref=e494]:
+          - generic [ref=e495]: "03"
+          - text: Preprocess
+        - generic [ref=e496]:
+          - generic [ref=e497]: "04"
+          - text: Features
+        - generic [ref=e498]:
+          - generic [ref=e499]: "05"
+          - text: Train
+        - generic [ref=e500]:
+          - generic [ref=e501]: "06"
+          - text: Experiments
+      - paragraph [ref=e502]: "A fresh upload writes a `projects.json` entry, a Postgres row, and a theme token. Everything else keys off that triple."
+      - generic [ref=e503]:
+        - generic [ref=e504]: NEXT · 02 · EXPLORE
+        - generic [ref=e505]: Ingested. Continue to Explore →
+    - generic [ref=e506]:
+      - generic [ref=e507]: HOW
+      - generic [ref=e508]: pg 10 / 28
+  - generic [ref=e509]:
+    - generic [ref=e510]: PHASE 02 · HOW
+    - heading "Explore" [level=1] [ref=e511]
+    - paragraph [ref=e512]: Browse schema, inspect distributions, and run natural-language SQL.
+    - img
+    - generic [ref=e514]:
+      - generic [ref=e519]: agentic-automl.vercel.app
+      - generic [ref=e522]:
+        - generic [ref=e523]: PENDING SCREENSHOT
+        - generic [ref=e524]: "Data Viewer tab: schema panel on the left, sample-rows table center, and the NL→SQL query box at the top with an example query in flight."
+        - generic [ref=e525]:
+          - text: drop file at
+          - generic [ref=e526]: public/screenshots/phase-02-explore.png
+    - generic:
+      - img [ref=e527]
+      - generic [ref=e531]: Schema panel folds/unfolds by column family.
+    - generic:
+      - img [ref=e532]
+      - generic [ref=e536]: NL→SQL box compiles to real SQL you can copy.
+    - generic:
+      - img [ref=e537]
+      - generic [ref=e541]: "Two-pass planner: plan JSON, then read-only SELECT."
+    - generic [ref=e542]:
+      - generic [ref=e543]:
+        - generic [ref=e544]:
+          - generic [ref=e545]:
+            - generic [ref=e546]: QUERY CACHE
+            - generic [ref=e547]: 40 ms p50
+          - generic [ref=e548]:
+            - generic [ref=e549]: SAMPLE SHAPE
+            - generic [ref=e550]: 2,530 × 14
+          - generic [ref=e551]:
+            - generic [ref=e552]: PLANNER
+            - generic [ref=e553]: two-pass JSON
+        - generic [ref=e554]:
+          - generic [ref=e555]: "tool_call: nl_to_sql"
+          - generic [ref=e556]:
+            - generic [ref=e557]: "prompt:"
+            - text: "\"rows where age > 60 and cholesterol > 240\""
+          - generic [ref=e558]:
+            - generic [ref=e559]: "datasetId:"
+            - text: "\"ds_8af2\""
+          - generic [ref=e560]: compiles to read-only SELECT; copy-to-clipboard always available.
+      - generic [ref=e561]:
+        - generic [ref=e562]:
+          - generic [ref=e563]: "01"
+          - text: Upload
+        - generic [ref=e564]:
+          - generic [ref=e565]: "02"
+          - text: Explore
+        - generic [ref=e566]:
+          - generic [ref=e567]: "03"
+          - text: Preprocess
+        - generic [ref=e568]:
+          - generic [ref=e569]: "04"
+          - text: Features
+        - generic [ref=e570]:
+          - generic [ref=e571]: "05"
+          - text: Train
+        - generic [ref=e572]:
+          - generic [ref=e573]: "06"
+          - text: Experiments
+      - paragraph [ref=e574]: Every NL query is cached on its AST hash; a second ask returns in under a frame.
+      - generic [ref=e575]:
+        - generic [ref=e576]: NEXT · 03 · PREPROCESS
+        - generic [ref=e577]: Mapped. Continue to Preprocess →
+    - generic [ref=e578]:
+      - generic [ref=e579]: HOW
+      - generic [ref=e580]: pg 11 / 28
+  - generic [ref=e581]:
+    - generic [ref=e582]: PHASE 03 · HOW
+    - heading "Preprocess" [level=1] [ref=e583]
+    - paragraph [ref=e584]: Agent proposes transforms; you approve, revise, or reject each one.
+    - img
+    - generic [ref=e586]:
+      - generic [ref=e591]: agentic-automl.vercel.app
+      - generic [ref=e594]:
+        - generic [ref=e595]: PENDING SCREENSHOT
+        - generic [ref=e596]: "Preprocessing panel mid-flow: the agent's proposed transformation step on the left, a diff preview center, Approve / Revise buttons bottom-right. The LangGraph approval gate is the focal point."
+        - generic [ref=e597]:
+          - text: drop file at
+          - generic [ref=e598]: public/screenshots/phase-03-preprocess.png
+    - generic:
+      - img [ref=e599]
+      - generic [ref=e603]: Each step is a reviewable diff, not a black box.
+    - generic:
+      - img [ref=e604]
+      - generic [ref=e608]: Approval gate pauses the FSM until you decide.
+    - generic:
+      - img [ref=e609]
+      - generic [ref=e613]: Auto-repair retries twice before handing back to the planner.
+    - generic [ref=e614]:
+      - generic [ref=e615]:
+        - generic [ref=e616]: THE APPROVAL GATE · ON THE PATH, NOT BESIDE IT
+        - generic [ref=e617]:
+          - generic [ref=e618]:
+            - generic [ref=e619]: RAW
+            - generic [ref=e620]: dataset
+          - img [ref=e621]
+          - generic [ref=e625]:
+            - generic [ref=e626]: APPROVAL
+            - generic [ref=e627]: your call
+            - img [ref=e629]
+          - img [ref=e631]
+          - generic [ref=e635]:
+            - generic [ref=e636]: CLEANED
+            - generic [ref=e637]: ready for features
+      - generic [ref=e638]:
+        - generic [ref=e639]:
+          - generic [ref=e640]:
+            - generic [ref=e641]: AUTO-REPAIR
+            - generic [ref=e642]: 2 retries
+          - generic [ref=e643]:
+            - generic [ref=e644]: ON FAILURE
+            - generic [ref=e645]: escalate to planner
+          - generic [ref=e646]:
+            - generic [ref=e647]: APPROVAL MODE
+            - generic [ref=e648]: human-in-loop
+        - generic [ref=e649]:
+          - generic [ref=e650]: "tool_call: request_approval"
+          - generic [ref=e651]:
+            - generic [ref=e652]: "stage:"
+            - text: "\"commit\""
+          - generic [ref=e653]:
+            - generic [ref=e654]: "diff:"
+            - text: "\"impute_median(cholesterol)\""
+          - generic [ref=e655]:
+            - generic [ref=e656]: "reason:"
+            - text: "\"12.4% missing\""
+          - generic [ref=e657]: FSM halts at stage 6 (await_approval) until a decision posts back.
+      - generic [ref=e658]:
+        - generic [ref=e659]:
+          - generic [ref=e660]: "01"
+          - text: Upload
+        - generic [ref=e661]:
+          - generic [ref=e662]: "02"
+          - text: Explore
+        - generic [ref=e663]:
+          - generic [ref=e664]: "03"
+          - text: Preprocess
+        - generic [ref=e665]:
+          - generic [ref=e666]: "04"
+          - text: Features
+        - generic [ref=e667]:
+          - generic [ref=e668]: "05"
+          - text: Train
+        - generic [ref=e669]:
+          - generic [ref=e670]: "06"
+          - text: Experiments
+      - paragraph [ref=e671]: Where AutoML hides the decision, we surface it. The book's approval-gate hero lives here.
+      - generic [ref=e672]:
+        - generic [ref=e673]: NEXT · 04 · FEATURES
+        - generic [ref=e674]: Cleaned. Continue to Features →
+    - generic [ref=e675]:
+      - generic [ref=e676]: HOW
+      - generic [ref=e677]: pg 12 / 28
+  - generic [ref=e678]:
+    - generic [ref=e679]: PHASE 04 · HOW
+    - heading "Features" [level=1] [ref=e680]
+    - paragraph [ref=e681]: Build features via the query UI or accept auto-generated candidates.
+    - img
+    - generic [ref=e683]:
+      - generic [ref=e688]: agentic-automl.vercel.app
+      - generic [ref=e691]:
+        - generic [ref=e692]: PENDING SCREENSHOT
+        - generic [ref=e693]: "Feature Engineering panel: query builder UI at the top, auto-candidate generator results center, accept / reject controls right."
+        - generic [ref=e694]:
+          - text: drop file at
+          - generic [ref=e695]: public/screenshots/phase-04-features.png
+    - generic:
+      - img [ref=e696]
+      - generic [ref=e700]: Query builder is a first-class UI, not a prompt hack.
+    - generic:
+      - img [ref=e701]
+      - generic [ref=e705]: Agent proposes 3-5 diverse candidates per turn.
+    - generic:
+      - img [ref=e706]
+      - generic [ref=e710]: Each tagged high · med · low impact; accept individually or in bulk.
+    - generic [ref=e711]:
+      - generic [ref=e712]:
+        - generic [ref=e713]:
+          - generic [ref=e714]:
+            - generic [ref=e715]: METHOD CATALOG
+            - generic [ref=e716]: 33 techniques
+          - generic [ref=e717]:
+            - generic [ref=e718]: PER TURN
+            - generic [ref=e719]: 3–5 proposals
+          - generic [ref=e720]:
+            - generic [ref=e721]: IMPACT TAGS
+            - generic [ref=e722]: high · med · low
+        - generic [ref=e723]:
+          - generic [ref=e724]: "tool_call: target_encode"
+          - generic [ref=e725]:
+            - generic [ref=e726]: "column:"
+            - text: "\"chest_pain_type\""
+          - generic [ref=e727]:
+            - generic [ref=e728]: "target:"
+            - text: "\"heart_disease\""
+          - generic [ref=e729]:
+            - generic [ref=e730]: "smoothing:"
+            - text: "10"
+          - generic [ref=e731]: one of 33 catalog entries — reviewable before it lands in the notebook.
+      - generic [ref=e732]:
+        - generic [ref=e733]:
+          - generic [ref=e734]: "01"
+          - text: Upload
+        - generic [ref=e735]:
+          - generic [ref=e736]: "02"
+          - text: Explore
+        - generic [ref=e737]:
+          - generic [ref=e738]: "03"
+          - text: Preprocess
+        - generic [ref=e739]:
+          - generic [ref=e740]: "04"
+          - text: Features
+        - generic [ref=e741]:
+          - generic [ref=e742]: "05"
+          - text: Train
+        - generic [ref=e743]:
+          - generic [ref=e744]: "06"
+          - text: Experiments
+      - paragraph [ref=e745]: Accept in bulk to race the notebook forward, or triage individually — same code path either way.
+      - generic [ref=e746]:
+        - generic [ref=e747]: NEXT · 05 · TRAIN
+        - generic [ref=e748]: Engineered. Continue to Train →
+    - generic [ref=e749]:
+      - generic [ref=e750]: HOW
+      - generic [ref=e751]: pg 13 / 28
+  - generic [ref=e752]:
+    - generic [ref=e753]: PHASE 05 · HOW
+    - heading "Train" [level=1] [ref=e754]
+    - paragraph [ref=e755]: Approve the training plan, watch the agent's reasoning stream.
+    - img
+    - generic [ref=e757]:
+      - generic [ref=e762]: agentic-automl.vercel.app
+      - generic [ref=e765]:
+        - generic [ref=e766]: PENDING SCREENSHOT
+        - generic [ref=e767]: "Training panel with the approval-gate modal pre-execution: model recommendation card, training plan, agentic shell sidebar with the reasoning stream."
+        - generic [ref=e768]:
+          - text: drop file at
+          - generic [ref=e769]: public/screenshots/phase-05-train.png
+    - generic:
+      - img [ref=e770]
+      - generic [ref=e774]: Default is GradientBoosting via sklearn.ensemble.
+    - generic:
+      - img [ref=e775]
+      - generic [ref=e779]: "Lifecycle has two user gates: plan, then pre-fit review."
+    - generic:
+      - img [ref=e780]
+      - generic [ref=e784]: Reasoning stream stays audited after the run.
+    - generic [ref=e785]:
+      - generic [ref=e786]:
+        - generic [ref=e787]:
+          - generic [ref=e788]:
+            - generic [ref=e789]: LIFECYCLE
+            - generic [ref=e790]: 10 stages
+          - generic [ref=e791]:
+            - generic [ref=e792]: USER GATES
+            - generic [ref=e793]: plan · pre-fit
+          - generic [ref=e794]:
+            - generic [ref=e795]: DEFAULT MODEL
+            - generic [ref=e796]: GradientBoosting
+        - generic [ref=e797]:
+          - generic [ref=e798]: "tool_call: propose_plan"
+          - generic [ref=e799]:
+            - generic [ref=e800]: "task:"
+            - text: "\"binary_classification\""
+          - generic [ref=e801]:
+            - generic [ref=e802]: "model:"
+            - text: "\"GradientBoostingClassifier\""
+          - generic [ref=e803]:
+            - generic [ref=e804]: "cv:"
+            - text: "\"stratified-5fold\""
+          - generic [ref=e805]: plan card posts to the UI; run-notebook only fires after the second gate.
+      - generic [ref=e806]:
+        - generic [ref=e807]:
+          - generic [ref=e808]: "01"
+          - text: Upload
+        - generic [ref=e809]:
+          - generic [ref=e810]: "02"
+          - text: Explore
+        - generic [ref=e811]:
+          - generic [ref=e812]: "03"
+          - text: Preprocess
+        - generic [ref=e813]:
+          - generic [ref=e814]: "04"
+          - text: Features
+        - generic [ref=e815]:
+          - generic [ref=e816]: "05"
+          - text: Train
+        - generic [ref=e817]:
+          - generic [ref=e818]: "06"
+          - text: Experiments
+      - paragraph [ref=e819]: The reasoning stream stays after the run — every decision is auditable post-hoc.
+      - generic [ref=e820]:
+        - generic [ref=e821]: NEXT · 06 · EXPERIMENTS
+        - generic [ref=e822]: Trained. Continue to Experiments →
+    - generic [ref=e823]:
+      - generic [ref=e824]: HOW
+      - generic [ref=e825]: pg 14 / 28
+  - generic [ref=e826]:
+    - generic [ref=e827]: PHASE 06 · HOW
+    - heading "Experiments" [level=1] [ref=e828]
+    - paragraph [ref=e829]: Leaderboard with champion highlighted; compare runs side-by-side.
+    - img
+    - generic [ref=e831]:
+      - generic [ref=e836]: agentic-automl.vercel.app
+      - generic [ref=e839]:
+        - generic [ref=e840]: PENDING SCREENSHOT
+        - generic [ref=e841]: Experiments dashboard leaderboard with the champion model highlighted and a side-by-side comparison view open.
+        - generic [ref=e842]:
+          - text: drop file at
+          - generic [ref=e843]: public/screenshots/phase-06-experiments.png
+    - generic:
+      - img [ref=e844]
+      - generic [ref=e848]: Welch's t-test compares model variants.
+    - generic:
+      - img [ref=e849]
+      - generic [ref=e853]: Leaderboard surfaces top-3; champion row always pinned.
+    - generic:
+      - img [ref=e854]
+      - generic [ref=e858]: Download notebook + serving endpoint per run.
+    - generic [ref=e859]:
+      - generic [ref=e860]:
+        - generic [ref=e861]:
+          - generic [ref=e862]:
+            - generic [ref=e863]: BENCHMARK SET
+            - generic [ref=e864]: 5 datasets
+          - generic [ref=e865]:
+            - generic [ref=e866]: SIGNIFICANCE
+            - generic [ref=e867]: Welch's t-test
+          - generic [ref=e868]:
+            - generic [ref=e869]: LEADERBOARD
+            - generic [ref=e870]: top-3 + champion
+        - generic [ref=e871]:
+          - generic [ref=e872]: "tool_call: leaderboard.snapshot"
+          - generic [ref=e873]:
+            - generic [ref=e874]: "datasetId:"
+            - text: "\"ds_8af2\""
+          - generic [ref=e875]:
+            - generic [ref=e876]: "metric:"
+            - text: "\"roc_auc\""
+          - generic [ref=e877]:
+            - generic [ref=e878]: "topN:"
+            - text: "3"
+          - generic [ref=e879]: champion row is pinned; downloadable notebook + endpoint per entry.
+      - generic [ref=e880]:
+        - generic [ref=e881]:
+          - generic [ref=e882]: "01"
+          - text: Upload
+        - generic [ref=e883]:
+          - generic [ref=e884]: "02"
+          - text: Explore
+        - generic [ref=e885]:
+          - generic [ref=e886]: "03"
+          - text: Preprocess
+        - generic [ref=e887]:
+          - generic [ref=e888]: "04"
+          - text: Features
+        - generic [ref=e889]:
+          - generic [ref=e890]: "05"
+          - text: Train
+        - generic [ref=e891]:
+          - generic [ref=e892]: "06"
+          - text: Experiments
+      - paragraph [ref=e893]: Two runs on the same data with different seeds? Welch's keeps the leaderboard honest.
+      - generic [ref=e894]:
+        - generic [ref=e895]: NEXT · 01 · UPLOAD & INGEST
+        - generic [ref=e896]: Shipped. Now look under the hood →
+    - generic [ref=e897]:
+      - generic [ref=e898]: HOW
+      - generic [ref=e899]: pg 15 / 28
+  - generic [ref=e900]:
+    - generic [ref=e901]: "03"
+    - generic [ref=e902]: INSIDE
+    - generic [ref=e903]: the engine room
+    - img [ref=e906]:
+      - generic [ref=e909]: A — A'
+      - generic [ref=e954]: SANDBOX
+      - generic [ref=e955]:
+        - generic [ref=e964]: DOCKER
+        - generic [ref=e968]: .PY
+      - generic [ref=e973]:
+        - generic [ref=e974]: F1
+        - generic [ref=e975]: CONTROL
+      - generic [ref=e976]:
+        - generic [ref=e977]: F2
+        - generic [ref=e978]: AGENT LOOP
+      - generic [ref=e979]:
+        - generic [ref=e980]: F3
+        - generic [ref=e981]: SANDBOX
+      - generic [ref=e997]: ARCH · CUT-AWAY
+      - generic [ref=e998]: SANDBOX BOUNDARY
+    - generic [ref=e999]: 03 / 05
+  - generic [ref=e1000]:
+    - generic [ref=e1001]: §03 · INSIDE · THE MODEL UNLOCK
+    - heading "The preprocessing FSM." [level=1] [ref=e1002]
+    - paragraph [ref=e1003]: Preprocessing is an 8-stage LangGraph state machine. Each stage is a typed node with an input contract and an explicit successor set. The approval gate lives at stage 6 — the FSM pauses until the user commits or revises. Auto-repair is a bounded retry loop; after two failed attempts, control returns to the planner.
+    - img [ref=e1005]:
+      - generic [ref=e1006]:
+        - generic [ref=e1011]: auto-repair · max 2
+        - generic [ref=e1016]: revise · route back
+        - generic [ref=e1017]:
+          - generic [ref=e1019]: context
+          - generic [ref=e1020]: read schema
+        - generic [ref=e1021]:
+          - generic [ref=e1023]: plan
+          - generic [ref=e1024]: propose steps
+        - generic [ref=e1025]:
+          - generic [ref=e1027]: generate
+          - generic [ref=e1028]: write pandas
+        - generic [ref=e1029]:
+          - generic [ref=e1031]: execute
+          - generic [ref=e1032]: sandbox run
+        - generic [ref=e1033]:
+          - generic [ref=e1035]: validate
+          - generic [ref=e1036]: schema · dtypes
+        - generic [ref=e1037]:
+          - generic [ref=e1039]: await approval
+          - generic [ref=e1040]: human · the gate
+        - generic [ref=e1041]:
+          - generic [ref=e1043]: complete
+          - generic [ref=e1044]: stage signed off
+        - generic [ref=e1045]:
+          - generic [ref=e1047]: commit / revise
+          - generic [ref=e1048]: persist or redo
+        - generic [ref=e1049]: "01"
+        - generic [ref=e1050]: "02"
+        - generic [ref=e1051]: "03"
+        - generic [ref=e1052]: "04"
+        - generic [ref=e1053]: "05"
+        - generic [ref=e1054]: "06"
+        - generic [ref=e1055]: "07"
+        - generic [ref=e1056]: "08"
+        - generic [ref=e1059]:
+          - generic [ref=e1063]: Approval-gate payload
+          - generic [ref=e1064]: state snapshot
+          - generic [ref=e1065]:
+            - generic [ref=e1066]: currentStage
+            - generic [ref=e1067]: "\"await_approval\""
+          - generic [ref=e1068]:
+            - generic [ref=e1069]: approvalDecision
+            - generic [ref=e1070]: "\"pending\""
+          - generic [ref=e1071]:
+            - generic [ref=e1072]: requiresApproval
+            - generic [ref=e1073]: "true"
+        - generic [ref=e1076]: pauses until user commits or revises
+        - generic [ref=e1079]: max 2 retries · then escalate
+        - generic [ref=e1082]: "typed contract: { datasetId, stepIndex }"
+        - generic [ref=e1083]:
+          - generic [ref=e1086]: entry / end
+          - generic [ref=e1089]: deterministic
+          - generic [ref=e1092]: llm-delegated
+          - generic [ref=e1095]: action
+          - generic [ref=e1098]: human-in-loop
+    - generic [ref=e1099]:
+      - generic [ref=e1100]: INSIDE
+      - generic [ref=e1101]: pg 17 / 28
+  - generic [ref=e1102]:
+    - generic [ref=e1103]: §03 · INSIDE · THE PROTOCOL UNLOCK
+    - heading "The MCP tool registry." [level=1] [ref=e1104]
+    - paragraph [ref=e1105]: "20+ tools expose the product to the agent through the Model Context Protocol. Five see the most use: get_dataset_profile (inspect), edit_cell (transform), run_notebook_cell (execute), propose_plan (plan), and request_approval (gate). Every call is logged against the run."
+    - img [ref=e1107]:
+      - generic [ref=e1108]:
+        - generic [ref=e1112]: inspect
+        - generic [ref=e1116]: transform
+        - generic [ref=e1120]: validate
+        - generic [ref=e1124]: execute
+        - generic [ref=e1150]: get_dataset_profile
+        - generic [ref=e1154]: describe_column
+        - generic [ref=e1158]: sample_rows
+        - generic [ref=e1162]: read_cell
+        - generic [ref=e1168]: edit_cell
+        - generic [ref=e1172]: append_cell
+        - generic [ref=e1176]: delete_cell
+        - generic [ref=e1180]: rename_column
+        - generic [ref=e1184]: drop_column
+        - generic [ref=e1188]: cast_dtype
+        - generic [ref=e1192]: validate_schema
+        - generic [ref=e1196]: validate_types
+        - generic [ref=e1200]: detect_leakage
+        - generic [ref=e1204]: profile_splits
+        - generic [ref=e1210]: run_notebook_cell
+        - generic [ref=e1214]: kernel_status
+        - generic [ref=e1220]: propose_plan
+        - generic [ref=e1226]: request_approval
+        - generic [ref=e1230]: search_docs
+        - generic [ref=e1234]: search_notebook
+        - generic [ref=e1235]: samples 20 rows
+        - generic [ref=e1236]: patches in place
+        - generic [ref=e1237]: streams output
+        - generic [ref=e1238]: drafts 3-step plan
+        - generic [ref=e1239]: blocks until user commits
+        - generic [ref=e1240]:
+          - generic [ref=e1242]: MCP
+          - generic [ref=e1243]: registry
+        - generic [ref=e1244]:
+          - generic [ref=e1247]: PLAN
+          - generic [ref=e1250]: INSPECT
+          - generic [ref=e1253]: TRANSFORM
+          - generic [ref=e1256]: EXECUTE
+          - generic [ref=e1259]: VALIDATE
+          - generic [ref=e1262]: SEARCH
+    - generic [ref=e1263]:
+      - generic [ref=e1264]: INSIDE
+      - generic [ref=e1265]: pg 18 / 28
+  - generic [ref=e1266]:
+    - generic [ref=e1267]: §03 · INSIDE · THE RUNTIME UNLOCK
+    - heading "Sandbox & kernel." [level=1] [ref=e1268]
+    - paragraph [ref=e1269]: "Every cell runs inside a Docker container with hard limits: 2GB RAM, 1 CPU, non-root user, read-only root filesystem. A Jupyter Kernel Gateway is the only channel into the container; the gateway's REST surface is the agent's sole execution path. If the container dies, the run fails cleanly — nothing is left behind."
+    - img [ref=e1271]:
+      - generic [ref=e1272]:
+        - generic [ref=e1273]: host · user space · docker container · jupyter kernel
+        - generic [ref=e1277]: Sandbox
+        - generic [ref=e1278]:
+          - generic [ref=e1280]: UI · Frontend
+          - generic [ref=e1281]: React · Zustand · typed fetch
+        - generic [ref=e1282]:
+          - generic [ref=e1284]: Backend → Jupyter Kernel Gateway
+          - generic [ref=e1285]: Express 5 · REST /execute
+        - generic [ref=e1286]:
+          - generic [ref=e1288]: Docker container
+          - generic [ref=e1289]: non-root · read-only fs · 2GB · 1 CPU
+        - generic [ref=e1290]:
+          - generic [ref=e1292]: Python 3.12 kernel
+          - generic [ref=e1293]: pandas · sklearn · xgboost
+        - generic [ref=e1294]:
+          - generic [ref=e1295]: MEMORY
+          - generic [ref=e1296]: 2 GB
+        - generic [ref=e1297]:
+          - generic [ref=e1298]: CPU
+          - generic [ref=e1299]: 1 CORE
+        - generic [ref=e1300]:
+          - generic [ref=e1301]: USER
+          - generic [ref=e1302]: NON-ROOT
+        - generic [ref=e1303]:
+          - generic [ref=e1304]: ROOT FS
+          - generic [ref=e1305]: READ-ONLY
+        - generic [ref=e1306]:
+          - generic [ref=e1307]: NETWORK
+          - generic [ref=e1308]: EGRESS ALLOW-LIST
+        - generic [ref=e1309]:
+          - generic [ref=e1310]: COLD-START
+          - generic [ref=e1311]: < 1 s
+    - generic [ref=e1313]:
+      - generic [ref=e1314]: PENDING APPROVAL
+      - generic [ref=e1315]: Every cell of generated code is yours to read, edit, or reject before it executes.
+    - generic [ref=e1316]:
+      - generic [ref=e1317]: INSIDE
+      - generic [ref=e1318]: pg 19 / 28
+  - generic [ref=e1319]:
+    - generic [ref=e1320]: "04"
+    - generic [ref=e1321]: PROOF
+    - generic [ref=e1322]: what we measured · how it landed
+    - img [ref=e1325]:
+      - generic [ref=e1352]:
+        - generic [ref=e1353]: "1"
+        - generic [ref=e1354]: "2"
+        - generic [ref=e1355]: "3"
+      - generic [ref=e1356]:
+        - generic [ref=e1359]: MODEL B
+        - generic [ref=e1362]: MODEL C
+        - generic [ref=e1365]: MODEL A
+      - generic [ref=e1389]:
+        - generic [ref=e1391]: B
+        - generic [ref=e1393]: C
+      - generic [ref=e1394]: §04 · PROOF
+      - generic [ref=e1395]: TIER 1 · 24.9 R²
+    - generic [ref=e1396]: 04 / 05
+  - generic [ref=e1397]:
+    - generic [ref=e1398]: §04 · PROOF · SPEED
+    - heading "Time-to-model, measured." [level=1] [ref=e1399]
+    - generic [ref=e1400]:
+      - generic [ref=e1401]:
+        - generic [ref=e1402]: 7×
+        - generic [ref=e1403]: faster than manual Jupyter
+        - generic [ref=e1404]: N = 25 runs · 5 datasets · GPT-4o-mini · seed = 42
+      - generic [ref=e1406]:
+        - generic [ref=e1407]:
+          - generic [ref=e1408]: Dataset
+          - generic [ref=e1410]:
+            - generic [ref=e1411]: Ours
+            - generic [ref=e1413]: Jupyter
+          - generic [ref=e1415]: Time
+        - generic [ref=e1416]:
+          - generic [ref=e1417]:
+            - generic [ref=e1418]:
+              - generic [ref=e1419]: Titanic
+              - generic [ref=e1420]: 891 rows
+            - generic [ref=e1426]:
+              - generic [ref=e1427]: 2.8m
+              - generic [ref=e1428]: 18m
+          - generic [ref=e1429]:
+            - generic [ref=e1430]:
+              - generic [ref=e1431]: Ames Housing
+              - generic [ref=e1432]: 1,460 × 79
+            - generic [ref=e1438]:
+              - generic [ref=e1439]: 4.2m
+              - generic [ref=e1440]: 32m
+          - generic [ref=e1441]:
+            - generic [ref=e1442]:
+              - generic [ref=e1443]: Credit Card Fraud
+              - generic [ref=e1444]: 284 K rows
+            - generic [ref=e1450]:
+              - generic [ref=e1451]: 5.6m
+              - generic [ref=e1452]: 38m
+          - generic [ref=e1453]:
+            - generic [ref=e1454]:
+              - generic [ref=e1455]: Spaceship Titanic
+              - generic [ref=e1456]: 8,693 rows
+            - generic [ref=e1462]:
+              - generic [ref=e1463]: 3.8m
+              - generic [ref=e1464]: 26m
+          - generic [ref=e1465]:
+            - generic [ref=e1466]:
+              - generic [ref=e1467]: Adult Income
+              - generic [ref=e1468]: 48 K rows
+            - generic [ref=e1474]:
+              - generic [ref=e1475]: 3.2m
+              - generic [ref=e1476]: 22m
+        - generic [ref=e1479]:
+          - generic [ref=e1480]: 0m
+          - generic [ref=e1481]: 10m
+          - generic [ref=e1482]: 20m
+          - generic [ref=e1483]: 30m
+          - generic [ref=e1484]: 40m
+    - paragraph [ref=e1487]: Enough time to test three more feature ideas — per session.
+    - generic [ref=e1488]:
+      - generic [ref=e1489]: PROOF
+      - generic [ref=e1490]: pg 21 / 28
+  - generic [ref=e1491]:
+    - generic [ref=e1492]: §04 · PROOF · QUALITY + GUARDRAILS
+    - heading "Top-tier placement with caught flaws." [level=1] [ref=e1493]
+    - generic [ref=e1494]:
+      - generic [ref=e1495]: QUALITY · TOP 15% on every Kaggle benchmark
+      - generic [ref=e1496]:
+        - generic [ref=e1497]:
+          - generic [ref=e1498]:
+            - generic [ref=e1499]: TOP 8%
+            - generic [ref=e1506]: "0"
+            - generic [ref=e1508]: "25"
+            - generic [ref=e1510]: "50"
+            - generic [ref=e1512]: "75"
+            - generic [ref=e1514]: "100"
+          - generic [ref=e1515]: held-out test · 5 reps · 80/20 stratified · seed = 42
+        - generic [ref=e1516]:
+          - generic [ref=e1517]:
+            - generic [ref=e1518]: Titanic
+            - generic [ref=e1519]: ".812"
+            - generic [ref=e1520]: TOP 8%
+          - generic [ref=e1521]:
+            - generic [ref=e1522]: Ames
+            - generic [ref=e1523]: ".122"
+            - generic [ref=e1524]: TOP 12%
+          - generic [ref=e1525]:
+            - generic [ref=e1526]: Fraud
+            - generic [ref=e1527]: ".978"
+            - generic [ref=e1528]: TOP 15%
+          - generic [ref=e1529]:
+            - generic [ref=e1530]: Spaceship
+            - generic [ref=e1531]: ".806"
+            - generic [ref=e1532]: TOP 10%
+          - generic [ref=e1533]:
+            - generic [ref=e1534]: Adult
+            - generic [ref=e1535]: ".873"
+            - generic [ref=e1536]: TOP 14%
+    - separator [ref=e1537]
+    - generic [ref=e1538]:
+      - generic [ref=e1539]: GUARDRAILS · 16 / 20 caught
+      - paragraph [ref=e1540]: 16 points / 20 possible · 8 of 10 flaws caught, weighted.
+      - generic [ref=e1541]:
+        - generic [ref=e1542]:
+          - generic [ref=e1543]: Data flaw
+          - generic [ref=e1544]: Ours
+          - generic [ref=e1545]: sklearn
+        - generic [ref=e1546]:
+          - generic [ref=e1548]: Target leakage
+          - generic [ref=e1552]: Hidden missing values
+          - generic [ref=e1556]: Datetime as numeric
+          - generic [ref=e1560]: Row index as feature
+          - generic [ref=e1564]: Extreme outliers
+        - generic [ref=e1567]:
+          - generic [ref=e1568]:
+            - generic [ref=e1569]: Ours
+            - generic [ref=e1572]: 16/20
+          - generic [ref=e1573]:
+            - generic [ref=e1574]: sklearn
+            - generic [ref=e1577]: 3/20
+      - generic [ref=e1578]: 10 seeded flaws · 2 pts each · scored on tool intent
+    - generic [ref=e1579]:
+      - generic [ref=e1580]: LIMITATIONS · WHAT WE DON'T DO YET
+      - paragraph [ref=e1581]: "What we don't do yet: deep-learning pipelines aren't supported; multi-table schemas are treated one-table-at-a-time; the agent over-indexes on top-3 Kaggle patterns. These are the next three sprints."
+    - generic [ref=e1582]:
+      - generic [ref=e1583]: PROOF
+      - generic [ref=e1584]: pg 22 / 28
+  - generic [ref=e1585]:
+    - generic [ref=e1586]: "05"
+    - generic [ref=e1587]: BUILD
+    - generic [ref=e1588]: eleven months · two engineers · 1,989 commits
+    - img [ref=e1591]:
+      - generic [ref=e1603]: S6
+      - generic [ref=e1615]: S7
+      - generic [ref=e1634]: S8
+      - generic [ref=e1642]: S9
+      - generic [ref=e1643]: IN PROGRESS
+      - generic [ref=e1665]:
+        - generic [ref=e1668]: S6 · 14ft
+        - generic [ref=e1671]: S7 · 14ft
+        - generic [ref=e1674]: S8 · 14ft
+        - generic [ref=e1677]: S9 · 14ft
+      - generic [ref=e1678]: BUILD · SPRINT STACK
+      - generic [ref=e1679]: S9 · IN PROGRESS
+    - generic [ref=e1680]: 05 / 05
+  - generic [ref=e1681]:
+    - generic [ref=e1682]: BUILD · SPRINT TIMELINE · ←
+    - generic [ref=e1685]:
+      - generic [ref=e1686]:
+        - generic [ref=e1687]: 01 / 02 · sprints S6 + S7
+        - generic [ref=e1688]: weeks 1–8 of 17
+      - generic [ref=e1690]:
+        - generic [ref=e1692]: "0"
+        - generic [ref=e1694]: "100"
+        - generic [ref=e1696]: "200"
+        - generic [ref=e1698]: "300"
+        - generic [ref=e1700]: "400"
+        - generic [ref=e1702]: "500"
+        - generic [ref=e1712]: Dec
+        - generic [ref=e1714]: Jan
+        - generic [ref=e1716]: Feb
+      - generic [ref=e1717]:
+        - generic [ref=e1718]:
+          - generic [ref=e1719]:
+            - generic [ref=e1720]: S6
+            - generic [ref=e1721]: Dec 21 – Jan 24
+          - list [ref=e1722]:
+            - listitem [ref=e1723]:
+              - generic [ref=e1724]: "01"
+              - generic [ref=e1725]: "Project skeleton: backend · frontend · Postgres."
+            - listitem [ref=e1726]:
+              - generic [ref=e1727]: "02"
+              - generic [ref=e1728]: First upload → explore loop.
+            - listitem [ref=e1729]:
+              - generic [ref=e1730]: "03"
+              - generic [ref=e1731]: "Seeded the `projects.json` store."
+          - generic [ref=e1732]: by Shree + Ayush
+        - generic [ref=e1733]:
+          - generic [ref=e1734]:
+            - generic [ref=e1735]: S7
+            - generic [ref=e1736]: Jan 25 – Feb 21
+          - list [ref=e1737]:
+            - listitem [ref=e1738]:
+              - generic [ref=e1739]: "01"
+              - generic [ref=e1740]: LangGraph FSM wired end-to-end.
+            - listitem [ref=e1741]:
+              - generic [ref=e1742]: "02"
+              - generic [ref=e1743]: MCP tool registry, 12 tools at launch.
+            - listitem [ref=e1744]:
+              - generic [ref=e1745]: "03"
+              - generic [ref=e1746]: First approval gate shipped.
+          - generic [ref=e1747]: by Shree + Ayush
+      - generic [ref=e1748]: “Brain and body. We split the system in half.”
+      - generic [ref=e1749]:
+        - generic [ref=e1750]: Dec
+        - generic [ref=e1751]: Feb
+    - generic [ref=e1752]:
+      - generic [ref=e1753]: BUILD
+      - generic [ref=e1754]: pg 24 / 28
+  - generic [ref=e1755]:
+    - generic [ref=e1756]: BUILD · SPRINT TIMELINE · →
+    - generic [ref=e1759]:
+      - generic [ref=e1760]:
+        - generic [ref=e1761]: 02 / 02 · sprints S8 + S9
+        - generic [ref=e1762]: weeks 9–17 of 17
+      - generic [ref=e1764]:
+        - generic [ref=e1766]: "0"
+        - generic [ref=e1768]: "100"
+        - generic [ref=e1770]: "200"
+        - generic [ref=e1772]: "300"
+        - generic [ref=e1774]: "400"
+        - generic [ref=e1776]: "500"
+        - generic [ref=e1787]: Mar
+        - generic [ref=e1789]: Apr
+        - generic [ref=e1791]: +420 commits · week of Apr 5
+      - generic [ref=e1792]:
+        - generic [ref=e1793]:
+          - generic [ref=e1794]:
+            - generic [ref=e1795]: S8
+            - generic [ref=e1796]: Feb 22 – Mar 21
+          - list [ref=e1797]:
+            - listitem [ref=e1798]:
+              - generic [ref=e1799]: "01"
+              - generic [ref=e1800]: "Solo sprint: 205 commits."
+            - listitem [ref=e1801]:
+              - generic [ref=e1802]: "02"
+              - generic [ref=e1803]: Training panel + experiments dashboard.
+            - listitem [ref=e1804]:
+              - generic [ref=e1805]: "03"
+              - generic [ref=e1806]: "Benchmark harness: 5 datasets · 25 runs."
+          - generic [ref=e1807]: by Shree
+        - generic [ref=e1808]:
+          - generic [ref=e1809]:
+            - generic [ref=e1810]: S9
+            - generic [ref=e1811]: Mar 22 – Apr 20
+          - list [ref=e1812]:
+            - listitem [ref=e1813]:
+              - generic [ref=e1814]: "01"
+              - generic [ref=e1815]: "Peak week: +420 commits (Apr 5)."
+            - listitem [ref=e1816]:
+              - generic [ref=e1817]: "02"
+              - generic [ref=e1818]: Landing site + poster + booklet.
+            - listitem [ref=e1819]:
+              - generic [ref=e1820]: "03"
+              - generic [ref=e1821]: "Kaggle benchmark: TOP 15% on every leaderboard."
+          - generic [ref=e1822]: by Shree + Ayush
+      - generic [ref=e1823]: "“Sprint 8 was solo: 205 commits.”"
+      - generic [ref=e1824]:
+        - generic [ref=e1825]: Feb
+        - generic [ref=e1826]: Apr
+      - generic [ref=e1827]: 2,123 commits · 324 issues · 153 MRs · 61 active days · 11 months
+    - generic [ref=e1828]:
+      - generic [ref=e1829]: BUILD
+      - generic [ref=e1830]: pg 25 / 28
+  - generic [ref=e1831]:
+    - generic [ref=e1832]: §05 · BUILD · TEAM
+    - heading "Two engineers. One system." [level=1] [ref=e1833]
+    - generic [ref=e1834]:
+      - generic [ref=e1835]:
+        - heading "Shree Chaturvedi" [level=2] [ref=e1836]
+        - img [ref=e1838]
+        - generic [ref=e1840]: Strategy Consultant · CS + Math
+        - list [ref=e1841]:
+          - listitem [ref=e1842]: 01 · agent orchestration (LangGraph)
+          - listitem [ref=e1843]: 02 · MCP tool registry
+          - listitem [ref=e1844]: 03 · frontend experience layer
+      - generic [ref=e1845]:
+        - heading "Ayush Yadav" [level=2] [ref=e1846]
+        - img [ref=e1848]
+        - generic [ref=e1850]: Data Integration Intern · CS
+        - list [ref=e1851]:
+          - listitem [ref=e1852]: 01 · preprocessing pipeline
+          - listitem [ref=e1853]: 02 · sandbox + kernel gateway
+          - listitem [ref=e1854]: 03 · dataset ingestion
+    - separator [ref=e1855]
+    - generic [ref=e1856]:
+      - generic [ref=e1857]:
+        - generic [ref=e1858]: Technical Advisor
+        - generic [ref=e1859]: Samer Y. Khamaiseh, Ph.D.
+      - generic [ref=e1860]:
+        - generic [ref=e1861]: CSE 449 Steward
+        - generic [ref=e1862]: Prof. Lynn Stahr, M.S.
+    - generic [ref=e1863]:
+      - paragraph [ref=e1864]: Thanks to Dr. Khamaiseh (technical advisor) and Prof. Stahr (CSE 449 steward).
+      - paragraph [ref=e1865]: Built on LangGraph, Jupyter Kernel Gateway, scikit-learn, and pandas.
+    - generic [ref=e1866]: “Brain and body. We split the system in half.”
+    - generic [ref=e1867]:
+      - generic [ref=e1868]: BUILD · TEAM
+      - generic [ref=e1869]: pg 26 / 28
+  - generic [ref=e1870]:
+    - generic [ref=e1871]: END
+    - heading "Try it." [level=1] [ref=e1872]
+    - paragraph [ref=e1873]: From dataset to deployed models, agentically and autonomously.
+    - generic [ref=e1874]:
+      - generic [ref=e1875]:
+        - generic [ref=e1876]: LIVE DEMO
+        - generic [ref=e1877]: agentic-automl.vercel.app
+        - generic [ref=e1878]:
+          - img [ref=e1879]
+          - generic [ref=e1883]: try it
+      - generic [ref=e1884]:
+        - generic [ref=e1885]: REPO
+        - generic [ref=e1886]: gitlab.csi.miamioh.edu/…/ai-augmented-auto-ml-toolchain
+        - generic [ref=e1887]:
+          - generic [ref=e1888]: read it
+          - img [ref=e1889]
+    - generic [ref=e1893]:
+      - img [ref=e1894]
+      - generic [ref=e1897]: scan to launch
+    - generic [ref=e1898]:
+      - text: Miami University
+      - text: CSE 449 · Senior Design Project · 2026
+    - generic [ref=e1899]:
+      - generic [ref=e1900]: CLOSING
+      - generic [ref=e1901]: pg 27 / 28
+  - generic [ref=e1902]:
+    - img [ref=e1903]
+    - generic [ref=e1928]:
+      - text: Miami University
+      - text: CSE 449 · Senior Design Project
+      - text: "2026"
+    - generic [ref=e1929]: — End of booklet.

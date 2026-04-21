@@ -3,8 +3,12 @@ image: node:22-slim
 variables:
   NODE_OPTIONS: --max-old-space-size=4096
   VERCEL_CLI_VERSION: "51.2.1"
-  # Temporary: deploy landing production from sprint11 while we iterate quickly.
-  LANDING_VERCEL_PROD_BRANCH: "sprint11"
+  # Landing production deploys from main. sprint11 was the transitional
+  # canonical branch during demo-day (!150 2026-04-20); the sprint11 tree
+  # was merged into main via !152 on 2026-04-20 and main is now the
+  # long-lived canonical source for the Vercel prod alias
+  # (agentic-automl.vercel.app).
+  LANDING_VERCEL_PROD_BRANCH: "main"
 
 stages:
   - noop
@@ -16,9 +20,9 @@ stages:
 
 .run_on_branch_or_mr:
   # Only run the HEAVY CI stages on parent branches + MRs to main/sprint11.
-  # User directive 2026-04-18, migrated to sprint11 on 2026-04-20 after
-  # final-demo → sprint11 promotion (!150). sprint11 is now the canonical
-  # demo-day branch and the Vercel production source.
+  # Main is the long-lived canonical branch and the Vercel production
+  # source; sprint11 is retained through demo-day for rollback and is
+  # still allow-listed so any last-mile sprint11 push triggers CI.
   rules:
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH == "main"'

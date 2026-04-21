@@ -45,7 +45,7 @@ export class UserRepository {
    */
   async findById(userId: string): Promise<User | null> {
     const result = await this.pool.query(
-      'SELECT user_id, email, name, role, email_verified, created_at, updated_at, last_login_at FROM users WHERE user_id = $1',
+      'SELECT user_id, email, name, role, email_verified, auth_provider, created_at, updated_at, last_login_at FROM users WHERE user_id = $1',
       [userId]
     );
     return result.rows[0] || null;
@@ -55,14 +55,20 @@ export class UserRepository {
    * Create a new user
    * Email is automatically lowercased for consistency
    * Returns SafeUser without password_hash
+   *
+   * `auth_provider` defaults to 'password' (email + password signup via
+   * /auth/register). OAuth callers pass 'google' so the row can be
+   * distinguished at login and the account-takeover guard in oauthHandler.ts
+   * can refuse cross-provider sign-ins. See issue #344.
    */
   async create(input: CreateUserInput & { password_hash: string }): Promise<SafeUser> {
     const userId = randomUUID();
+    const authProvider = input.auth_provider ?? 'password';
     const result = await this.pool.query(
-      `INSERT INTO users (user_id, email, password_hash, name, role, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-       RETURNING user_id, email, name, role, email_verified, created_at, updated_at, last_login_at`,
-      [userId, input.email.toLowerCase(), input.password_hash, input.name, 'user']
+      `INSERT INTO users (user_id, email, password_hash, name, role, auth_provider, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+       RETURNING user_id, email, name, role, email_verified, auth_provider, created_at, updated_at, last_login_at`,
+      [userId, input.email.toLowerCase(), input.password_hash, input.name, 'user', authProvider]
     );
     return result.rows[0];
   }
@@ -97,7 +103,7 @@ export class UserRepository {
 
     const result = await this.pool.query(
       `UPDATE users SET ${fields.join(', ')} WHERE user_id = $${paramCount}
-       RETURNING user_id, email, name, role, email_verified, created_at, updated_at, last_login_at`,
+       RETURNING user_id, email, name, role, email_verified, auth_provider, created_at, updated_at, last_login_at`,
       values
     );
 

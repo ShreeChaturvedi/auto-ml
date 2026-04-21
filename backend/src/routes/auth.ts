@@ -104,7 +104,7 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       }
 
       const password_hash = await authService.hashPassword(password);
-      const user = await userRepository.create({ email, password, name, password_hash });
+      const user = await userRepository.create({ email, name, password_hash });
 
       // Fire-and-forget: don't block registration on email delivery
       sendVerificationToken(user.user_id, user.email).catch((err) =>
@@ -128,6 +128,19 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       const userWithHash = await userRepository.findByEmail(email);
       if (!userWithHash) {
         sendUnauthorized(res, 'Invalid email or password');
+        return;
+      }
+
+      // Issue #344 guard — refuse password login on non-password accounts.
+      // Runs BEFORE verifyPassword so bcrypt doesn't get a chance to succeed
+      // against the placeholder hash stored for OAuth rows. Error message is
+      // deliberately distinct from the generic "Invalid email or password" so
+      // the UI can route the user to the correct provider button.
+      if (userWithHash.auth_provider !== 'password') {
+        sendUnauthorized(
+          res,
+          `This account uses ${userWithHash.auth_provider === 'google' ? 'Google' : userWithHash.auth_provider} sign-in. Use that button instead.`
+        );
         return;
       }
 

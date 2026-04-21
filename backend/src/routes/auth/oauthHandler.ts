@@ -85,27 +85,56 @@ export async function handleGoogleCallback(
     verified_email?: boolean;
   };
 
+  // Issue #344 guard 1 — refuse unverified email claims. Google only
+  // guarantees verified_email=true for Gmail-owned addresses and properly-
+  // verified Workspace accounts. Trusting an unverified email would let an
+  // attacker with any Google account claiming the victim's email sign in as
+  // the victim.
+  if (googleUser.verified_email !== true) {
+    appLogger.warn(`[auth] Google OAuth blocked: email not verified for ${googleUser.email}`);
+    return res.status(400).json({
+      error: 'Your Google account email is not verified. Verify it with Google, then try again.',
+      error_code: 'GOOGLE_EMAIL_NOT_VERIFIED'
+    });
+  }
+
   // Check if user exists by email
   const existingUser = await userRepository.findByEmail(googleUser.email);
   let safeUser: SafeUser;
 
   if (existingUser) {
-    // User exists, update last login
+    // Issue #344 guard 2 — refuse cross-provider sign-in. A row created via
+    // /auth/register (auth_provider='password') can't be claimed by Google
+    // OAuth just because the emails match. The user must sign in with
+    // password, then opt into an explicit link flow (future work).
+    if (existingUser.auth_provider !== 'google') {
+      appLogger.warn(`[auth] Google OAuth blocked: ${googleUser.email} belongs to a ${existingUser.auth_provider} account`);
+      return res.status(409).json({
+        error: 'An account with this email already exists. Sign in with your password instead.',
+        error_code: 'ACCOUNT_PROVIDER_MISMATCH'
+      });
+    }
+
+    // User exists AND signed up via Google — refresh last login.
     await userRepository.updateLastLogin(existingUser.user_id);
     safeUser = userRepository.toSafeUser(existingUser);
   } else {
-    // Create new user (no password for OAuth users)
-    const randomPassword = authService.generatePasswordResetToken();
-    const password_hash = await authService.hashPassword(randomPassword);
+    // Brand-new Google user. password_hash is NOT NULL in the schema so we
+    // still insert an unguessable random-hash placeholder; auth_provider
+    // ='google' is what downstream code (this handler + /auth/login) uses
+    // to route. The placeholder can't be used to log in because /auth/login
+    // rejects auth_provider !== 'password' before verifyPassword runs.
+    const placeholderToken = authService.generatePasswordResetToken();
+    const password_hash = await authService.hashPassword(placeholderToken);
 
     const createdUser = await userRepository.create({
       email: googleUser.email,
       name: googleUser.name,
-      password: randomPassword,
+      auth_provider: 'google',
       password_hash
     });
 
-    // Mark email as verified for Google OAuth users
+    // Google already confirmed the address via verified_email=true above.
     await userRepository.markEmailVerified(createdUser.user_id);
 
     const verifiedUser = await userRepository.findById(createdUser.user_id);

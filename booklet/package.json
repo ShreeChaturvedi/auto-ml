@@ -12,11 +12,15 @@
   "dependencies": {
     "@fontsource/instrument-serif": "^5.1.1",
     "@fontsource/plus-jakarta-sans": "^5.1.1",
+    "alea": "^1.0.1",
+    "d3-contour": "^4.0.2",
     "qrcode.react": "^4.1.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "simplex-noise": "^4.0.3"
   },
   "devDependencies": {
+    "@types/d3-contour": "^3.0.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

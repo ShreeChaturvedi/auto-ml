@@ -1,13 +1,14 @@
 import React from "react";
-import { COLORS, FONTS, TYPE, PAGE } from "../theme";
-import { BRAND, INSTITUTION } from "../content";
+import { COLORS, FONTS, PAGE, TYPE } from "../theme";
 import { AnimatedLogoMark } from "../visuals/AnimatedLogoMark";
+import { CoverTerrain } from "../visuals/CoverTerrain";
 
 /**
- * Front cover (page 01). Full-bleed cream ground with the Gemini topographic
- * diorama as the hero art slot; title block in the lower-right, vertical
- * Monaspace margin callout on the left. Until the Gemini SVG (`art/cover-front.svg`)
- * lands we render a labeled placeholder that keeps the layout honest.
+ * Front cover (page 01). Full-bleed cream ground with an algorithmic
+ * topographic terrain as the hero art, the 'A' mark riding the apex in
+ * Miami Red, the title block in the lower-right, and the vertical
+ * Monaspace margin callout on the left. The terrain is deterministic
+ * from a seed — back-cover pair uses the same seed with `variant="back"`.
  */
 export const CoverPage: React.FC = () => (
   <section
@@ -19,12 +20,12 @@ export const CoverPage: React.FC = () => (
       overflow: "hidden",
     }}
   >
-    {/* 3D diorama slot — wraparound topographic peak with 'A' summit. */}
-    <CoverArt src="/art/cover-front.svg" />
+    {/* Algorithmic topographic terrain — apex biased to the 'A' mark. */}
+    <CoverTerrain widthIn={8.75} heightIn={11.25} variant="front" />
 
     {/* The canonical 'A' mark rides on top at the peak, in Miami Red.
-        Positioned manually so it roughly aligns with the diorama's apex
-        even before the Gemini art arrives. */}
+        Peak gaussian is centered at (0.5, 0.213) in the engine so the
+        'A' (top 2.4in / 11.25in = 0.213) sits inside the apex contour. */}
     <div
       style={{
         position: "absolute",
@@ -54,6 +55,21 @@ export const CoverPage: React.FC = () => (
     >
       miami cse · expo 2026
     </div>
+
+    {/* Soft cream scrim behind the title block — boosts title legibility
+        over the contour topo without reading as a visible panel. A radial
+        gradient feathered into PAPER_WARM keeps the cover's print feel. */}
+    <div
+      style={{
+        position: "absolute",
+        right: "0.25in",
+        bottom: "0.55in",
+        width: "4.3in",
+        height: "2.4in",
+        background: `radial-gradient(ellipse at 75% 65%, ${COLORS.PAPER_WARM} 0%, ${COLORS.PAPER_WARM} 52%, rgba(245,243,240,0) 100%)`,
+        pointerEvents: "none",
+      }}
+    />
 
     {/* Title block — bottom-right */}
     <div
@@ -85,101 +101,31 @@ export const CoverPage: React.FC = () => (
         style={{
           fontFamily: FONTS.SERIF,
           fontStyle: "italic",
-          fontSize: 16,
-          fontWeight: 400,
+          fontSize: TYPE.subheadMedium.size,
+          fontWeight: TYPE.subheadMedium.weight,
+          lineHeight: TYPE.subheadMedium.lh,
           color: COLORS.INK_MUTED,
           letterSpacing: "0",
+          maxWidth: "3.5in",
+          marginLeft: "auto",
         }}
       >
-        A printed system card · Vol. 01
+        we automate the 80% that isn’t training.
       </div>
       <div
         style={{
-          marginTop: 4,
+          marginTop: 12,
           fontFamily: FONTS.MONO,
-          fontSize: 8,
+          fontSize: 8.5,
           fontWeight: 500,
-          letterSpacing: "0.18em",
+          letterSpacing: "0.24em",
           textTransform: "uppercase",
-          color: COLORS.INK_SUBTLE,
+          color: COLORS.INK,
         }}
       >
-        {INSTITUTION.captionFull}
-      </div>
-      <div
-        style={{
-          fontFamily: FONTS.MONO,
-          fontSize: 8,
-          fontWeight: 500,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          color: COLORS.INK_SUBTLE,
-        }}
-      >
-        {BRAND.liveUrl}
+        Shree Chaturvedi · Ayush Yadav · 2026
       </div>
     </div>
   </section>
 );
 
-const CoverArt: React.FC<{ src: string }> = ({ src }) => {
-  const [failed, setFailed] = React.useState(false);
-  if (failed) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: `
-            radial-gradient(ellipse at 50% 35%,
-              ${COLORS.MIAMI_RED} 0%,
-              rgba(200, 16, 46, 0.12) 22%,
-              transparent 40%
-            ),
-            repeating-radial-gradient(
-              circle at 50% 45%,
-              rgba(29, 78, 216, 0.06) 0px,
-              rgba(29, 78, 216, 0.06) 3px,
-              transparent 3px,
-              transparent 18px
-            )
-          `,
-        }}
-      >
-        <div
-          style={{
-            fontFamily: FONTS.MONO,
-            fontSize: TYPE.eyebrow.size,
-            fontWeight: 600,
-            letterSpacing: "0.16em",
-            textTransform: "uppercase",
-            color: COLORS.INK_MUTED,
-            opacity: 0.6,
-            textAlign: "center",
-          }}
-        >
-          3D diorama slot
-          <br />
-          art/cover-front.svg
-        </div>
-      </div>
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt=""
-      onError={() => setFailed(true)}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-      }}
-    />
-  );
-};

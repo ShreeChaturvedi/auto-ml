@@ -1,11 +1,15 @@
 import React from "react";
 import { COLORS, FONTS } from "../theme";
 import { INSTITUTION } from "../content";
+import { CoverTerrain } from "../visuals/CoverTerrain";
 
 /**
- * Back cover (page 28). Full-bleed cream ground with the back portion of
- * the wraparound topographic diorama. Institutional colophon sits in the
- * upper-left; no page number.
+ * Back cover (page 28). Continues the wraparound topographic field from
+ * the front cover: same seed, noise field shifted one page-width on x so
+ * the terrain reads as mathematically continuous across the fold. Front
+ * shows the apex half; back shows the valley half (no Miami Red line).
+ * Institutional colophon upper-left, closing italic bottom-right. No page
+ * number on covers.
  */
 export const BackCoverPage: React.FC = () => (
   <section
@@ -17,7 +21,7 @@ export const BackCoverPage: React.FC = () => (
       overflow: "hidden",
     }}
   >
-    <BackArt src="/art/cover-back.svg" />
+    <CoverTerrain widthIn={8.75} heightIn={11.25} variant="back" />
 
     {/* Institutional colophon — upper-left */}
     <div
@@ -60,59 +64,3 @@ export const BackCoverPage: React.FC = () => (
   </section>
 );
 
-const BackArt: React.FC<{ src: string }> = ({ src }) => {
-  const [failed, setFailed] = React.useState(false);
-  if (failed) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: `
-            repeating-radial-gradient(
-              circle at 50% 70%,
-              rgba(29, 78, 216, 0.05) 0px,
-              rgba(29, 78, 216, 0.05) 3px,
-              transparent 3px,
-              transparent 22px
-            )
-          `,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            fontFamily: FONTS.MONO,
-            fontSize: 9,
-            fontWeight: 600,
-            letterSpacing: "0.16em",
-            textTransform: "uppercase",
-            color: COLORS.INK_SUBTLE,
-            opacity: 0.55,
-            textAlign: "center",
-          }}
-        >
-          3D diorama slot
-          <br />
-          art/cover-back.svg
-        </div>
-      </div>
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt=""
-      onError={() => setFailed(true)}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-      }}
-    />
-  );
-};

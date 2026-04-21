@@ -83,11 +83,12 @@ export const TYPE = {
   pageNum: { size: 9,  weight: 500, tracking: "0.04em", lh: 1 },
 
   // Monaspace UPPERCASE eyebrow — the recurring anchor at the top of every
-  // content section and in page-number rails.
-  eyebrow: { size: 9, weight: 500, tracking: "0.14em", lh: 1 },
+  // content section and in page-number rails. Agent 1 bumped size 9→10.
+  eyebrow: { size: 10, weight: 500, tracking: "0.12em", lh: 1 },
 
-  // Eyebrow on divider pages (larger, white on color)
-  eyebrowLarge: { size: 14, weight: 500, tracking: "0.16em", lh: 1 },
+  // Eyebrow on divider pages (larger, white on color). Tracking capped at 0.12em
+  // per typography pass — larger optical size needs less extra tracking.
+  eyebrowLarge: { size: 14, weight: 500, tracking: "0.12em", lh: 1 },
 
   // Subtitle under divider number (white, Plus Jakarta 24pt)
   dividerSubtitle: { size: 24, weight: 400, tracking: "-0.01em", lh: 1.2 },

@@ -62,8 +62,31 @@ export const WHY = {
     body: [
       "Before a single `fit()` call, a practitioner has cleaned, merged, relabeled, visualized, sanity-checked, re-cleaned, prepped splits, and debugged feature pipelines. Training itself is a thin slice at the top of the stack.",
       "The same survey that gives us the 80% figure breaks the other 80 into six buckets: cleansing, prep, viz, deployment, reporting, and the glue between them. None of those tasks are the idea behind the model — they're the scaffolding around it.",
-      "The pattern has been stable for a decade. It's what makes 'doing data science' feel so different from 'learning data science.'",
     ],
+    // Serif coda — positioned lower on the page, above the second-cliff insight.
+    coda:
+      "The pattern has been stable for a decade. It's what makes 'doing data science' feel so different from 'learning data science.'",
+    // Second key insight: even the models that DO get built rarely ship.
+    // Source: VentureBeat, "Why do 87% of data science projects never make it
+    // into production?" (Jul 19 2019) — quoting Deborah Leff, CTO Data Science
+    // & AI at IBM, at Transform 2019, citing CIO Dive.
+    // https://venturebeat.com/ai/why-do-87-of-data-science-projects-never-make-it-into-production
+    secondCliff: {
+      eyebrow: "The second cliff",
+      figure: "87%",
+      label: "of data science projects never reach production.",
+      copy:
+        "The 80% describes the work before `fit()`. The 87% describes what happens after. Only about one project in eight crosses the gap from notebook to deployed system — the rest stall on data access, integration, and the handoff between the people who built the model and the people who would run it.",
+      // Two independent fencepost stats on one scale-of-100 bar, not a
+      // compounding funnel — the percentages come from different studies and
+      // populations.
+      pipeline: [
+        { stage: "started",   n: 100, note: "projects begun" },
+        { stage: "reach fit()", n: 20, note: "80% lost to prep work" },
+        { stage: "in production", n: 13, note: "87% never shipped" },
+      ] as const,
+      source: "source · VentureBeat 2019 · IBM / CIO Dive",
+    },
   },
   whyNow: {
     eyebrows: [
@@ -72,15 +95,58 @@ export const WHY = {
       { id: "03", label: "runtime",   headline: "Sandboxed Python is fast and safe enough now." },
     ],
     body: [
-      "Models finally read tabular schemas with function calling, typed JSON, and reliable tool-call fidelity — a 2024 unlock, not a 2022 one.",
+      "Models finally read tabular schemas with function calling, typed JSON, and reliable tool-call fidelity — a shift that only really landed with Claude 3.5 / GPT-4o in 2024, and that the GPT-5 series made production-grade in 2026.",
       "Protocols give agents a durable tool contract. MCP standardizes how an agent sees the product's capabilities, logs every call, and enforces allowlists per stage.",
       "Runtime is now fast and safe enough. Containerized Jupyter kernels start in under a second; a bad cell fails inside the sandbox instead of trashing the notebook.",
     ],
     sidebar: [
-      "GPT-4o-mini: tool-call fidelity",
+      "GPT-5.4: tool-call fidelity",
       "MCP registry: 20+ tools",
       "Docker: 2GB RAM · 1 CPU",
       "Jupyter Kernel Gateway: < 1s",
+    ],
+    // Timeline band — the causal counterfactual. Each row is one year's
+    // missing ingredient, culminating in the 2026 unlock. The lead-in is a
+    // single italic line that frames the table as an answer, not a list.
+    timelineLead:
+      "It could not have shipped earlier. Each year before 2026 was missing one of the three unlocks — or the reliability to trust them end-to-end.",
+    timeline: [
+      {
+        year: "2020",
+        unlock: "GPT-3 · raw capability",
+        gap: "No function-calling, no JSON mode — agents could read schemas but could not safely act on them.",
+      },
+      {
+        year: "2021",
+        unlock: "LangChain 0.x · first agent loops",
+        gap: "Prompt-chained tool use was brittle; one malformed string broke the entire chain.",
+      },
+      {
+        year: "2022",
+        unlock: "ChatGPT API · scaled access",
+        gap: "Still free-text in, free-text out. Tabular schema reads were unreliable past ~10 columns.",
+      },
+      {
+        year: "2023",
+        unlock: "GPT-4 function calling · typed JSON",
+        gap: "Tool contracts stabilized, but every vendor spoke a different dialect — no shared protocol.",
+      },
+      {
+        year: "2024",
+        unlock: "Claude 3.5 + MCP · protocol convergence",
+        gap: "All three vendors aligned on MCP; tool-call fidelity past 95%, but agents still drifted past ~10 steps.",
+      },
+      {
+        year: "2025",
+        unlock: "GPT-5 preview + reasoning · deep tool graphs",
+        gap: "Multi-step tool chains became reliable; agents could plan 20+ calls without losing the thread.",
+      },
+      {
+        year: "2026",
+        unlock: "GPT-5.4 · agentic AutoML becomes buildable",
+        gap: "Schema-aware reasoning + sub-second sandboxes + a mature MCP ecosystem — the stack we're shipping.",
+        isNow: true,
+      },
     ],
   },
   whatChanged: {
@@ -102,6 +168,53 @@ export const WHY = {
     ],
     approvalGate:
       "Your call: which workflow do you want to be in?",
+    failureModes: {
+      eyebrow: "FAILURE MODES THAT DISAPPEARED",
+      lede:
+        "Five silent failures that kill a manual notebook — and the structural reason each one can't happen here.",
+      rows: [
+        {
+          id: "01",
+          failure: "Silent dtype coercion",
+          oldSymptom:
+            "ZIP codes load as int64 and lose their leading zero. A date column parsed as string still trains — just badly.",
+          newSafeguard:
+            "Schema inference runs before the first model; a guardrail flags the coercion and waits on approval.",
+        },
+        {
+          id: "02",
+          failure: "Kernel state drift",
+          oldSymptom:
+            "You re-run cell 12 after cell 30. The model still works. Six hours later nothing reproduces, and you can't say which cell lied.",
+          newSafeguard:
+            "Each phase runs in a fresh, checkpointed kernel. State is a function of the ledger, not the click order.",
+        },
+        {
+          id: "03",
+          failure: "Leakage through preview",
+          oldSymptom:
+            "A .head() on the full dataframe before the split. You've seen the test set, and every chart downstream is quietly poisoned.",
+          newSafeguard:
+            "EDA tools run split-aware by default. Test-partition statistics stay redacted until training completes.",
+        },
+        {
+          id: "04",
+          failure: "Lost provenance",
+          oldSymptom:
+            "A colleague asks why you dropped the age column. You scroll. You guess. The answer lives in a deleted Slack thread.",
+          newSafeguard:
+            "Every proposal, approval, and revision is a durable run artifact — queryable, diffable, exportable.",
+        },
+        {
+          id: "05",
+          failure: "Seed roulette",
+          oldSymptom:
+            "Two runs, same code, different leaderboard rank. You pick the luckier seed and call it a day.",
+          newSafeguard:
+            "Seeds are part of every tool spec; reruns are byte-identical unless you change the ledger on purpose.",
+        },
+      ],
+    },
   },
 } as const;
 
@@ -150,6 +263,18 @@ export const HOW = {
         { label: "Profile samples 20 rows before Postgres commits.",           side: "right" },
         { label: "Theme color propagates to every visible surface.",           side: "right" },
       ],
+      stats: [
+        { label: "UPLOAD MAX",    value: "300 MB"            },
+        { label: "FORMATS",       value: "CSV · JSON · XLSX" },
+        { label: "DTYPES SNIFFED", value: "6 canonical"       },
+      ],
+      toolCall: {
+        tool: "get_dataset_profile",
+        args: { datasetId: "ds_8af2", sample: 20 },
+        note: "first call on every new ingest — primes the planner's schema cache.",
+      },
+      inlineNote:
+        "A fresh upload writes a `projects.json` entry, a Postgres row, and a theme token. Everything else keys off that triple.",
       handoff: "Ingested. Continue to Explore →",
     },
     {
@@ -165,6 +290,21 @@ export const HOW = {
         { label: "NL→SQL box compiles to real SQL you can copy.",          side: "right" },
         { label: "Two-pass planner: plan JSON, then read-only SELECT.",    side: "right" },
       ],
+      stats: [
+        { label: "QUERY CACHE",    value: "40 ms p50"      },
+        { label: "SAMPLE SHAPE",   value: "2,530 × 14"     },
+        { label: "PLANNER",        value: "two-pass JSON"  },
+      ],
+      toolCall: {
+        tool: "nl_to_sql",
+        args: {
+          prompt: "rows where age > 60 and cholesterol > 240",
+          datasetId: "ds_8af2",
+        },
+        note: "compiles to read-only SELECT; copy-to-clipboard always available.",
+      },
+      inlineNote:
+        "Every NL query is cached on its AST hash; a second ask returns in under a frame.",
       handoff: "Mapped. Continue to Preprocess →",
     },
     {
@@ -180,6 +320,22 @@ export const HOW = {
         { label: "Approval gate pauses the FSM until you decide.",         side: "right" },
         { label: "Auto-repair retries twice before handing back to the planner.", side: "left" },
       ],
+      stats: [
+        { label: "AUTO-REPAIR",   value: "2 retries"       },
+        { label: "ON FAILURE",    value: "escalate to planner" },
+        { label: "APPROVAL MODE", value: "human-in-loop"   },
+      ],
+      toolCall: {
+        tool: "request_approval",
+        args: {
+          stage: "commit",
+          diff: "impute_median(cholesterol)",
+          reason: "12.4% missing",
+        },
+        note: "FSM halts at stage 6 (await_approval) until a decision posts back.",
+      },
+      inlineNote:
+        "Where AutoML hides the decision, we surface it — every transform is a diff you either approve or revise.",
       handoff: "Cleaned. Continue to Features →",
     },
     {
@@ -195,6 +351,22 @@ export const HOW = {
         { label: "Agent proposes 3-5 diverse candidates per turn.",              side: "right" },
         { label: "Each tagged high · med · low impact; accept individually or in bulk.", side: "right" },
       ],
+      stats: [
+        { label: "METHOD CATALOG", value: "33 techniques"    },
+        { label: "PER TURN",       value: "3–5 proposals"    },
+        { label: "IMPACT TAGS",    value: "high · med · low" },
+      ],
+      toolCall: {
+        tool: "target_encode",
+        args: {
+          column: "chest_pain_type",
+          target: "heart_disease",
+          smoothing: 10,
+        },
+        note: "one of 33 catalog entries — reviewable before it lands in the notebook.",
+      },
+      inlineNote:
+        "Accept in bulk to race the notebook forward, or triage individually — same code path either way.",
       handoff: "Engineered. Continue to Train →",
     },
     {
@@ -210,6 +382,22 @@ export const HOW = {
         { label: "Lifecycle has two user gates: plan, then pre-fit review.", side: "right" },
         { label: "Reasoning stream stays audited after the run.",            side: "right" },
       ],
+      stats: [
+        { label: "LIFECYCLE",     value: "10 stages"          },
+        { label: "USER GATES",    value: "plan · pre-fit"     },
+        { label: "DEFAULT MODEL", value: "GradientBoosting"   },
+      ],
+      toolCall: {
+        tool: "propose_plan",
+        args: {
+          task: "binary_classification",
+          model: "GradientBoostingClassifier",
+          cv: "stratified-5fold",
+        },
+        note: "plan card posts to the UI; run-notebook only fires after the second gate.",
+      },
+      inlineNote:
+        "The reasoning stream stays after the run — every decision is auditable post-hoc.",
       handoff: "Trained. Continue to Experiments →",
     },
     {
@@ -225,6 +413,22 @@ export const HOW = {
         { label: "Leaderboard surfaces top-3; champion row always pinned.", side: "right" },
         { label: "Download notebook + serving endpoint per run.",       side: "right" },
       ],
+      stats: [
+        { label: "BENCHMARK SET", value: "5 datasets"     },
+        { label: "SIGNIFICANCE",  value: "Welch's t-test" },
+        { label: "LEADERBOARD",   value: "top-3 + champion" },
+      ],
+      toolCall: {
+        tool: "leaderboard.snapshot",
+        args: {
+          datasetId: "ds_8af2",
+          metric: "roc_auc",
+          topN: 3,
+        },
+        note: "champion row is pinned; downloadable notebook + endpoint per entry.",
+      },
+      inlineNote:
+        "Two runs on the same data with different seeds? Welch's keeps the leaderboard honest.",
       handoff: "Shipped. Now look under the hood →",
     },
   ],
@@ -332,6 +536,33 @@ export const LIMITATIONS = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Guardrail row detail — per-flaw editorial enrichment for page 22. Keyed by
+// GUARDRAIL_ROWS[i].id so the visual can join without inventing shadow data.
+// `validator` names the check family (schema / statistical / type-coerce /
+// domain-rule) and `catchNote` is the 2–6-word mono subtitle that tells the
+// reader *how* we caught it — not just *whether*.
+// ---------------------------------------------------------------------------
+
+export const GUARDRAIL_DETAIL: Record<
+  string,
+  { validator: string; catchNote: string }
+> = {
+  "01": { validator: "statistical", catchNote: "flagged · target MI > 0.98" },
+  "02": { validator: "schema",      catchNote: "sentinel '-999' detected"    },
+  "03": { validator: "type-coerce", catchNote: "parsed · 94% to datetime"    },
+  "04": { validator: "domain-rule", catchNote: "blocked · monotonic column"  },
+  "05": { validator: "statistical", catchNote: "tolerated · flags on request" },
+} as const;
+
+/** Sklearn-nuance callout — explains the single partial catch that lifts
+ *  sklearn from 2/20 (naive row count) to 3/20 (weighted). Keeps the
+ *  competitive claim honest rather than inflated. */
+export const GUARDRAIL_NUANCE = {
+  eyebrow: "SKLEARN · PARTIAL CREDIT",
+  body: "Sklearn's SimpleImputer silently fills NaNs — helpful, but it never warns when the 'missingness' itself was the signal. We score that as a half-catch (+1pt), which is why sklearn lands at 3/20, not 2/20.",
+} as const;
+
+// ---------------------------------------------------------------------------
 // Section 05 — BUILD
 // ---------------------------------------------------------------------------
 
@@ -424,7 +655,7 @@ export const CLOSING = {
   liveLabel: "LIVE DEMO",
   liveUrl: "agentic-automl.vercel.app",
   repoLabel: "REPO",
-  repoUrl: "gitlab.csi.miamioh.edu/…/ai-augmented-auto-ml-toolchain",
+  repoUrl: "agentic-automl.vercel.app/repo",
   leftArrowLabel: "try it",
   rightArrowLabel: "read it",
 } as const;

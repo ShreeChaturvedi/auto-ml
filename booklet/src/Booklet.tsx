@@ -1,6 +1,6 @@
 import React from "react";
 import { PAGES, type PageSpec, type BodyKey } from "./manifest";
-import { SECTION, COLORS } from "./theme";
+import { SECTION, COLORS, FONTS } from "./theme";
 import { HOW } from "./content";
 
 import { CoverPage } from "./templates/CoverPage";
@@ -33,10 +33,52 @@ import { ClosingPage } from "./pages/ClosingPage";
 export const Booklet: React.FC = () => (
   <div className="booklet-root">
     {PAGES.map((p) => (
-      <PageSwitch key={p.num} spec={p} totalPages={PAGES.length} />
+      <PageErrorBoundary key={p.num} pageNum={p.num}>
+        <PageSwitch spec={p} totalPages={PAGES.length} />
+      </PageErrorBoundary>
     ))}
   </div>
 );
+
+/**
+ * Per-page error boundary. Isolates render failures so a bug on one page
+ * doesn't crash the whole booklet render loop — critical during concurrent
+ * agent work where a sibling page may be mid-edit. Renders a paper-toned
+ * placeholder card when it catches so the PDF pipeline continues.
+ */
+class PageErrorBoundary extends React.Component<
+  { pageNum: number; children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <section
+          className="page"
+          style={{
+            background: COLORS.PAPER,
+            padding: 48,
+            fontFamily: FONTS.MONO,
+            fontSize: 11,
+            color: COLORS.DANGER,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>
+            Page {this.props.pageNum} render failed
+          </div>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 9 }}>
+            {String(this.state.error.message)}
+          </pre>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const BODY_COMPONENTS: Record<
   BodyKey,
@@ -96,6 +138,7 @@ const PageSwitch: React.FC<{ spec: PageSpec; totalPages: number }> = ({
           subtitle={spec.subtitle}
           color={SECTION[spec.sectionKey]}
           artSlot={spec.artSlot}
+          sectionKey={spec.sectionKey}
           chapterIndex={spec.chapterIndex}
           chapterTotal={spec.chapterTotal}
         />

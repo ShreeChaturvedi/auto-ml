@@ -1,5 +1,6 @@
 import React from "react";
-import { COLORS, FONTS, TYPE, PAGE } from "../theme";
+import { COLORS, FONTS, TYPE, PAGE, type SectionKey } from "../theme";
+import { DIORAMAS } from "../visuals/diorama";
 
 /**
  * Full-bleed divider-page chrome. A solid-color field with the chapter
@@ -16,6 +17,8 @@ export type DividerPageProps = {
   color: string;
   /** `/art/<slot>.svg` — shown when the file exists; dashed placeholder otherwise. */
   artSlot: string;
+  /** Section key — selects the programmatic diorama fallback. */
+  sectionKey: SectionKey;
   /** Chapter n / total — the `04 / 05` bottom band. */
   chapterIndex: number;
   chapterTotal: number;
@@ -27,6 +30,7 @@ export const DividerPage: React.FC<DividerPageProps> = ({
   subtitle,
   color,
   artSlot,
+  sectionKey,
   chapterIndex,
   chapterTotal,
 }) => (
@@ -75,16 +79,22 @@ export const DividerPage: React.FC<DividerPageProps> = ({
       {chapterTitle}
     </div>
 
-    {/* Subtitle — Plus Jakarta 24pt, two lines max. */}
+    {/* Subtitle — Instrument Serif (upright) 24pt, two lines max. Serif
+        pairs the subtitle with the chapter title's cadence while staying
+        visually distinct via weight/italic treatment. */}
     <div
       style={{
         position: "absolute",
         top: `calc(${PAGE.margin.top}in + ${TYPE.display.size * TYPE.display.lh}pt + ${TYPE.sectionTitle.size}pt)`,
         left: `${PAGE.margin.outer}in`,
         right: `${PAGE.margin.outer}in`,
-        fontFamily: FONTS.SANS,
-        fontSize: TYPE.dividerSubtitle.size,
-        fontWeight: TYPE.dividerSubtitle.weight,
+        fontFamily: FONTS.SERIF,
+        fontStyle: "normal",
+        // Serif has a lower x-height than the prior sans at the same px
+        // size — a modest bump (24→26) restores optical weight without
+        // breaking the subtitle's visual weight relative to the title.
+        fontSize: TYPE.dividerSubtitle.size + 2,
+        fontWeight: 400,
         letterSpacing: TYPE.dividerSubtitle.tracking,
         lineHeight: TYPE.dividerSubtitle.lh,
         color: COLORS.PAPER,
@@ -94,17 +104,21 @@ export const DividerPage: React.FC<DividerPageProps> = ({
       {subtitle}
     </div>
 
-    {/* 3D SVG slot — lower-right, ~3"×4". The Gemini asset lands at `artSlot`. */}
+    {/* 3D SVG slot — 3:4 aspect matches the diorama viewBox so there's no
+        empty padding around the scene. Enlarged from 3×4" to 3.375×4.5".
+        Bottom anchored so the corner label band lands well below the
+        subtitle baseline; the diorama reads as an architectural hero on
+        the lower-right without overlapping the typography above it. */}
     <div
       style={{
         position: "absolute",
         right: `${PAGE.margin.outer}in`,
-        bottom: `${PAGE.margin.bottom + 0.5}in`,
-        width: "3in",
-        height: "4in",
+        bottom: `${PAGE.margin.bottom + 0.05}in`,
+        width: "3.375in",
+        height: "4.5in",
       }}
     >
-      <ArtSlot src={artSlot} />
+      <ArtSlot src={artSlot} sectionKey={sectionKey} />
     </div>
 
     {/* Chapter counter — Monaspace "04 / 05" bottom band, white opacity 0.75. */}
@@ -126,10 +140,23 @@ export const DividerPage: React.FC<DividerPageProps> = ({
   </section>
 );
 
-/** Renders the Gemini SVG if present, or a labeled dashed placeholder. */
-const ArtSlot: React.FC<{ src: string }> = ({ src }) => {
+/**
+ * Renders the commissioned SVG if it exists, else the programmatic diorama
+ * keyed by sectionKey, else a dashed placeholder. Pipeline allows a future
+ * hand-authored asset at `/art/div-0X-*.svg` to override the programmatic
+ * fallback without code changes.
+ */
+const ArtSlot: React.FC<{ src: string; sectionKey: SectionKey }> = ({ src, sectionKey }) => {
   const [failed, setFailed] = React.useState(false);
+  const Diorama = DIORAMAS[sectionKey];
   if (failed) {
+    if (Diorama) {
+      return (
+        <div style={{ width: "100%", height: "100%" }}>
+          <Diorama />
+        </div>
+      );
+    }
     return (
       <div
         style={{

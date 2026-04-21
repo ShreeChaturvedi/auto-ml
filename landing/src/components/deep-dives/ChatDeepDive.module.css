@@ -119,7 +119,10 @@
   top: 100%;
   width: 16px;
   height: 16px;
-  /* Lucide defaults to stroke-only (fill none); solid fill + light stroke keeps the pointer visible on white controls. */
+  /* Lucide defaults to stroke-only (fill none); solid fill + stroke combination
+     keeps the pointer visible over both the amber-tinted (dark) and warm-neutral
+     (light) deep-dive backgrounds. Dark theme: light stroke. Light theme: via
+     .light override below — dark stroke. */
   color: #f8fafc;
   fill: #0a0a0a;
   stroke: #f8fafc;
@@ -156,6 +159,22 @@
  * Reduced motion — the scripted timeline is skipped in TSX (state jumps to
  * `done`), so we only need to freeze any CSS-driven animation + transition.
  * ------------------------------------------------------------------------- */
+/* Light-theme override: swap the amber gradient stack for a warm off-white
+   wash. Preserves the brand's fluid motion cue without producing a harsh
+   dark chunk against the rest of a light page. */
+:global(.light) .root {
+  background:
+    radial-gradient(ellipse 60% 55% at 15% 25%, rgba(255, 215, 170, 0.55) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 85% 75%, rgba(255, 200, 150, 0.45) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 45% at 50% 95%, rgba(255, 220, 185, 0.55) 0%, transparent 60%),
+    #FFF4E6;
+}
+:global(.light) .cursorSprite {
+  color: #0a0a0a;
+  fill: #f8fafc;
+  stroke: #0a0a0a;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .root {
     animation: none;

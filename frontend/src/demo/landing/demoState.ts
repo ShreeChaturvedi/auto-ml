@@ -15,11 +15,15 @@ import type { Phase } from '@/types/phase';
 import type { Project } from '@/types/project';
 import type { SafeUser } from '@/types/user';
 import type { UploadedFile, DataPreview, QueryArtifact } from '@/types/file';
-import type { Notebook } from '@/types/notebook';
+import type { ChatMessage } from '@/types/llmUi';
+import type { Notebook, NotebookCell, CellSummary } from '@/types/notebook';
 import type { WorkbookEntry } from '@/types/workbook';
 import type { AvailableTable } from '@/types/preprocessing';
+import type { FeatureSpec } from '@/types/feature';
 import type { ModelRecord } from '@/types/model';
 import type { DeploymentRecord } from '@/types/deployment';
+import type { FeatureLifecycleStep } from '@/stores/featureStore';
+import type { TrainingRunState } from '@/stores/modelStore';
 
 export const DEMO_PROJECT_ID = 'landing-demo-project';
 const DEMO_DATASET_ID = 'landing-demo-dataset';
@@ -27,6 +31,12 @@ export const DEFAULT_PHASE: Phase = 'upload';
 const NOW = '2026-04-13T15:30:00.000Z';
 const DATA_VIEWER_TABS_STORAGE_KEY = 'automl-data-viewer-tabs-v1';
 const TRAINING_WORKBOOKS_STORAGE_KEY = `training-workbooks-v1-${DEMO_PROJECT_ID}`;
+const PREPROCESSING_WORKBOOKS_STORAGE_KEY = `preprocessing-workbooks-v1-${DEMO_PROJECT_ID}`;
+const PREPROCESSING_MESSAGES_STORAGE_KEY =
+  `preprocessing-messages-v5-processing-tab-1-${DEMO_PROJECT_ID}`;
+const FEATURE_MESSAGES_STORAGE_KEY = 'feature-engineering-messages-v3-feature-demo-draft-v1';
+const TRAINING_MESSAGES_STORAGE_KEY =
+  `training-messages-v1-training-wb-1-${DEMO_PROJECT_ID}`;
 
 const DEMO_PLANS = [
   {
@@ -81,12 +91,121 @@ const DEMO_CHAT: PlanChatEntry = {
   projectId: DEMO_PROJECT_ID,
   name: 'Iteration 2: churn objective',
   status: 'in_progress',
-  messages: [],
+  messages: [
+    {
+      id: 'upload-user-1',
+      type: 'user',
+      content: 'Analyze this retention dataset and outline the fastest path to a deployable churn-risk model.',
+      timestamp: new Date(NOW).getTime(),
+    },
+    {
+      id: 'upload-assistant-1',
+      type: 'assistant_text',
+      content:
+        'I found a clean churn-label dataset with spend, adoption, and support signals. I drafted a workflow that moves from audit to deployment without leaving this workspace.',
+    },
+    {
+      id: 'upload-plan-1',
+      type: 'plan',
+      planName: 'Retention Recovery Plan',
+      content: [
+        '## Modeling objective',
+        '- Predict churn risk within the next 30 days.',
+        '',
+        '## Workflow',
+        '- Audit segment churn by tenure and support intensity.',
+        '- Clean missing adoption signals and stabilize long-tail spend values.',
+        '- Derive support velocity and expansion ratio features.',
+        '- Train two classification candidates and promote the best F1 performer.',
+        '- Deploy the winning model behind a monitored prediction endpoint.',
+      ].join('\n'),
+    },
+  ],
   answerHistory: [],
   currentRound: 2,
   createdAt: new Date(NOW).getTime(),
   updatedAt: new Date(NOW).getTime(),
 };
+
+const DEMO_PREPROCESS_MESSAGES: ChatMessage[] = [
+  {
+    id: 'preprocess-user-1',
+    type: 'user',
+    content: 'Normalize spend, fill sparse adoption scores, and keep the churn label untouched.',
+    timestamp: new Date(NOW).getTime(),
+  },
+  {
+    id: 'preprocess-tool-1',
+    type: 'tool_call',
+    call: {
+      id: 'preprocess-step-1',
+      tool: 'commit_transformation_step',
+      args: {
+        stepId: 'prep-step-1',
+        title: 'Impute adoption score and winsorize spend',
+      },
+    },
+    result: {
+      id: 'preprocess-step-1',
+      tool: 'commit_transformation_step',
+      output: {
+        runId: 'preprocess-run-1',
+        stepId: 'prep-step-1',
+        status: 'applied',
+      },
+    },
+  },
+  {
+    id: 'preprocess-assistant-1',
+    type: 'assistant_text',
+    content:
+      'The preprocessing notebook applied the cleaned adoption-score fill and spend winsorization. Row counts stayed stable, and the dataset is ready for feature derivation.',
+  },
+];
+
+const DEMO_FEATURE_MESSAGES: ChatMessage[] = [
+  {
+    id: 'feature-user-1',
+    type: 'user',
+    content: 'Engineer a compact set of churn features that keep the model explainable.',
+    timestamp: new Date(NOW).getTime(),
+  },
+  {
+    id: 'feature-assistant-1',
+    type: 'assistant_text',
+    content:
+      'I prioritized two high-signal features: support ticket velocity and expansion ratio. Both improved ranking power without making the pipeline hard to audit.',
+  },
+];
+
+const DEMO_TRAINING_MESSAGES: ChatMessage[] = [
+  {
+    id: 'training-user-1',
+    type: 'user',
+    content: 'Train the strongest churn classifier and keep one explainable backup.',
+    timestamp: new Date(NOW).getTime(),
+  },
+  {
+    id: 'training-tool-1',
+    type: 'tool_call',
+    call: {
+      id: 'training-plan-1',
+      tool: 'propose_training_plan',
+      args: {
+        experimentName: 'NovaForest Classifier',
+        modelName: 'Random Forest',
+      },
+    },
+    result: {
+      id: 'training-plan-1',
+      tool: 'propose_training_plan',
+      output: {
+        status: 'awaiting_approval',
+        experimentName: 'NovaForest Classifier',
+      },
+    },
+  },
+];
 
 const DEMO_PREVIEW: DataPreview = {
   fileId: 'landing-demo-file',
@@ -151,7 +270,7 @@ const DEMO_QUERY_ARTIFACT: QueryArtifact = {
   projectId: DEMO_PROJECT_ID,
 };
 
-const DEMO_NOTEBOOK: Notebook = {
+const DEMO_STANDALONE_NOTEBOOK: Notebook = {
   notebookId: 'landing-standalone-notebook',
   projectId: DEMO_PROJECT_ID,
   name: 'Retention notebook',
@@ -163,16 +282,89 @@ const DEMO_NOTEBOOK: Notebook = {
 
 const DEMO_WORKBOOKS: Record<'preprocessing' | 'feature-engineering' | 'training', WorkbookEntry[]> = {
   preprocessing: [
-    { id: 'prep-workbook-1', name: 'Normalize spend', notebookId: 'prep-nb-1' },
-    { id: 'prep-workbook-2', name: 'Impute support signals', notebookId: 'prep-nb-2' },
+    {
+      id: 'processing-tab-1',
+      name: 'Workbook 1',
+      notebookId: 'preprocess-demo-processing-tab-1',
+    },
+    {
+      id: 'processing-tab-2',
+      name: 'Workbook 2',
+      notebookId: 'preprocess-demo-processing-tab-2',
+    },
   ],
   'feature-engineering': [
-    { id: 'fe-workbook-1', name: 'Retention features', notebookId: 'fe-nb-1' },
+    {
+      id: 'feature-demo-draft-v1',
+      name: 'Draft Pipeline v1',
+      notebookId: 'feature-demo-feature-demo-draft-v1',
+    },
   ],
   training: [
-    { id: 'train-workbook-1', name: 'Champion search', notebookId: 'train-nb-1' },
+    {
+      id: 'training-wb-1',
+      name: 'Workbook 1',
+      notebookId: 'training-demo-training-wb-1',
+    },
   ],
 };
+
+const DEMO_PHASE_NOTEBOOKS: Notebook[] = [
+  {
+    notebookId: 'preprocess-demo-processing-tab-1',
+    projectId: DEMO_PROJECT_ID,
+    name: 'Workbook 1',
+    kind: 'phase',
+    metadata: {
+      phase: 'preprocessing',
+      tabId: 'processing-tab-1',
+      tabName: 'Workbook 1',
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    notebookId: 'preprocess-demo-processing-tab-2',
+    projectId: DEMO_PROJECT_ID,
+    name: 'Workbook 2',
+    kind: 'phase',
+    metadata: {
+      phase: 'preprocessing',
+      tabId: 'processing-tab-2',
+      tabName: 'Workbook 2',
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    notebookId: 'feature-demo-feature-demo-draft-v1',
+    projectId: DEMO_PROJECT_ID,
+    name: 'Draft Pipeline v1',
+    kind: 'phase',
+    metadata: {
+      phase: 'feature-engineering',
+      tabId: 'feature-demo-draft-v1',
+      tabName: 'Draft Pipeline v1',
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  {
+    notebookId: 'training-demo-training-wb-1',
+    projectId: DEMO_PROJECT_ID,
+    name: 'Workbook 1',
+    kind: 'phase',
+    metadata: {
+      phase: 'training',
+      tabId: 'training-wb-1',
+      tabName: 'Workbook 1',
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+];
+
+const DEMO_NOTEBOOKS: Notebook[] = [DEMO_STANDALONE_NOTEBOOK, ...DEMO_PHASE_NOTEBOOKS];
 
 const DEMO_TABLES: AvailableTable[] = [
   {
@@ -234,6 +426,294 @@ const DEMO_DEPLOYMENT: DeploymentRecord = {
   updatedAt: NOW,
 };
 
+const DEMO_FEATURES: FeatureSpec[] = [
+  {
+    id: 'feature-support-ticket-velocity',
+    projectId: DEMO_PROJECT_ID,
+    versionId: 'feature-demo-draft-v1',
+    sourceColumn: 'support_tickets_90d',
+    featureName: 'support_ticket_velocity',
+    description: 'Normalizes 90-day support volume against customer tenure.',
+    method: 'ratio',
+    category: 'interaction',
+    params: {
+      denominatorColumn: 'customer_tenure_months',
+      floor: 1,
+    },
+    enabled: true,
+    createdAt: NOW,
+    code: [
+      "df['support_ticket_velocity'] =",
+      "  df['support_tickets_90d'] / df['customer_tenure_months'].clip(lower=1)",
+    ].join('\n'),
+  },
+  {
+    id: 'feature-expansion-ratio',
+    projectId: DEMO_PROJECT_ID,
+    versionId: 'feature-demo-draft-v1',
+    sourceColumn: 'monthly_spend_usd',
+    secondaryColumn: 'product_adoption_score',
+    featureName: 'expansion_ratio',
+    description: 'Blends spend intensity with adoption depth to surface expansion-ready accounts.',
+    method: 'product',
+    category: 'interaction',
+    params: {
+      secondaryColumn: 'product_adoption_score',
+    },
+    enabled: true,
+    createdAt: NOW,
+    code:
+      "df['expansion_ratio'] = df['monthly_spend_usd'] * df['product_adoption_score']",
+  },
+];
+
+const DEMO_FEATURE_STEPS: Record<string, FeatureLifecycleStep> = {
+  'feature-support-ticket-velocity': {
+    stepId: 'feature-support-ticket-velocity',
+    name: 'Derive support ticket velocity',
+    method: 'ratio',
+    status: 'registered',
+    code: DEMO_FEATURES[0].code,
+    metrics: {
+      deltaRecall: 0.031,
+      deltaF1: 0.018,
+    },
+  },
+  'feature-expansion-ratio': {
+    stepId: 'feature-expansion-ratio',
+    name: 'Blend spend and adoption into expansion ratio',
+    method: 'product',
+    status: 'registered',
+    code: DEMO_FEATURES[1].code,
+    metrics: {
+      deltaPrecision: 0.022,
+      deltaF1: 0.013,
+    },
+  },
+};
+
+const DEMO_TRAINING_RUN_STATES: Record<string, TrainingRunState> = {
+  'experiment-novaforest': {
+    experimentId: 'experiment-novaforest',
+    experimentName: 'NovaForest Classifier',
+    modelType: 'Random Forest',
+    status: 'registered',
+    metrics: DEMO_MODELS[0].metrics,
+    hyperparameters: DEMO_MODELS[0].parameters,
+  },
+  'experiment-xgboost': {
+    experimentId: 'experiment-xgboost',
+    experimentName: 'XGBoost Retention',
+    modelType: 'XGBoost',
+    status: 'evaluated',
+    metrics: DEMO_MODELS[1].metrics,
+    hyperparameters: DEMO_MODELS[1].parameters,
+  },
+};
+
+function createNotebookCell(
+  notebookId: string,
+  cellId: string,
+  position: number,
+  cellType: NotebookCell['cellType'],
+  content: string,
+  output: NotebookCell['output'] = [],
+): NotebookCell {
+  return {
+    cellId,
+    notebookId,
+    cellType,
+    content,
+    position,
+    metadata: {},
+    executionCount: output.length > 0 ? 1 : 0,
+    executionOrder: output.length > 0 ? position + 1 : null,
+    executionStatus: output.length > 0 ? 'success' : 'idle',
+    executionDurationMs: output.length > 0 ? 2400 : null,
+    executedAt: output.length > 0 ? NOW : null,
+    isDirty: false,
+    output,
+    outputRefs: [],
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+function cloneNotebook(notebook: Notebook): Notebook {
+  return {
+    ...notebook,
+    metadata: { ...(notebook.metadata ?? {}) },
+  };
+}
+
+function cloneNotebookCell(cell: NotebookCell): NotebookCell {
+  return {
+    ...cell,
+    metadata: { ...(cell.metadata ?? {}) },
+    output: cell.output.map((entry) => ({
+      ...entry,
+      data: entry.data ? { ...entry.data } : undefined,
+    })),
+    outputRefs: cell.outputRefs.map((entry) => ({ ...entry })),
+  };
+}
+
+function buildCellSummaries(cells: NotebookCell[]): CellSummary[] {
+  return cells.map((cell) => ({
+    cellId: cell.cellId,
+    cellType: cell.cellType,
+    title: cell.title ?? null,
+    position: cell.position,
+    executionStatus: cell.executionStatus,
+    executionCount: cell.executionCount,
+    executionOrder: cell.executionOrder ?? null,
+    isDirty: cell.isDirty,
+    lockedBy: cell.lockedBy ?? null,
+    contentPreview: cell.content.slice(0, 120),
+  }));
+}
+
+const DEMO_NOTEBOOK_CELLS: Record<string, NotebookCell[]> = {
+  'landing-standalone-notebook': [
+    createNotebookCell(
+      'landing-standalone-notebook',
+      'standalone-note-1',
+      0,
+      'markdown',
+      '# Retention notebook\n\nQuick SQL checks on the uploaded retention dataset.',
+    ),
+  ],
+  'preprocess-demo-processing-tab-1': [
+    createNotebookCell(
+      'preprocess-demo-processing-tab-1',
+      'preprocess-md-1',
+      0,
+      'markdown',
+      '## Preprocessing audit\n\nImpute sparse adoption scores, clip extreme spend outliers, and preserve label integrity.',
+    ),
+    createNotebookCell(
+      'preprocess-demo-processing-tab-1',
+      'preprocess-code-1',
+      1,
+      'code',
+      [
+        "df['product_adoption_score'] = df['product_adoption_score'].fillna(",
+        "    df.groupby('account_tier')['product_adoption_score'].transform('median')",
+        ')',
+        "df['monthly_spend_usd'] = df['monthly_spend_usd'].clip(upper=450)",
+      ].join('\n'),
+      [
+        {
+          type: 'text',
+          content:
+            'Filled 128 sparse adoption scores and clipped 14 extreme spend outliers without changing row counts.',
+        },
+      ],
+    ),
+  ],
+  'preprocess-demo-processing-tab-2': [
+    createNotebookCell(
+      'preprocess-demo-processing-tab-2',
+      'preprocess-code-2',
+      0,
+      'code',
+      "df['support_tickets_90d'] = df['support_tickets_90d'].fillna(0)",
+      [{ type: 'text', content: 'Support-ticket sparsity removed for replay-safe downstream features.' }],
+    ),
+  ],
+  'feature-demo-feature-demo-draft-v1': [
+    createNotebookCell(
+      'feature-demo-feature-demo-draft-v1',
+      'feature-md-1',
+      0,
+      'markdown',
+      '## Feature notebook\n\nDrafting compact churn features that stay explainable in the experiments view.',
+    ),
+    createNotebookCell(
+      'feature-demo-feature-demo-draft-v1',
+      'feature-code-1',
+      1,
+      'code',
+      [
+        "df['support_ticket_velocity'] =",
+        "    df['support_tickets_90d'] / df['customer_tenure_months'].clip(lower=1)",
+        "df['expansion_ratio'] = df['monthly_spend_usd'] * df['product_adoption_score']",
+      ].join('\n'),
+      [
+        {
+          type: 'text',
+          content:
+            'Registered 2 candidate features. Validation improved recall by 3.1 points while keeping the feature set explainable.',
+        },
+      ],
+    ),
+  ],
+  'training-demo-training-wb-1': [
+    createNotebookCell(
+      'training-demo-training-wb-1',
+      'training-md-1',
+      0,
+      'markdown',
+      '## Training run\n\nComparing a Random Forest champion against an explainable XGBoost backup.',
+    ),
+    createNotebookCell(
+      'training-demo-training-wb-1',
+      'training-code-1',
+      1,
+      'code',
+      [
+        "champion = train_model('random_forest', target='is_churned')",
+        "backup = train_model('xgboost', target='is_churned')",
+        'compare_models([champion, backup])',
+      ].join('\n'),
+      [
+        {
+          type: 'text',
+          content:
+            'Champion: NovaForest Classifier | F1 0.8424 | Precision 0.8611 | Recall 0.8245',
+        },
+      ],
+    ),
+  ],
+};
+
+function getDemoNotebookById(notebookId: string | null | undefined): Notebook | null {
+  if (!notebookId) {
+    return null;
+  }
+  const notebook = DEMO_NOTEBOOKS.find((entry) => entry.notebookId === notebookId);
+  return notebook ? cloneNotebook(notebook) : null;
+}
+
+function getDemoCellsForNotebook(notebookId: string | null | undefined): NotebookCell[] {
+  if (!notebookId) {
+    return [];
+  }
+  return (DEMO_NOTEBOOK_CELLS[notebookId] ?? []).map(cloneNotebookCell);
+}
+
+function activateDemoNotebook(notebookId: string | null | undefined) {
+  const resolvedNotebook = getDemoNotebookById(notebookId);
+  const cells = getDemoCellsForNotebook(resolvedNotebook?.notebookId);
+  useNotebookStore.setState({
+    activeNotebookId: resolvedNotebook?.notebookId ?? null,
+    notebook: resolvedNotebook,
+    cells,
+    cellSummaries: buildCellSummaries(cells),
+  });
+}
+
+function persistStoredConversation(storageKey: string, messages: ChatMessage[]) {
+  window.localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      version: 2,
+      messages,
+      savepoints: {},
+    }),
+  );
+}
+
 function cloneProject(): Project {
   return {
     ...DEMO_PROJECT,
@@ -278,6 +758,34 @@ function resetLandingDemoStorage() {
       workbooks: [{ id: 'training-wb-1', name: 'Workbook 1', notebookId: 'training-demo-training-wb-1' }],
     }),
   );
+
+  window.localStorage.setItem(
+    PREPROCESSING_WORKBOOKS_STORAGE_KEY,
+    JSON.stringify({
+      activeTabId: 'processing-tab-1',
+      nextDefaultWorkbookIndex: 3,
+      tabs: [
+        {
+          id: 'processing-tab-1',
+          name: 'Workbook 1',
+          storageVersion: 1,
+          notebookId: 'preprocess-demo-processing-tab-1',
+          selectedDatasetId: DEMO_DATASET_ID,
+        },
+        {
+          id: 'processing-tab-2',
+          name: 'Workbook 2',
+          storageVersion: 1,
+          notebookId: 'preprocess-demo-processing-tab-2',
+          selectedDatasetId: DEMO_DATASET_ID,
+        },
+      ],
+    }),
+  );
+
+  persistStoredConversation(PREPROCESSING_MESSAGES_STORAGE_KEY, DEMO_PREPROCESS_MESSAGES);
+  persistStoredConversation(FEATURE_MESSAGES_STORAGE_KEY, DEMO_FEATURE_MESSAGES);
+  persistStoredConversation(TRAINING_MESSAGES_STORAGE_KEY, DEMO_TRAINING_MESSAGES);
 }
 
 export function resetLandingDemoState() {
@@ -380,9 +888,9 @@ export function resetLandingDemoState() {
     isLoadingModels: false,
     isTraining: false,
     error: null,
-    trainingRunStates: {},
-    currentStage: null,
-    trainingRunId: null,
+    trainingRunStates: DEMO_TRAINING_RUN_STATES,
+    currentStage: 'register_model',
+    trainingRunId: 'training-run-demo-1',
     fetchTemplates: async () => {},
     refreshModels: async () => {},
     trainModel: async () => null,
@@ -455,12 +963,47 @@ export function resetLandingDemoState() {
     activeProjectId: DEMO_PROJECT_ID,
     tables: DEMO_TABLES,
     selectedDatasetId: DEMO_DATASET_ID,
-    runId: null,
+    runId: 'preprocess-run-1',
     nextRunCellMode: 'continue',
     latestCheckpointId: null,
-    assistantMessages: [],
-    timeline: [],
-    stepBindings: {},
+    assistantMessages: [
+      {
+        id: 'preprocess-assistant-message-1',
+        role: 'assistant',
+        content:
+          'Applied adoption-score imputation and spend clipping. The cleaned dataset is stable for downstream feature work.',
+      },
+    ],
+    timeline: [
+      {
+        id: 'preprocess-event-1',
+        runId: 'preprocess-run-1',
+        stepId: 'prep-step-1',
+        toolName: 'commit_transformation_step',
+        title: 'Impute adoption score and winsorize spend',
+        status: 'applied',
+        rationale:
+          'Account-tier medians preserve segment behavior while taming extreme monthly spend outliers.',
+        intentType: 'impute_missing',
+        cellIds: ['preprocess-code-1'],
+        validation: {
+          rowCountBefore: DEMO_PREVIEW.totalRows,
+          rowCountAfter: DEMO_PREVIEW.totalRows,
+          schemaDrift: false,
+          notes: 'No rows dropped; churn label preserved.',
+        },
+        requiresApproval: false,
+        createdAt: new Date(NOW).getTime(),
+        updatedAt: new Date(NOW).getTime(),
+      },
+    ],
+    stepBindings: {
+      'prep-step-1': {
+        stepId: 'prep-step-1',
+        cellIds: ['preprocess-code-1'],
+        lastSyncedAt: new Date(NOW).getTime(),
+      },
+    },
     replayReport: null,
     controllerSummary: null,
     isLoadingTables: false,
@@ -471,7 +1014,7 @@ export function resetLandingDemoState() {
   });
 
   useFeatureStore.setState({
-    features: [],
+    features: DEMO_FEATURES,
     versions: {
       [DEMO_PROJECT_ID]: [
         {
@@ -503,9 +1046,9 @@ export function resetLandingDemoState() {
       ],
     },
     currentVersionId: { [DEMO_PROJECT_ID]: 'feature-demo-draft-v1' },
-    featureSteps: {},
-    currentStage: null,
-    featureRunId: null,
+    featureSteps: DEMO_FEATURE_STEPS,
+    currentStage: 'register_feature',
+    featureRunId: 'feature-run-demo-1',
     syncFeaturesToProject: async () => {},
     hydrateFromProject: () => {},
   });
@@ -521,11 +1064,13 @@ export function resetLandingDemoState() {
 
   useNotebookStore.setState({
     currentProjectId: DEMO_PROJECT_ID,
-    notebooks: [DEMO_NOTEBOOK],
-    activeNotebookId: DEMO_NOTEBOOK.notebookId,
-    notebook: DEMO_NOTEBOOK,
-    cells: [],
-    cellSummaries: [],
+    notebooks: DEMO_NOTEBOOKS.map(cloneNotebook),
+    activeNotebookId: DEMO_STANDALONE_NOTEBOOK.notebookId,
+    notebook: cloneNotebook(DEMO_STANDALONE_NOTEBOOK),
+    cells: getDemoCellsForNotebook(DEMO_STANDALONE_NOTEBOOK.notebookId),
+    cellSummaries: buildCellSummaries(
+      getDemoCellsForNotebook(DEMO_STANDALONE_NOTEBOOK.notebookId),
+    ),
     lockedCells: new Map(),
     runAllRunningCellId: null,
     isLoading: false,
@@ -538,16 +1083,24 @@ export function resetLandingDemoState() {
     streamingCellIds: new Set(),
     streamErrors: new Map(),
     streamAbortControllers: new Map(),
-    initializeNotebook: async () => {},
-    disconnect: () => {},
-    loadNotebooks: async () => {},
-    setActiveNotebook: async (notebookId) => {
+    initializeNotebook: async (projectId, notebookId) => {
       useNotebookStore.setState({
-        activeNotebookId: notebookId,
-        notebook: useNotebookStore.getState().notebooks.find((entry) => entry.notebookId === notebookId) ?? null,
+        currentProjectId: projectId,
+        notebooks: DEMO_NOTEBOOKS.map(cloneNotebook),
+      });
+      activateDemoNotebook(notebookId ?? useNotebookStore.getState().activeNotebookId);
+    },
+    disconnect: () => {},
+    loadNotebooks: async (projectId) => {
+      useNotebookStore.setState({
+        currentProjectId: projectId ?? DEMO_PROJECT_ID,
+        notebooks: DEMO_NOTEBOOKS.map(cloneNotebook),
       });
     },
-    createNotebook: async () => DEMO_NOTEBOOK,
+    setActiveNotebook: async (notebookId) => {
+      activateDemoNotebook(notebookId);
+    },
+    createNotebook: async () => cloneNotebook(DEMO_STANDALONE_NOTEBOOK),
     renameNotebook: async (notebookId, name) => {
       let renamed: Notebook | null = null;
       useNotebookStore.setState((state) => ({
@@ -563,8 +1116,27 @@ export function resetLandingDemoState() {
       return renamed;
     },
     deleteNotebook: async () => true,
-    updateNotebookMetadata: async () => DEMO_NOTEBOOK,
-    loadCells: async () => {},
+    updateNotebookMetadata: async (notebookId, metadata) => {
+      let updated: Notebook | null = null;
+      useNotebookStore.setState((state) => ({
+        notebooks: state.notebooks.map((entry) => {
+          if (entry.notebookId !== notebookId) {
+            return entry;
+          }
+          updated = {
+            ...entry,
+            metadata: { ...(entry.metadata ?? {}), ...metadata },
+          };
+          return updated;
+        }),
+        notebook:
+          state.notebook?.notebookId === notebookId && updated ? updated : state.notebook,
+      }));
+      return updated;
+    },
+    loadCells: async () => {
+      activateDemoNotebook(useNotebookStore.getState().activeNotebookId);
+    },
     loadCell: async () => null,
     createCell: async () => null,
     updateCell: async () => null,

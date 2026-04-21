@@ -119,7 +119,12 @@ describe('executeCell', () => {
       'cell-1',
       expect.objectContaining({
         executionStatus: 'error',
-        output: []
+        output: [
+          {
+            type: 'error',
+            content: 'Execution timed out after 30000ms'
+          }
+        ]
       })
     );
   });
@@ -141,5 +146,60 @@ describe('executeCell', () => {
 
     expect(interruptKernelMock).toHaveBeenCalledWith({ id: 'container-1' });
     expect(restartKernelMock).toHaveBeenCalledWith({ id: 'container-1' });
+  });
+
+  it('appends the error message to existing outputs when a partial rich output precedes a kernel failure', async () => {
+    kernelExecuteMock.mockResolvedValue({
+      status: 'error',
+      stdout: '',
+      stderr: '',
+      outputs: [
+        { type: 'html', content: '<pre>Model summary table</pre>' }
+      ],
+      executionMs: 144729,
+      error: 'WebSocket closed unexpectedly during execution',
+      executionOrder: null
+    });
+
+    await executeCell('cell-1', 'project-1');
+
+    expect(markCellExecutedMock).toHaveBeenCalledWith(
+      'cell-1',
+      expect.objectContaining({
+        executionStatus: 'error',
+        output: [
+          { type: 'html', content: '<pre>Model summary table</pre>' },
+          { type: 'error', content: 'WebSocket closed unexpectedly during execution' }
+        ]
+      })
+    );
+  });
+
+  it('persists a visible error output when execution fails without kernel outputs', async () => {
+    kernelExecuteMock.mockResolvedValue({
+      status: 'error',
+      stdout: '',
+      stderr: 'ValueError: invalid model configuration',
+      outputs: [],
+      executionMs: 1200,
+      error: 'ValueError: invalid model configuration',
+      executionOrder: null
+    });
+
+    const result = await executeCell('cell-1', 'project-1');
+
+    expect(result.status).toBe('error');
+    expect(markCellExecutedMock).toHaveBeenCalledWith(
+      'cell-1',
+      expect.objectContaining({
+        executionStatus: 'error',
+        output: [
+          {
+            type: 'error',
+            content: 'ValueError: invalid model configuration'
+          }
+        ]
+      })
+    );
   });
 });

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "public.titanic.v1",
+  "kind": "public",
+  "slug": "titanic",
+  "version": 1,
+  "status": "pending",
+  "task": {
+    "type": "classification",
+    "targetColumn": "survived",
+    "primaryMetric": "accuracy"
+  },
+  "storage": {
+    "root": "testing/benchmarks/data/public/titanic/v1",
+    "canonicalFile": "canonical/data.csv"
+  },
+  "integrity": {
+    "canonicalSha256": null
+  },
+  "provenance": {
+    "upstreamUrl": "https://www.kaggle.com/c/titanic",
+    "acquisition": "manual-stage",
+    "license": "See upstream terms"
+  },
+  "suiteRefs": ["expo-public-p0.v1"]
+}

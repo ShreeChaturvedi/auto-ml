@@ -196,7 +196,7 @@ describe('shouldAllowFeatureProposeTool', () => {
 });
 
 describe('resolveTrainingLifecycleNode', () => {
-  it('continues from next stage on paused training runs instead of restarting configure_experiment', () => {
+  it('keeps paused training runs in propose_model when approval does not name a selected model', () => {
     const state = createState({
       turn: {
         projectId: 'project-1',
@@ -215,7 +215,64 @@ describe('resolveTrainingLifecycleNode', () => {
       turnStartToolCallCount: 0
     });
 
-    expect(resolveTrainingLifecycleNode(state, [])).toBe('generate_code');
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('propose_model');
+  });
+
+  it('keeps paused proposal-stage training runs in propose_model when the follow-up is not an approval', () => {
+    const state = createState({
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Rejected. Revise the proposal to use LightGBM instead.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'propose_model',
+        pendingInputKind: 'approval',
+        metadata: { workflowTurnStartStatus: 'paused' }
+      },
+      toolResultHistory: [
+        {
+          id: 'proposal-1',
+          tool: 'propose_training_plan',
+          output: { experimentId: 'exp-1', status: 'awaiting_approval' }
+        }
+      ],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('propose_model');
+  });
+
+  it('blocks paused resume into generate_code when inferred history suggests codegen but approval lacks a selected model', () => {
+    const state = createState({
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'bootstrap_context',
+        metadata: { workflowTurnStartStatus: 'paused' }
+      },
+      toolResultHistory: [
+        {
+          id: 'proposal-1',
+          tool: 'propose_training_plan',
+          output: { experimentId: 'exp-1', status: 'awaiting_approval' }
+        }
+      ],
+      turnStartToolCallCount: 1
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('propose_model');
   });
 
   it('starts fresh training turns at configure_experiment when not resuming a paused run', () => {
@@ -274,6 +331,37 @@ describe('resolveTrainingLifecycleNode', () => {
     });
 
     expect(resolveTrainingLifecycleNode(state, [])).toBe('propose_model');
+  });
+
+  it('resumes paused approved training runs at generate_code even if stale configured experiments remain', () => {
+    const state = createState({
+      turn: {
+        projectId: 'project-1',
+        phase: 'training',
+        prompt: 'Approved. Proceed with training the selected model: mlp_regressor_usage_count_time_series.',
+        datasetId: 'dataset-1'
+      },
+      run: {
+        ...createState().run,
+        phase: 'training',
+        status: 'paused',
+        currentNode: 'propose_model',
+        metadata: {
+          workflowTurnStartStatus: 'paused',
+          experiments: {
+            'exp-1': {
+              experimentId: 'exp-1',
+              experimentName: 'mlp_regressor_usage_count_time_series',
+              status: 'configured'
+            }
+          }
+        }
+      },
+      toolResultHistory: [],
+      turnStartToolCallCount: 0
+    });
+
+    expect(resolveTrainingLifecycleNode(state, [])).toBe('generate_code');
   });
 
   it('resumes failed retryable training runs at generate_code when the last run_cell failed', () => {

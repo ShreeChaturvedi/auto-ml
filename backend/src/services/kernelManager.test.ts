@@ -32,8 +32,9 @@ const hoisted = vi.hoisted(() => {
         removeAllListeners: (event?: string) => void;
     }> = [];
     const uuidState = { counter: 0 };
+    const failOpenCount = { value: 0 };
 
-    return { mockTranslateMimeBundle, wsInstances, uuidState };
+    return { mockTranslateMimeBundle, wsInstances, uuidState, failOpenCount };
 });
 
 /* ------------------------------------------------------------------ */
@@ -91,6 +92,12 @@ vi.mock('ws', () => {
         constructor(url: string) {
             this.url = url;
             hoisted.wsInstances.push(this);
+
+            if (hoisted.failOpenCount.value > 0) {
+                hoisted.failOpenCount.value -= 1;
+                queueMicrotask(() => this.emit('error', new Error('mock ws open failure')));
+                return;
+            }
 
             // Auto-fire 'open' on next microtask so openWebSocket resolves
             queueMicrotask(() => this.emit('open'));
@@ -186,7 +193,7 @@ import {
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
 
-const { mockTranslateMimeBundle, wsInstances, uuidState } = hoisted;
+const { mockTranslateMimeBundle, wsInstances, uuidState, failOpenCount } = hoisted;
 
 type MockWs = (typeof wsInstances)[number];
 
@@ -260,6 +267,7 @@ beforeEach(() => {
     mockTranslateMimeBundle.mockReset();
     mockTranslateMimeBundle.mockReturnValue({ type: 'text', content: 'translated' });
     uuidState.counter = 0;
+    failOpenCount.value = 0;
     activeContainers = [];
 });
 
@@ -339,6 +347,19 @@ describe('connectKernel', () => {
         expect(wsInstances.length).toBe(2);
         const secondWs = getWsInstance(1);
         expect(secondWs.url).toContain('/api/kernels/k1/channels');
+    });
+
+    it('3b. retries opening kernel channels after a transient websocket failure', async () => {
+        const ctr = track(makeContainer());
+        mockFetch.mockResolvedValueOnce(okResponse({ id: 'k1', name: 'python3' }));
+        failOpenCount.value = 1;
+
+        await connectKernel(ctr);
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(wsInstances.length).toBe(2);
+        expect(lastWs().url).toContain('/api/kernels/k1/channels');
+        expect(hasKernel(ctr)).toBe(true);
     });
 
     it('4. throws descriptive error when port is 0', async () => {

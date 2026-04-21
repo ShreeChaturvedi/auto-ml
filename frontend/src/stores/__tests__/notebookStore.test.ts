@@ -136,6 +136,36 @@ describe('notebookStore', () => {
       expect(useNotebookStore.getState().wsClient).toBeNull();
       expect(useNotebookStore.getState().isConnected).toBe(false);
     });
+
+    it('ignores archived phase notebooks when selecting the default active notebook on initialize', async () => {
+      listNotebooksMock.mockResolvedValue([
+        {
+          notebookId: 'archived-training-nb',
+          projectId: 'proj-1',
+          name: 'Workbook 2',
+          kind: 'phase',
+          metadata: { phase: 'archived', archivedFromPhase: 'training' },
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z'
+        },
+        {
+          notebookId: 'preprocessing-nb',
+          projectId: 'proj-1',
+          name: 'Workbook 1',
+          kind: 'phase',
+          metadata: { phase: 'preprocessing', tabId: 'prep-1' },
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z'
+        }
+      ]);
+      listCellsMock.mockResolvedValue([]);
+      notebookWsClientMock.isConnected = true;
+
+      await useNotebookStore.getState().initializeNotebook('proj-1');
+
+      expect(useNotebookStore.getState().activeNotebookId).toBe('preprocessing-nb');
+      expect(useNotebookStore.getState().notebook?.notebookId).toBe('preprocessing-nb');
+    });
   });
 
   // ==========================================================
@@ -444,6 +474,41 @@ describe('notebookStore', () => {
       expect(useNotebookStore.getState().wsClient).toBeNull();
       expect(useNotebookStore.getState().activeNotebookId).toBeNull();
       expect(useNotebookStore.getState().isConnected).toBe(false);
+    });
+  });
+
+  describe('loadNotebooks', () => {
+    it('does not fall back to an archived phase notebook when refreshing the notebook list', async () => {
+      useNotebookStore.setState({
+        currentProjectId: 'proj-1',
+        activeNotebookId: null,
+        notebook: null
+      });
+      listNotebooksMock.mockResolvedValue([
+        {
+          notebookId: 'archived-training-nb',
+          projectId: 'proj-1',
+          name: 'Workbook 3',
+          kind: 'phase',
+          metadata: { phase: 'archived', archivedFromPhase: 'training' },
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z'
+        },
+        {
+          notebookId: 'training-nb',
+          projectId: 'proj-1',
+          name: 'Workbook 1',
+          kind: 'phase',
+          metadata: { phase: 'training', tabId: 'training-wb-1' },
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z'
+        }
+      ]);
+
+      await useNotebookStore.getState().loadNotebooks('proj-1');
+
+      expect(useNotebookStore.getState().activeNotebookId).toBe('training-nb');
+      expect(useNotebookStore.getState().notebook?.notebookId).toBe('training-nb');
     });
   });
 

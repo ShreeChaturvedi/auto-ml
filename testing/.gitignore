@@ -1,3 +1,7 @@
 node_modules/
 test-results/
 playwright-report/
+benchmarks/runs/*
+!benchmarks/runs/README.md
+benchmarks/data/public/*
+!benchmarks/data/public/README.md

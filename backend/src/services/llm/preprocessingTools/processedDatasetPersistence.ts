@@ -7,6 +7,8 @@ import { appLogger } from '../../../logging/logger.js';
 import type { DatasetRepository } from '../../../repositories/datasetRepository.js';
 import { getNotebook } from '../../../repositories/notebook/index.js';
 import type { PreprocessingRunState } from '../../../repositories/preprocessingRunRepository.js';
+import { SUPPORTED_EXTENSIONS } from '../../../routes/datasets/validation.js';
+import type { DatasetFileType } from '../../../types/dataset.js';
 import { loadDatasetIntoPostgres, parseDatasetRows } from '../../datasetLoader.js';
 import { profileDatasetRows } from '../../datasetProfiler.js';
 
@@ -17,10 +19,31 @@ export interface ResolveWorkspaceFilePathParams {
   datasetId: string;
 }
 
+function deriveProcessedSiblingName(filename: string): string {
+  const dot = filename.lastIndexOf('.');
+  if (dot <= 0) {
+    return filename.endsWith('_processed') ? filename : `${filename}_processed`;
+  }
+  const base = filename.slice(0, dot);
+  const ext = filename.slice(dot);
+  if (base.endsWith('_processed')) return filename;
+  return `${base}_processed${ext}`;
+}
+
 export function resolveWorkspaceFilePath(params: ResolveWorkspaceFilePathParams): string | undefined {
   const projectDir = join(params.executionWorkspaceDir, params.projectId);
-  const containerCandidates = findContainerWorkspaceFiles(projectDir, params.filename, params.datasetId);
+  // After the kernel-side fix that save_preprocessing_dataset writes to a
+  // `<base>_processed<ext>` sibling (so the raw upload is never clobbered
+  // in the workspace copy), prefer that sibling when we're hunting for
+  // "the processed file". Issue #342 root cause.
+  const processedSibling = deriveProcessedSiblingName(params.filename);
+  const containerProcessed = findContainerWorkspaceFiles(projectDir, processedSibling, params.datasetId);
+  const containerOriginal = findContainerWorkspaceFiles(projectDir, params.filename, params.datasetId);
+  const containerCandidates = [...containerProcessed, ...containerOriginal];
   const staticCandidates = [
+    join(projectDir, processedSibling),
+    join(projectDir, 'datasets', processedSibling),
+    join(projectDir, 'datasets', params.datasetId, processedSibling),
     join(projectDir, params.filename),
     join(projectDir, 'datasets', params.filename),
     join(projectDir, 'datasets', params.datasetId, params.filename)
@@ -31,19 +54,21 @@ export function resolveWorkspaceFilePath(params: ResolveWorkspaceFilePathParams)
     return undefined;
   }
 
-  // Prefer dataset-id-scoped paths to avoid cross-workbook file collisions.
-  // The kernel's save_preprocessing_dataset writes to datasets/<datasetId>/<filename>,
-  // so look there first for the authoritative processed file.
-  const scopedPath = join(projectDir, 'datasets', params.datasetId, params.filename);
-  const scopedContainerMatch = containerCandidates.find((candidate) =>
+  // Prefer dataset-id-scoped *processed sibling* first (that's where the
+  // kernel now writes after a successful preprocessing commit), then the
+  // original filename path for legacy rows produced before the fix landed.
+  const scopedProcessedPath = join(projectDir, 'datasets', params.datasetId, processedSibling);
+  const scopedOriginalPath = join(projectDir, 'datasets', params.datasetId, params.filename);
+  const scopedProcessedContainerMatch = containerCandidates.find((candidate) =>
+    candidate.includes(join('datasets', params.datasetId, processedSibling))
+  );
+  const scopedOriginalContainerMatch = containerCandidates.find((candidate) =>
     candidate.includes(join('datasets', params.datasetId, params.filename))
   );
-  if (scopedContainerMatch) {
-    return scopedContainerMatch;
-  }
-  if (allCandidates.includes(scopedPath)) {
-    return scopedPath;
-  }
+  if (scopedProcessedContainerMatch) return scopedProcessedContainerMatch;
+  if (allCandidates.includes(scopedProcessedPath)) return scopedProcessedPath;
+  if (scopedOriginalContainerMatch) return scopedOriginalContainerMatch;
+  if (allCandidates.includes(scopedOriginalPath)) return scopedOriginalPath;
 
   return allCandidates.reduce((best, candidate) => {
     const bestMtime = statSync(best).mtimeMs;
@@ -147,7 +172,13 @@ export async function persistProcessedDataset(
   }
 
   const buffer = readFileSync(workspacePath);
-  const fileType = (extname(sourceDataset.filename).replace('.', '').toLowerCase() || 'csv') as 'csv' | 'json' | 'xlsx';
+  // Normalize extension to the canonical DatasetFileType union. Raw extensions
+  // like `.tsv` or `.jsonl` are not valid inputs to parseDatasetRows — they
+  // funnel through SUPPORTED_EXTENSIONS to 'csv' / 'json' respectively. Issue #339.
+  const ext = extname(sourceDataset.filename).toLowerCase();
+  const fileType: DatasetFileType =
+    SUPPORTED_EXTENSIONS[ext]
+    ?? ((sourceDataset.fileType as DatasetFileType | undefined) ?? 'csv');
   const rows = await parseDatasetRows(buffer, fileType, sourceDataset.filename);
   if (rows.length === 0) {
     appLogger.warn('[persistProcessedDataset] Parsed 0 rows from workspace file, skipping');

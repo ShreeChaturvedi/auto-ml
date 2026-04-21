@@ -42,7 +42,7 @@ interface ExperimentsState {
   toggleComparison: (modelId: string) => void;
   clearComparison: () => void;
   setExperimentView: (view: ExperimentView) => void;
-  fetchEvaluation: (modelId: string, force?: boolean) => Promise<void>;
+  fetchEvaluation: (modelId: string, force?: boolean, cacheFailure?: boolean) => Promise<void>;
   fetchShap: (modelId: string) => Promise<void>;
   fetchErrorAnalysis: (modelId: string) => Promise<void>;
   fetchReport: (projectId: string, models: ModelRecord[]) => Promise<void>;
@@ -231,18 +231,24 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     set({ experimentView: view });
   },
 
-  fetchEvaluation: async (modelId, force = false) => {
+  fetchEvaluation: async (modelId, force = false, cacheFailure = true) => {
     if (!force && modelId in get().evaluations) return;
     const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchEvaluation(modelId);
       if (get().cacheGeneration !== gen) return;
+      if (result === undefined) {
+        return;
+      }
       set((state) => ({
         evaluations: { ...state.evaluations, [modelId]: result },
       }));
     } catch (error) {
       console.error('[experimentsStore] fetchEvaluation failed:', error);
       if (get().cacheGeneration !== gen) return;
+      if (!cacheFailure) {
+        return;
+      }
       set((state) => ({
         evaluations: { ...state.evaluations, [modelId]: null },
       }));
@@ -255,6 +261,12 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     try {
       const result = await experimentsApi.fetchShap(modelId);
       if (get().cacheGeneration !== gen) return;
+      if (result === undefined) {
+        set((state) => ({
+          shapData: { ...state.shapData, [modelId]: null },
+        }));
+        return;
+      }
       set((state) => ({
         shapData: { ...state.shapData, [modelId]: result },
       }));
@@ -271,8 +283,14 @@ export const useExperimentsStore = create<ExperimentsState>((set, get) => ({
     const gen = get().cacheGeneration;
     try {
       const result = await experimentsApi.fetchErrorAnalysis(modelId);
-      const resolved = result?.available === false ? null : result;
       if (get().cacheGeneration !== gen) return;
+      if (result === undefined) {
+        set((state) => ({
+          errorAnalysis: { ...state.errorAnalysis, [modelId]: null },
+        }));
+        return;
+      }
+      const resolved = result?.available === false ? null : result;
       set((state) => ({
         errorAnalysis: { ...state.errorAnalysis, [modelId]: resolved },
       }));

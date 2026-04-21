@@ -158,7 +158,6 @@ export function DataViewerTab() {
     openFileTabs,
     notebookProjectId,
     notebooksLoading,
-    projectId,
     queryArtifacts,
     setActiveFileTab,
     standaloneNotebooks,

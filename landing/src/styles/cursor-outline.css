@@ -55,3 +55,10 @@
   .cursor-outline::before { display: none; }
   .cursor-outline { outline: 1px solid hsl(var(--border)); outline-offset: 0; }
 }
+
+/* Light theme: disable the white cursor-reactive glow. A bright halo on a
+   white page reads as noise rather than chrome — the frame's own 1px border
+   already provides sufficient edge definition. */
+.light .cursor-outline::before {
+  background: transparent;
+}

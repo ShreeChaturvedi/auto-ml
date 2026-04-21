@@ -21,7 +21,17 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
         modelType: {
           type: 'string',
           description:
-            'Model family or algorithm (e.g. "random_forest", "xgboost", "logistic_regression", "neural_network").'
+            'Model family or algorithm (e.g. "random_forest", "decision_tree_regressor", "mlp", "xgboost", "lightgbm", "logistic_regression", "catboost", "tabtransformer", "fttransformer", "tabnet"). ' +
+            'IMPORTANT: the variant MUST match taskType. For classification use classifier variants (catboost_classifier, xgb_classifier, random_forest_classifier, svc); ' +
+            'for regression use regressor variants (catboost_regressor, xgb_regressor, random_forest_regressor, decision_tree_regressor, svr, ridge, lasso, linear_regression).'
+        },
+        taskType: {
+          type: 'string',
+          enum: ['classification', 'regression'],
+          description:
+            'REQUIRED. Must match the inferred task type in the target profile shown in the user prompt. ' +
+            'Use "regression" for continuous numeric targets (>20 unique values or float dtype); use "classification" for categorical/binary targets. ' +
+            'Pick the modelType variant to match.'
         },
         hyperparameters: {
           type: 'object',
@@ -51,7 +61,7 @@ export const TRAINING_TOOL_DEFINITIONS: LlmToolDefinition[] = [
           description: 'Random seed for reproducibility.'
         }
       },
-      required: ['experimentName', 'modelType', 'splitStrategy']
+      required: ['experimentName', 'modelType', 'taskType', 'splitStrategy']
     }
   },
   {

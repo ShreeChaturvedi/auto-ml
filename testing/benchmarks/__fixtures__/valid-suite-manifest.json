@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "expo-p0-v1",
+  "lane": "agentic-e2e",
+  "entries": [
+    {
+      "datasetRef": "public.adult-income.v1",
+      "repetitions": 5,
+      "qualityGate": {
+        "metric": "accuracy",
+        "op": ">=",
+        "value": 0.8
+      }
+    }
+  ]
+}

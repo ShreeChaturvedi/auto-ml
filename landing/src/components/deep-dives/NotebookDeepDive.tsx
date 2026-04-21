@@ -152,6 +152,19 @@ function NotebookDeepDiveVisual() {
       timers.push(setTimeout(fn, delay));
     };
 
+    // Step 0: spawn the cursor at a starting corner (lower-left) and fade
+    // it in. Scheduling this at t=0 (rather than combining with the first
+    // glide) gives the browser a paint tick at the starting position so
+    // the subsequent `left/top` change actually animates via CSS transition
+    // instead of snapping directly onto the Run button.
+    schedule(() => {
+      const root = rootRef.current;
+      if (!root) return;
+      const rect = root.getBoundingClientRect();
+      setCursorPos({ x: 56, y: rect.height - 48 });
+      setPhase('cursor-glide');
+    }, 0);
+
     let cursor = TIMING.preGlide;
 
     CELL_IDS.forEach((_id, idx) => {

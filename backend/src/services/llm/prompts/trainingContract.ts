@@ -20,7 +20,7 @@ Use \`configure_experiment\` to set up the experiment parameters:
 - Do NOT reconfigure the same experiment
 - If the user requested multiple models, configure ALL requested experiments first, then call \`propose_training_plan\` ONCE per configured experiment
 - Choose model type based on the dataset and problem type
-- \`modelType\` is an open string, not a closed enum. If the user explicitly requests an algorithm/library (for example \`catboost\`, \`xgboost\`, \`lightgbm\`, \`prophet\`, or a specific statsmodels family), pass that literal algorithm name to \`configure_experiment\`. Do NOT substitute a proxy model and do NOT claim the requested model is unavailable just because it was not listed in an example.
+- \`modelType\` is an open string, not a closed enum. If the user explicitly requests an algorithm/library (for example \`catboost\`, \`xgboost\`, \`lightgbm\`, \`prophet\`, \`tabtransformer\`, \`fttransformer\`, \`tabnet\`, or a specific statsmodels family), pass that literal algorithm name to \`configure_experiment\`. Do NOT substitute a proxy model and do NOT claim the requested model is unavailable just because it was not listed in an example.
 - Set appropriate hyperparameters (start with sensible defaults)
 - Choose split strategy (stratified_kfold for classification, train_test for quick iteration)
 - Specify target column and feature columns
@@ -43,13 +43,34 @@ Wait for user approval before proceeding.
 ### Stage 4: Generate Code
 Write the training code using notebook cell tools (\`write_cell\`, \`edit_cell\`).
 The code must:
-- Import required libraries
+- Import required libraries. Only use standard PyPI packages (sklearn, pandas, numpy, xgboost, lightgbm, catboost, pytorch_tabular, pytorch_tabnet, joblib, matplotlib, seaborn, scipy, statsmodels, prophet, torch). DO NOT import ChatGPT / OpenAI interpreter-only modules such as \`ace_tools\`, \`caas_jupyter_tools\`, \`ace_tools_open\`, or any variant — they are not published to PyPI and will fail to install in the runtime container. If you need to display a table, use \`print(df.to_string())\` or \`df.head().to_html()\`, NOT \`ace_tools.display_dataframe_to_user\`.
 - Load and prepare data with the configured split strategy
 - Define and train the model with specified hyperparameters
 - Capture metrics (accuracy, F1, confusion matrix where applicable)
 - Save model artifacts if requested
+- If \`modelType\` is \`tabtransformer\`, use a real TabTransformer implementation (for example \`pytorch_tabular.TabTransformerConfig\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If \`modelType\` is \`fttransformer\`, use a real FT-Transformer implementation (for example \`pytorch_tabular.FTTransformerConfig\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If \`modelType\` is \`tabnet\`, use a real TabNet implementation (for example \`pytorch_tabnet.TabNetClassifier\` / \`TabNetRegressor\`). Do NOT replace it with sklearn \`MLPClassifier\` or \`MLPRegressor\`.
+- If \`modelType\` is \`catboost\` and the training dataframe contains raw string/categorical columns (dtype == 'object'), you MUST tell CatBoost which columns are categorical. Either (a) pass \`cat_features=[<list of categorical column names or integer indices>]\` to \`CatBoostClassifier\` / \`CatBoostRegressor\` at init OR fit time, OR (b) wrap CatBoost in a \`Pipeline\` whose preprocessor step one-hot-encodes those columns (with \`handle_unknown='ignore'\`) BEFORE CatBoost sees them. Passing raw "M"/"F"/"yes"/"no" strings without either of these steps raises \`CatBoostError: Cannot convert '...' to float\` and aborts training. Example:
+  \`\`\`python
+  categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
+  model = CatBoostClassifier(iterations=200, cat_features=categorical_features, verbose=0)
+  model.fit(X_train, y_train)
+  \`\`\`
+- If \`modelType\` is \`xgboost\` or \`lightgbm\` and the training dataframe contains raw string/categorical columns, encode them first (OneHotEncoder inside a Pipeline, pd.get_dummies, or ordinal/target encoding). XGBoost and LightGBM accept \`enable_categorical=True\` with pandas Categorical dtype but NOT raw \`object\` dtype — silent conversion failures produce opaque training errors. Safest path: always wrap them in a ColumnTransformer that one-hot-encodes object columns.
+- If the configured task type is \`regression\`, NEVER use \`stratify=y\`, \`StratifiedKFold\`, or \`StratifiedShuffleSplit\`. Regression targets must use unstratified splits.
+- If the configured task type is \`clustering\`, do not build a supervised target split or supervised metrics block.
+- If the user approved a specific estimator family (for example DecisionTree, RandomForest, KNeighbors, LogisticRegression, LinearRegression, Ridge, SVR, MLP, KMeans, LightGBM, XGBoost, or CatBoost), implement that exact family. Do NOT silently substitute a nearby baseline.
 - If you use stratified splitting or stratified CV for classification, first verify every class has at least 2 rows. If not, fall back to an unstratified split or a non-stratified CV strategy instead of crashing.
 - If you parse a date column with \`pd.to_datetime()\`, do NOT feed that raw datetime64 column into numeric imputers, scalers, or model features. Convert it to numeric/ordinal values, derive date parts, or drop the raw datetime column first. If the dataset already has numeric date features such as \`date_month\` or \`date_year\`, prefer them over the raw \`DATE\` column.
+- **Do NOT feed high-cardinality identifier columns (e.g. \`customer_id\`, \`user_id\`, \`uuid\`, \`email\`, \`transaction_id\`, or any column whose distinct value count is a large fraction of the row count) into OneHotEncoder, get_dummies, or any model feature matrix.** Drop them from \`featureColumns\` before fitting. They cause two correctness failures:
+  1. **Eval-split column mismatch.** OneHotEncoder fit on the train split produces 150 dummy columns (one per id); the eval split's ids are disjoint so \`pipeline.predict(X_test)\` raises \`ValueError: columns are missing: {...}\`. The evaluation cell cannot recover.
+  2. **Zero signal.** An id column has no predictive relationship with the target — the model learns overfit noise and the metrics are meaningless.
+  Rule of thumb: if \`df[col].nunique() > max(20, 0.3 * len(df))\` AND the column is not the target, exclude it from features. Prefer an explicit drop (\`df = df.drop(columns=['customer_id'])\`) over relying on a column transformer to silently ignore it.
+- **When you DO one-hot encode any remaining categorical column**, always pass \`handle_unknown='ignore'\` to \`OneHotEncoder\` (or \`drop_first=True\` + \`handle_unknown='ignore'\` for sklearn >= 1.1). Categories present at eval time but not at fit time would otherwise raise \`ValueError\` and abort evaluation. Example:
+  \`\`\`python
+  OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+  \`\`\`
 
 **Notebook structure rule (HARD):** During the execution turn, write training code as MULTIPLE SMALL CODE CELLS, not one monolithic cell.
 Use 2-4 code cells in this order when possible:
@@ -77,6 +98,8 @@ Write your training code in notebook cells, then execute it:
    - Print metrics to stdout (these are captured by the system)
    - Save the model: \`import joblib; joblib.dump(model, "model.joblib")\`
    - Print \`__TRAIN_COMPLETE__|{json.dumps(final_metrics)}\` ONLY in the FINAL executable training/evaluation cell, after the model fit and metrics are complete
+   - Runtime is CPU-only Linux Docker: never use \`device='cuda'\`, \`device='mps'\`, \`.cuda()\`, \`.to('cuda')\`, \`.to('mps')\`, or \`accelerator='gpu'/'cuda'/'mps'/'tpu'\`. For pytorch_tabular TrainerConfig, omit \`accelerator\` and \`devices\` (or set \`accelerator='cpu'\`). For pytorch_tabnet, omit \`device_name\`.
+   - Each code cell must be <= 80 executable lines. If a step is larger, split it across additional \`# Cell N\` markers.
 
 2. Run each code cell with \`run_cell\`. If a cell fails, fix that cell and re-run it. Do NOT call \`execute_training\` until the FINAL training/evaluation cell succeeds and emits the \`__TRAIN_COMPLETE__|\` marker.
 
@@ -125,6 +148,7 @@ Additional rules:
 - Add descriptive tags (baseline, tuned, production-candidate).
 - Do NOT pass an absolute path or a path containing ".." — the backend will reject it.
 - If you used a Pipeline (e.g. StandardScaler + model), call \`joblib.dump\` on the ENTIRE pipeline, not just the final estimator. The evaluation service reloads this file and feeds raw dataset rows to it.
+- The dumped object MUST be sklearn-compatible (have a \`.predict\` method). Do NOT wrap the model in a dict/tuple/list (e.g., \`{"model": clf, "categorical_columns": [...]}\`). For CatBoost with categoricals, pass \`cat_features\` into the estimator itself — do not bundle metadata alongside the model.
 - After the tool returns success, the model appears in the Experiments tab. Tell the user "Model registered — open the Experiments tab (or click Open Details) to see evaluation plots."
 
 ### Stage 10: Summarize

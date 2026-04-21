@@ -100,10 +100,11 @@ export const env = {
   docChunkOverlap: parseInteger(process.env.DOC_CHUNK_OVERLAP, 50),
 
   // Execution Environment
-  // 30s was too short for Training (RandomForest 300 trees + 5-fold CV
-  // timed out repeatedly). 5 minutes handles complex training jobs while
-  // still catching infinite loops. Override with EXECUTION_TIMEOUT_MS.
-  executionTimeoutMs: parseInteger(process.env.EXECUTION_TIMEOUT_MS, 300000),
+  // 300s was too tight for CPU transformer training (FT-Transformer on 18k rows
+  // × 5 epochs × 26 batches at ~2s/batch lands at 260-390s, right on the edge).
+  // 600s gives breathing room without masking real infinite loops. Override
+  // with EXECUTION_TIMEOUT_MS.
+  executionTimeoutMs: parseInteger(process.env.EXECUTION_TIMEOUT_MS, 600000),
   executionMaxMemoryMb: parseInteger(process.env.EXECUTION_MAX_MEMORY_MB, 2048),
   executionMaxCpuPercent: parseInteger(process.env.EXECUTION_MAX_CPU_PERCENT, 100),
   executionTmpfsMb: parseInteger(process.env.EXECUTION_TMPFS_MB, 1024),

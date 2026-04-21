@@ -8,6 +8,7 @@ import { LearningCurveChart } from '../charts/LearningCurveChart';
 import { CvBoxplot } from '../charts/CvBoxplot';
 import { ResidualsChart } from '../charts/ResidualsChart';
 import { ResidualHistogramChart } from '../charts/ResidualHistogramChart';
+import { MiniBars } from '../charts/MiniBars';
 
 interface PlotsTabProps {
   evaluation: EvaluationResult;
@@ -16,6 +17,11 @@ interface PlotsTabProps {
 export function PlotsTab({ evaluation }: PlotsTabProps) {
   const isClassification = evaluation.taskType === 'classification';
   const isRegression = evaluation.taskType === 'regression';
+  const isClustering = evaluation.taskType === 'clustering';
+  const clusterSizeItems = Object.entries(evaluation.clustering_metrics?.cluster_sizes ?? {}).map(([label, value]) => ({
+    label,
+    value,
+  }));
 
   return (
     <div className="space-y-8 p-5">
@@ -101,6 +107,64 @@ export function PlotsTab({ evaluation }: PlotsTabProps) {
             </div>
           </section>
         </>
+      )}
+
+      {isClustering && evaluation.clustering_metrics && (
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 mb-4 px-1">Clusters</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ChartCard label="Cluster Summary" delay={0}>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Clusters</p>
+                  <p className="mt-1 text-lg font-semibold">{evaluation.clustering_metrics.n_clusters}</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Silhouette</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {evaluation.clustering_metrics.silhouette == null
+                      ? '—'
+                      : evaluation.clustering_metrics.silhouette.toFixed(3)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Davies-Bouldin</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {evaluation.clustering_metrics.davies_bouldin == null
+                      ? '—'
+                      : evaluation.clustering_metrics.davies_bouldin.toFixed(3)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Calinski-Harabasz</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {evaluation.clustering_metrics.calinski_harabasz == null
+                      ? '—'
+                      : evaluation.clustering_metrics.calinski_harabasz.toFixed(3)}
+                  </p>
+                </div>
+              </div>
+            </ChartCard>
+
+            <ChartCard label="Cluster Sizes" delay={50}>
+              {clusterSizeItems.length > 0 ? (
+                <div className="space-y-4">
+                  <MiniBars items={clusterSizeItems} />
+                  <div className="space-y-2">
+                    {clusterSizeItems.map((item) => (
+                      <div key={item.label} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Cluster {item.label}</span>
+                        <span className="font-medium tabular-nums">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Cluster-size details were not available for this run.</p>
+              )}
+            </ChartCard>
+          </div>
+        </section>
       )}
     </div>
   );

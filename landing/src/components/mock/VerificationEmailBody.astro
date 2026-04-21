@@ -1,0 +1,171 @@
+---
+/**
+ * Mock verification email body. Content mirrors the live template in
+ * `backend/src/services/emailService.ts` — specifically `createVerificationHtml`
+ * (heading, intro, CTA label, expiry, closing). The visual styling is a
+ * simplified landing-aesthetic take rather than a verbatim paste of the
+ * multi-theme Nodemailer template; the Gmail-detail view is rendered inside
+ * a light surface that's always in light mode so the real template's
+ * dual-theme overrides aren't exercised here.
+ *
+ * Keep the copy in lockstep with the backend template — drift on any user-
+ * facing string here means the demo email says something different from
+ * what ships to real users.
+ */
+interface Props {
+  verifyUrl: string;
+  recipientName: string;
+}
+const { verifyUrl, recipientName } = Astro.props;
+---
+
+<article class="vmail">
+  <header class="vmail-masthead">
+    <div class="vmail-logomark">
+      <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+        <rect x="3" y="3" width="22" height="22" rx="6" fill="#0A0A0B"></rect>
+        <path d="M9 19V9h3l3 7 3-7h3v10" fill="none" stroke="#F7F8F8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+      <span>Agentic AutoML Platform</span>
+    </div>
+  </header>
+
+  <h1 class="vmail-heading">One last step.</h1>
+  <p class="vmail-intro">
+    Hi {recipientName}, confirm your email to finish setting up your account.
+  </p>
+
+  <a class="vmail-cta" href={verifyUrl}>
+    <span>Verify email</span>
+    <span aria-hidden="true" class="vmail-cta-arrow">&rarr;</span>
+  </a>
+
+  <p class="vmail-fallback">
+    If the button above doesn't work, paste this link into your browser:
+  </p>
+  <p class="vmail-fallback-url"><a href={verifyUrl}>{verifyUrl}</a></p>
+
+  <p class="vmail-meta">
+    This link expires in <strong>24 hours</strong>.
+  </p>
+
+  <hr class="vmail-rule" />
+
+  <p class="vmail-closing">
+    Didn't sign up? You can safely ignore this email.
+  </p>
+
+  <footer class="vmail-footer">
+    <p>Agentic AutoML Platform &middot; Capstone project</p>
+    <p>Miami University, Oxford OH</p>
+  </footer>
+</article>
+
+<style>
+  .vmail {
+    max-width: 600px;
+    margin: 32px auto;
+    padding: 40px 48px;
+    background: #FFFFFF;
+    border: 1px solid rgba(10,10,11,0.06);
+    border-radius: 12px;
+    color: #0A0A0B;
+    font-family:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    box-shadow: 0 1px 2px rgba(10,10,11,0.04), 0 8px 24px rgba(10,10,11,0.06);
+  }
+
+  .vmail-masthead {
+    margin-bottom: 24px;
+  }
+  .vmail-logomark {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 510;
+    letter-spacing: -0.01em;
+    color: #0A0A0B;
+  }
+
+  .vmail-heading {
+    margin: 32px 0 12px;
+    font-size: 32px;
+    font-weight: 510;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .vmail-intro {
+    margin: 0 0 28px;
+    color: #5E626B;
+    font-size: 16px;
+  }
+
+  .vmail-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 32px;
+    height: 46px;
+    background: linear-gradient(180deg,#1A1C1F 0%,#0A0A0B 100%);
+    color: #F7F8F8;
+    font-weight: 510;
+    font-size: 16px;
+    border-radius: 7px;
+    text-decoration: none;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.14),
+      0 1px 2px rgba(0,0,0,0.06),
+      0 8px 24px rgba(0,0,0,0.10);
+    transition: transform 160ms ease-out, gap 160ms ease-out;
+  }
+  .vmail-cta:hover {
+    transform: translateY(-1px);
+    gap: 14px;
+  }
+  .vmail-cta-arrow {
+    color: inherit;
+  }
+
+  .vmail-fallback {
+    margin: 28px 0 4px;
+    color: #5E626B;
+    font-size: 13px;
+  }
+  .vmail-fallback-url {
+    margin: 0 0 24px;
+    font-family: 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .vmail-fallback-url a {
+    color: #0A0A0B;
+  }
+
+  .vmail-meta {
+    margin: 12px 0 0;
+    color: #8A8F98;
+    font-size: 13px;
+  }
+
+  .vmail-rule {
+    margin: 32px 0 20px;
+    border: 0;
+    border-top: 1px solid rgba(10,10,11,0.08);
+  }
+  .vmail-closing {
+    color: #5E626B;
+    font-size: 14px;
+  }
+
+  .vmail-footer {
+    margin-top: 28px;
+    color: #8A8F98;
+    font-size: 12px;
+  }
+  .vmail-footer p {
+    margin: 2px 0;
+  }
+</style>

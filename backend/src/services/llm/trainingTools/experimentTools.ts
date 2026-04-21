@@ -2,37 +2,130 @@ import { randomUUID } from 'node:crypto';
 
 import { env } from '../../../config.js';
 import { appLogger } from '../../../logging/logger.js';
+import { createDatasetRepository } from '../../../repositories/datasetRepository.js';
 import { createProjectRepository } from '../../../repositories/projectRepository.js';
+import type { ModelTaskType } from '../../../types/model.js';
+import { findLikelyIdentifierColumns } from '../../columnClassification.js';
+import { inferSpecificModelType } from '../../runtimeDependencies.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
+import { inferTaskTypeFromTargetProfile } from './registrationTools.js';
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 
 const MAX_EXPERIMENTS_PER_TURN = 3;
 
 const projectRepository = createProjectRepository(env.storagePath);
+const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+
+function normalizeTaskType(value: unknown): ModelTaskType | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'classification' || normalized === 'regression' || normalized === 'clustering') {
+    return normalized;
+  }
+  return undefined;
+}
+
+function resolveConfiguredModelType(experimentName: string, requestedModelType: string): string {
+  const trimmedRequested = requestedModelType.trim();
+  const canonicalRequested = inferSpecificModelType(trimmedRequested);
+  if (canonicalRequested) {
+    return canonicalRequested;
+  }
+
+  const isGenericNeuralRequest = /^(?:unknown|neural[-_ ]?network|deep[-_ ]?learning|nn)$/i.test(trimmedRequested);
+  if (isGenericNeuralRequest) {
+    const canonicalFromName = inferSpecificModelType(experimentName);
+    if (canonicalFromName) {
+      return canonicalFromName;
+    }
+  }
+
+  return trimmedRequested || 'unknown';
+}
+
+function normalizeColumnName(name: string): string {
+  return name.toLowerCase().replace(/[\s_-]+/g, '').replace(/[^a-z0-9]/g, '');
+}
 
 /**
- * Load the list of enabled engineered feature names for a project. Used to
- * auto-populate `featureColumns` on configure_experiment when the LLM
- * omitted them, so models get trained on the engineered features produced
- * by the Feature Engineering phase — not the raw dataset columns. Without
- * this, a "successful" training run could silently use raw inputs while
- * reporting metrics against the FE-derived target (a correctness failure
- * that's invisible from the chat UI).
+ * Load the list of enabled engineered feature column names for a project.
+ * The FE pipeline stores human-readable `featureName` (e.g., "Event Weekday")
+ * but the actual dataset CSV columns are snake_case (e.g., "event_weekday").
+ * This function cross-references with the dataset's real column names to
+ * resolve the mismatch — so configure_experiment stores column names the
+ * training code can actually reference in `df[col]`.
  */
-async function loadEnabledFeatureNames(projectId: string): Promise<string[]> {
+async function loadEnabledFeatureNames(projectId: string, datasetId?: string): Promise<string[]> {
   try {
     const project = await projectRepository.getById(projectId);
     const features = project?.metadata?.features;
     if (!Array.isArray(features)) return [];
-    return features
+    const enabledHumanNames = features
       .filter((f): f is { featureName?: unknown; enabled?: unknown } =>
         typeof f === 'object' && f !== null
       )
       .filter((f) => f.enabled !== false)
       .map((f) => (typeof f.featureName === 'string' ? f.featureName : null))
       .filter((name): name is string => Boolean(name && name.trim()));
+
+    if (enabledHumanNames.length === 0) return [];
+
+    // Cross-reference with actual dataset columns to resolve name mismatches.
+    // Build a normalized → actualName map from the dataset, then match each
+    // FE featureName to the closest dataset column.
+    if (datasetId) {
+      try {
+        const dataset = await datasetRepository.getById(datasetId);
+        if (dataset?.columns && dataset.columns.length > 0) {
+          const actualColumns = dataset.columns.map((col) => col.name);
+          const normalizedMap = new Map<string, string>();
+          for (const col of actualColumns) {
+            normalizedMap.set(normalizeColumnName(col), col);
+          }
+
+          const resolved: string[] = [];
+          for (const humanName of enabledHumanNames) {
+            // Try exact match first
+            if (actualColumns.includes(humanName)) {
+              resolved.push(humanName);
+              continue;
+            }
+            // Try normalized match (Event Weekday → eventweekday → event_weekday)
+            const normalized = normalizeColumnName(humanName);
+            const match = normalizedMap.get(normalized);
+            if (match) {
+              resolved.push(match);
+              continue;
+            }
+            // Try substring/contains match: find any dataset column whose
+            // normalized form contains the normalized human name or vice versa
+            // (handles abbreviation gaps like "pct" in
+            // "feature_adoption_pct_missing_flag" vs "Feature Adoption Missing Flag").
+            let substringMatch: string | undefined;
+            for (const [normCol, actualCol] of normalizedMap) {
+              if (normCol.includes(normalized) || normalized.includes(normCol)) {
+                substringMatch = actualCol;
+                break;
+              }
+            }
+            if (substringMatch) {
+              resolved.push(substringMatch);
+              continue;
+            }
+            // Fallback: keep the original name (may fail downstream, but
+            // better than silently dropping it)
+            resolved.push(humanName);
+          }
+          return resolved;
+        }
+      } catch {
+        // Dataset lookup failed — fall through to returning raw names
+      }
+    }
+
+    return enabledHumanNames;
   } catch (err) {
     appLogger.warn('[configureExperiment] Failed to load project features for auto-population', {
       projectId,
@@ -60,7 +153,9 @@ export const configureExperiment: TrainingToolHandler = async (
 
   const experimentId = `exp-${randomUUID()}`;
   const experimentName = (typeof args.experimentName === 'string' ? args.experimentName : null) ?? 'Untitled Experiment';
-  const modelType = (typeof args.modelType === 'string' ? args.modelType : null) ?? 'unknown';
+  const requestedModelType = (typeof args.modelType === 'string' ? args.modelType : null) ?? 'unknown';
+  const modelType = resolveConfiguredModelType(experimentName, requestedModelType);
+  const modelTypeFromExperimentName = inferSpecificModelType(experimentName);
   const splitStrategy = (typeof args.splitStrategy === 'string' ? args.splitStrategy : null) ?? 'train_test';
   const now = nowIso();
   const requestedTargetColumn = typeof args.targetColumn === 'string' ? args.targetColumn.trim() : undefined;
@@ -75,6 +170,25 @@ export const configureExperiment: TrainingToolHandler = async (
     };
   }
 
+  // Family-prefix match is acceptable: a name like "decision_tree_churn_prediction"
+  // (inferred → "decision_tree") paired with modelType="decision_tree_regressor"
+  // or "decision_tree_classifier" is the SAME family — the suffix just makes
+  // the estimator choice more specific. Only reject when the families
+  // genuinely differ (e.g., name says "tabnet" but type is "tabtransformer").
+  if (modelTypeFromExperimentName && modelType !== modelTypeFromExperimentName) {
+    const typesInSameFamily =
+      modelType.startsWith(`${modelTypeFromExperimentName}_`)
+      || modelTypeFromExperimentName.startsWith(`${modelType}_`);
+    if (!typesInSameFamily) {
+      return {
+        error:
+          `Experiment name "${experimentName}" implies modelType="${modelTypeFromExperimentName}" `
+          + `but configure_experiment requested "${modelType}". Retry with modelType="${modelTypeFromExperimentName}" `
+          + 'and do not substitute a proxy model.'
+      };
+    }
+  }
+
   // Enforce the Feature Engineering pipeline handoff. If the project has
   // enabled engineered features and the LLM didn't explicitly supply
   // `featureColumns`, default to the full set of FE feature names. If the
@@ -83,17 +197,133 @@ export const configureExperiment: TrainingToolHandler = async (
   // makes the stronger ask (must be a subset of the FE feature names when
   // FE features exist); this handler-level default makes the happy path
   // work even when the LLM forgets.
-  const enabledFeatureNames = await loadEnabledFeatureNames(projectId);
+  const enabledFeatureNames = await loadEnabledFeatureNames(projectId, turn.datasetId ?? undefined);
+  // Load the dataset profile early — used both by the feature-columns
+  // identifier guard below and by the taskType resolver further down.
+  const datasetProfileForExperiment = turn.datasetId
+    ? await datasetRepository.getById(turn.datasetId).catch(() => undefined)
+    : undefined;
+
+  // Identifier guard (issue #336): drop high-cardinality identifier columns
+  // (customer_id, uuid, email, fully-unique PKs, columns with uniqueCount >
+  // max(20, 0.3 * nRows)) from the feature set. The LLM keeps picking them
+  // up despite the prompt contract, and any OneHotEncoder fit on them
+  // explodes at eval time with "columns are missing" when the test split
+  // has disjoint values. Code-level strip guarantees the registered model's
+  // featureColumns never contain a dataset-killer column.
+  const identifierColumnNames: Set<string> = datasetProfileForExperiment
+    ? new Set(
+        findLikelyIdentifierColumns(
+          datasetProfileForExperiment.columns ?? [],
+          datasetProfileForExperiment.nRows ?? 0,
+        ).map((column) => column.name),
+      )
+    : new Set<string>();
+
+  const stripIdentifierColumns = (candidateNames: string[]): { kept: string[]; stripped: string[] } => {
+    const stripped: string[] = [];
+    const kept = candidateNames.filter((name) => {
+      if (identifierColumnNames.has(name)) {
+        stripped.push(name);
+        return false;
+      }
+      return true;
+    });
+    return { kept, stripped };
+  };
+
   let featureColumns: string[] | undefined;
   if (Array.isArray(args.featureColumns)) {
-    featureColumns = args.featureColumns as string[];
+    const rawFeatureColumns = (args.featureColumns as unknown[])
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    // Target-leakage guard: if the LLM slipped and included the target in
+    // featureColumns, strip it. A model trained on its own target produces
+    // meaningless metrics and breaks evaluation (LLM prep code tries to
+    // auto-derive target from `df.columns - features` and finds nothing).
+    let afterTargetStrip = rawFeatureColumns;
+    if (effectiveTargetColumn && rawFeatureColumns.includes(effectiveTargetColumn)) {
+      appLogger.warn('[configureExperiment] Stripping target from LLM-supplied featureColumns (target leakage guard)', {
+        projectId,
+        experimentId,
+        targetColumn: effectiveTargetColumn,
+        originalFeatureCount: rawFeatureColumns.length,
+      });
+      afterTargetStrip = rawFeatureColumns.filter((name) => name !== effectiveTargetColumn);
+    }
+    const { kept, stripped } = stripIdentifierColumns(afterTargetStrip);
+    if (stripped.length > 0) {
+      appLogger.warn('[configureExperiment] Stripping high-cardinality identifier columns from LLM-supplied featureColumns (identifier guard #336)', {
+        projectId,
+        experimentId,
+        stripped,
+      });
+    }
+    featureColumns = kept;
   } else if (enabledFeatureNames.length > 0) {
-    featureColumns = enabledFeatureNames;
-    appLogger.info('[configureExperiment] Auto-populated featureColumns from FE pipeline', {
-      projectId,
-      experimentId,
-      featureCount: enabledFeatureNames.length
-    });
+    // FE features exist. Use ALL dataset columns (minus target) as features,
+    // not just the FE-produced columns — the FE pipeline adds derived columns
+    // to the existing dataset, so training should use the full column set.
+    if (datasetProfileForExperiment?.columns && datasetProfileForExperiment.columns.length > 0) {
+      const targetCol = effectiveTargetColumn;
+      const autoPopulated = datasetProfileForExperiment.columns
+        .map((col) => col.name)
+        .filter((name) => name !== targetCol);
+      const { kept, stripped } = stripIdentifierColumns(autoPopulated);
+      if (stripped.length > 0) {
+        appLogger.info('[configureExperiment] Stripping high-cardinality identifier columns from auto-populated featureColumns (identifier guard #336)', {
+          projectId,
+          experimentId,
+          stripped,
+        });
+      }
+      featureColumns = kept;
+      appLogger.info('[configureExperiment] Auto-populated featureColumns from dataset columns (FE-derived dataset)', {
+        projectId,
+        experimentId,
+        featureCount: featureColumns.length,
+        feFeatureCount: enabledFeatureNames.length,
+      });
+    } else {
+      featureColumns = enabledFeatureNames;
+      appLogger.info('[configureExperiment] Auto-populated featureColumns from FE pipeline names', {
+        projectId,
+        experimentId,
+        featureCount: enabledFeatureNames.length
+      });
+    }
+  }
+
+  // Resolve taskType against the target column's profile. The LLM may pass
+  // taskType; we validate against the dataset profile so a classifier can't
+  // land on a continuous target (or vice versa). If the LLM omitted it and
+  // the profile is unambiguous, we fill it in here so registration and
+  // evaluation downstream use a trustworthy value.
+  const datasetProfile = datasetProfileForExperiment;
+  const targetColumnProfile = effectiveTargetColumn && datasetProfile
+    ? datasetProfile.columns.find((col) => col.name === effectiveTargetColumn) ?? null
+    : null;
+  const profileVerdict = inferTaskTypeFromTargetProfile(targetColumnProfile);
+  const requestedTaskType = normalizeTaskType(args.taskType);
+  const profileAvailable = Boolean(targetColumnProfile);
+  let resolvedTaskType: ModelTaskType | undefined;
+
+  if (profileAvailable && profileVerdict.taskType !== 'ambiguous') {
+    if (requestedTaskType && requestedTaskType !== profileVerdict.taskType) {
+      return {
+        error:
+          `configure_experiment taskType="${requestedTaskType}" contradicts the target column profile: `
+          + `"${effectiveTargetColumn}" is ${profileVerdict.taskType} (${profileVerdict.reason}). `
+          + `Retry with taskType="${profileVerdict.taskType}" and a ${profileVerdict.taskType}-compatible modelType.`
+      };
+    }
+    resolvedTaskType = profileVerdict.taskType;
+  } else if (requestedTaskType) {
+    resolvedTaskType = requestedTaskType;
+  } else {
+    // Profile unavailable or ambiguous, and the LLM didn't declare taskType.
+    // Leave unresolved; downstream inferTaskType at registerModel will fill
+    // in from modelType regex + metrics. This keeps legacy flows unblocked.
+    resolvedTaskType = undefined;
   }
 
   const experiments = ((run.metadata?.experiments as Record<string, unknown>) ?? {}) as Record<string, unknown>;
@@ -109,6 +339,8 @@ export const configureExperiment: TrainingToolHandler = async (
     featureColumns,
     randomSeed: typeof args.randomSeed === 'number' ? args.randomSeed : undefined,
     datasetId: turn.datasetId,
+    taskType: resolvedTaskType,
+    targetColumnProfile: targetColumnProfile ?? undefined,
     createdAt: now,
     updatedAt: now
   };
@@ -120,6 +352,7 @@ export const configureExperiment: TrainingToolHandler = async (
       experimentId,
       experimentName,
       modelType,
+      taskType: resolvedTaskType,
       splitStrategy,
       targetColumn: effectiveTargetColumn,
       featureColumns,
@@ -128,7 +361,9 @@ export const configureExperiment: TrainingToolHandler = async (
         featureColumns && featureColumns.length > 0
           ? ` across ${featureColumns.length} feature column${featureColumns.length === 1 ? '' : 's'}`
           : ''
-      }${effectiveTargetColumn ? ` targeting ${effectiveTargetColumn}` : ''}.`
+      }${effectiveTargetColumn ? ` targeting ${effectiveTargetColumn}` : ''}${
+        resolvedTaskType ? ` as a ${resolvedTaskType} task` : ''
+      }.`
     }
   };
 };

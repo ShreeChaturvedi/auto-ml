@@ -19,14 +19,10 @@ interface QuestionCardsProps {
 
 type AnswerState = Record<string, string | string[]>;
 
-// Option chip states — default (muted border over a faint surface), hover
-// (border/background brighten), selected (primary ring + accent fill). All
-// opacity steps are valid Tailwind stops so the classes resolve in both the
-// frontend and landing builds.
 const getCardClassName = (selected: boolean) =>
   cn(
-    'cursor-pointer border border-border bg-background/40 transition-all hover:border-primary/40 hover:bg-accent/40',
-    selected && 'border-primary/70 bg-primary/10 ring-1 ring-primary/70 hover:bg-primary/10'
+    'cursor-pointer border transition-colors hover:border-primary/40',
+    selected && 'border-primary bg-primary/5'
   );
 
 function OptionCard({

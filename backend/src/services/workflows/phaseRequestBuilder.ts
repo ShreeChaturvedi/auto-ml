@@ -21,7 +21,10 @@ import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
 import { getPhaseConfig } from './phaseConfig.js';
-import { hasPendingApprovedTrainingExperiments } from './trainingExperimentSelection.js';
+import {
+  hasPendingApprovedTrainingExperiments,
+  parseApprovedTrainingExperimentNames,
+} from './trainingExperimentSelection.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const projectRepository = createProjectRepository(env.storagePath);
@@ -557,20 +560,33 @@ export function resolveTrainingLifecycleNode(
     const startingStatus = typeof state.run.metadata?.workflowTurnStartStatus === 'string'
       ? state.run.metadata.workflowTurnStartStatus
       : state.run.status;
+    const hasExplicitApprovedSelection = parseApprovedTrainingExperimentNames(state.turn.prompt).length > 0;
+    const guardPausedGenerateCode = (stage: string): string => {
+      if (startingStatus === 'paused' && !hasExplicitApprovedSelection && stage === 'generate_code') {
+        return 'propose_model';
+      }
+      return stage;
+    };
 
     // Resumed training turns (typically after approval pause) must continue
     // from the next lifecycle stage, not restart configuration.
     if (startingStatus === 'paused') {
+      if (hasExplicitApprovedSelection) {
+        return 'generate_code';
+      }
       if (hasConfiguredExperimentsAwaitingProposal) {
         return 'propose_model';
       }
+      if (state.run.currentNode === 'propose_model') {
+        return 'propose_model';
+      }
       if (typeof nextStage === 'string' && lifecycleStageNames.has(nextStage)) {
-        return nextStage;
+        return guardPausedGenerateCode(nextStage);
       }
       if (currentNodeIsValid) {
-        return currentNode;
+        return guardPausedGenerateCode(currentNode);
       }
-      return inferResumeStageFromHistory();
+      return guardPausedGenerateCode(inferResumeStageFromHistory());
     }
     if (startingStatus === 'failed_retryable' || startingStatus === 'failed') {
       if (hasConfiguredExperimentsAwaitingProposal) {

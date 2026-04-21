@@ -9,7 +9,7 @@ import { exec } from 'child_process';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
 import { mkdir, rm } from 'fs/promises';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { promisify } from 'util';
 
 import { env } from '../config.js';
@@ -26,6 +26,7 @@ import { ensureRuntimeImage } from './container/imageManager.js';
 import { ensureIsolatedNetwork } from './container/networkManager.js';
 export type { Container, ContainerConfig } from './container/types.js';
 import type { Container, ContainerConfig } from './container/types.js';
+import { canReuseContainerForConfig, normalizeWorkspacePath } from './containerReuse.js';
 import { execDocker } from './dockerUtils.js';
 import { shutdownKernel } from './kernelManager.js';
 
@@ -55,7 +56,7 @@ export async function createContainer(config: ContainerConfig): Promise<Containe
     const id = randomUUID();
     // Normalize to an absolute path so subsequent file operations are consistent even if the
     // backend is launched from different working directories (dev vs prod, tests, etc.).
-    const workspacePath = resolve(config.workspacePath);
+    const workspacePath = normalizeWorkspacePath(config.workspacePath);
 
     // Create workspace directory
     await mkdir(workspacePath, { recursive: true });
@@ -175,14 +176,11 @@ export function getContainer(id: string): Container | undefined {
 export async function getOrCreateContainer(config: ContainerConfig): Promise<Container> {
     // Look for existing container for this project
     for (const container of containers.values()) {
-        if (
-            container.projectId === config.projectId &&
-            container.pythonVersion === config.pythonVersion
-        ) {
+        if (canReuseContainerForConfig(container, config)) {
             // Guard against stale in-memory state where the workspace directory was deleted
             // (e.g. manual cleanup or previous crash). If the workspace is missing, recreate
             // the container so execution can proceed.
-            const workspacePath = resolve(container.workspacePath);
+            const workspacePath = normalizeWorkspacePath(container.workspacePath);
             if (!existsSync(workspacePath)) {
                 appLogger.warn('[containerManager] Workspace missing for active container; recreating container:', {
                     containerId: container.containerId,

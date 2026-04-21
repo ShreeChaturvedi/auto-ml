@@ -11,10 +11,44 @@
 /* ------------------------------------------------------------------ */
 
 /**
- * Return Python lines that load a CSV into a DataFrame called `df`.
+ * Return Python lines that load a dataset file into a DataFrame called `df`.
+ *
+ * Branches on the file extension and mirrors the kernel's lenient readers
+ * so the eval / tuning scripts never choke on formats the upload layer
+ * accepted (TSV / JSONL / ragged CSV / Latin-1 encoded CSV). Issues
+ * #341 / #342.
  */
 export function buildDatasetLoadLines(datasetPath: string): string[] {
-  return [`df = pd.read_csv(${JSON.stringify(datasetPath)})`];
+  const lower = datasetPath.toLowerCase();
+  const pathLiteral = JSON.stringify(datasetPath);
+  if (lower.endsWith('.tsv') || lower.endsWith('.tab')) {
+    return [`df = pd.read_csv(${pathLiteral}, sep='\\t', on_bad_lines='skip', engine='python')`];
+  }
+  if (lower.endsWith('.jsonl') || lower.endsWith('.ndjson')) {
+    return [`df = pd.read_json(${pathLiteral}, lines=True)`];
+  }
+  if (lower.endsWith('.json')) {
+    return [
+      `try:`,
+      `    df = pd.read_json(${pathLiteral})`,
+      `except ValueError:`,
+      `    df = pd.read_json(${pathLiteral}, lines=True)`,
+    ];
+  }
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+    return [`df = pd.read_excel(${pathLiteral})`];
+  }
+  // CSV default with lenient fallback ladder:
+  //   1. UTF-8 + skip bad lines + python engine (tolerates ragged + quote issues)
+  //   2. Latin-1 fallback for Windows-1252 encoded files
+  // The default C engine raises on ragged rows; the python engine + skip
+  // matches the behavior we use in kernelManager._read_csv_robust.
+  return [
+    `try:`,
+    `    df = pd.read_csv(${pathLiteral}, encoding='utf-8', on_bad_lines='skip', engine='python')`,
+    `except (UnicodeDecodeError, UnicodeError):`,
+    `    df = pd.read_csv(${pathLiteral}, encoding='latin-1', on_bad_lines='skip', engine='python')`,
+  ];
 }
 
 /* ------------------------------------------------------------------ */
@@ -135,6 +169,31 @@ export function buildStandardImports(extras?: string[]): string[] {
   }
 
   lines.push('');
+  lines.push('def _sanitize_json_value(value):');
+  lines.push('    if value is None:');
+  lines.push('        return None');
+  lines.push('    if isinstance(value, dict):');
+  lines.push('        return {str(key): _sanitize_json_value(val) for key, val in value.items()}');
+  lines.push('    if isinstance(value, (list, tuple)):');
+  lines.push('        return [_sanitize_json_value(item) for item in value]');
+  lines.push('    if isinstance(value, np.ndarray):');
+  lines.push('        return _sanitize_json_value(value.tolist())');
+  lines.push('    if isinstance(value, pd.Series):');
+  lines.push('        return _sanitize_json_value(value.tolist())');
+  lines.push('    if isinstance(value, pd.Index):');
+  lines.push('        return _sanitize_json_value(value.tolist())');
+  lines.push('    if isinstance(value, pd.Timestamp):');
+  lines.push('        return value.isoformat()');
+  lines.push('    if isinstance(value, (np.bool_, bool)):');
+  lines.push('        return bool(value)');
+  lines.push('    if isinstance(value, (np.integer, int)):');
+  lines.push('        return int(value)');
+  lines.push('    if isinstance(value, (np.floating, float)):');
+  lines.push('        return None if not np.isfinite(value) else float(value)');
+  lines.push('    if isinstance(value, np.generic):');
+  lines.push('        return _sanitize_json_value(value.item())');
+  lines.push('    return value');
+  lines.push('');
 
   return lines;
 }
@@ -185,7 +244,7 @@ export function buildResultSaving(outputDirVar: string = 'output_dir', options?:
   return [
     "# Save result",
     `with open(os.path.join(${outputDirVar}, ${JSON.stringify(filename)}), 'w') as f:`,
-    `    json.dump(${resultVar}, f)`,
+    `    json.dump(_sanitize_json_value(${resultVar}), f, allow_nan=False)`,
     '',
   ];
 }

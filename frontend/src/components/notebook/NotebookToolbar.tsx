@@ -34,7 +34,6 @@ import {
 } from '@/components/agentic/toolbarStyles';
 import { Code, Eraser, List, Loader2, Play, RotateCcw, Square, Type } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { isDemoMode } from '@/lib/demoMode';
 import type { NotebookCell, NotebookCellType } from '@/types/notebook';
 import type { TocHeading } from '@/lib/markdown/tocUtils';
 
@@ -82,10 +81,6 @@ export function NotebookToolbar({
   }, [checkCloudHealth]);
 
   useEffect(() => {
-    if (isDemoMode()) {
-      return;
-    }
-
     if (projectId && cloudAvailable && !sessionId && !cloudInitializing) {
       initializeCloud(projectId).catch(() => undefined);
     }

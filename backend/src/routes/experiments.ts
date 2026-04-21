@@ -23,7 +23,7 @@ import {
   buildExperimentReportUserMessage,
 } from '../services/llm/prompts/experimentReport.js';
 import { compareModels } from '../services/modelComparison.js';
-import { getModelById, listModels } from '../services/modelTraining.js';
+import { getModelById, listModels, updateModelRecord } from '../services/modelTraining.js';
 import { createNlFilterNormalizer, NlFilterResponseSchema } from '../services/nlFilter/schema.js';
 import { buildNlFilterContext, buildNlFilterPrompt } from '../services/nlFilter/service.js';
 import { requestStructuredJson } from '../services/nlToSql/structuredRequest.js';
@@ -46,6 +46,27 @@ const INSIGHT_SYSTEM_PROMPTS: Record<string, string> = {
 
 const VALID_INSIGHT_TYPES = new Set([...Object.keys(INSIGHT_SYSTEM_PROMPTS), 'report']);
 
+// Error signatures for evaluation failures that have since been fixed at the
+// code layer. When a failed model matches one of these, we auto-run a fresh
+// evaluation once per model so the user stops seeing a stale cached error.
+const STALE_EVALUATION_ERROR_SIGNATURES: RegExp[] = [
+  /'dict'\s+object\s+has\s+no\s+attribute\s+'predict'/i,
+  /Saved model artifact is a dict with no predict-capable inner value/i,
+];
+
+const MAX_EVALUATION_AUTO_RETRIES = 1;
+
+function shouldAutoRetryEvaluation(evaluationError: string | undefined): boolean {
+  if (!evaluationError) return false;
+  return STALE_EVALUATION_ERROR_SIGNATURES.some((pattern) => pattern.test(evaluationError));
+}
+
+function readEvaluationAutoRetryCount(metadata: Record<string, unknown> | undefined): number {
+  const raw = metadata?.evaluationAutoRetryCount;
+  const parsed = typeof raw === 'number' ? raw : Number.NaN;
+  return Number.isFinite(parsed) ? Number(parsed) : 0;
+}
+
 export function createExperimentsRouter(): Router {
   const router = Router();
   const projectRepository = getProjectRepository();
@@ -53,9 +74,9 @@ export function createExperimentsRouter(): Router {
   // GET /experiments/:modelId/evaluation
   router.get('/:modelId/evaluation', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { modelId } = req.params;
+    const model = await getModelById(modelId);
 
     if (req.user) {
-      const model = await getModelById(modelId);
       if (model?.projectId) {
         const project = await verifyProjectOwnership(model.projectId, req.user.user_id, projectRepository);
         if (!project) {
@@ -70,6 +91,50 @@ export function createExperimentsRouter(): Router {
     if (data) {
       res.json(data);
     } else {
+      if (model) {
+        const retryCount = readEvaluationAutoRetryCount(model.metadata);
+        if (
+          model.evaluationStatus === 'failed'
+          && shouldAutoRetryEvaluation(model.evaluationError)
+          && retryCount < MAX_EVALUATION_AUTO_RETRIES
+        ) {
+          const claimed = await updateModelRecord(modelId, (current) => {
+            if (current.evaluationStatus !== 'failed') return current;
+            const currentCount = readEvaluationAutoRetryCount(current.metadata);
+            if (currentCount >= MAX_EVALUATION_AUTO_RETRIES) return current;
+            return {
+              ...current,
+              evaluationStatus: 'computing',
+              metadata: {
+                ...(current.metadata ?? {}),
+                evaluationAutoRetryCount: currentCount + 1,
+              },
+            };
+          });
+          if (claimed?.evaluationStatus === 'computing') {
+            appLogger.info(`[experiments] Auto-retrying stale evaluation for ${modelId}`);
+            void runEvaluation(modelId).catch((error) => {
+              appLogger.error('[experiments] Evaluation auto-retry failed', error);
+            });
+            res.status(202).json({
+              status: 'computing',
+              message: 'Re-running evaluation against the latest evaluation script.',
+            });
+            return;
+          }
+        }
+        res.status(202).json({
+          status: model.evaluationStatus === 'ready'
+            ? 'computing'
+            : (model.evaluationStatus ?? 'pending'),
+          message: model.evaluationStatus === 'failed'
+            ? 'Evaluation artifacts are unavailable for this model.'
+            : model.evaluationStatus === 'ready'
+              ? 'Evaluation artifacts are still being finalized.'
+            : 'Evaluation is still being generated.',
+        });
+        return;
+      }
       res.status(404).json({ error: 'Evaluation not found' });
     }
   }));
@@ -94,7 +159,7 @@ export function createExperimentsRouter(): Router {
     if (data) {
       res.json(data);
     } else {
-      res.status(404).json({ error: 'SHAP data not found' });
+      res.status(204).end();
     }
   }));
 
@@ -113,6 +178,31 @@ export function createExperimentsRouter(): Router {
         res.status(404).json({ error: 'Model not found' });
         return;
       }
+    }
+
+    if (model.taskType === 'clustering') {
+      const cachedEvaluation = await loadModelFile(join(env.modelStorageDir, modelId, 'evaluation.json'));
+      if (!cachedEvaluation) {
+        res.status(409).json({
+          error: 'Clustering evaluation artifacts are missing. Retrain the model to regenerate them.',
+        });
+        return;
+      }
+
+      const updatedModel = model.evaluationStatus === 'ready'
+        ? model
+        : await updateModelRecord(modelId, (current) => ({
+            ...current,
+            evaluationStatus: 'ready',
+            evaluationComputedAt: current.evaluationComputedAt ?? new Date().toISOString(),
+            evaluationError: undefined,
+          }));
+
+      res.json({
+        ok: true,
+        evaluationStatus: updatedModel?.evaluationStatus ?? 'ready',
+      });
+      return;
     }
 
     await runEvaluation(modelId);

@@ -224,6 +224,29 @@ export async function applyFeatureEngineering(input: FeatureEngineeringInput) {
     throw new Error('No enabled features to apply.');
   }
 
+  // Guard against featureName collisions — duplicates silently overwrite in
+  // the generated pandas script, and a name matching an existing dataset
+  // column overwrites the source column before any downstream feature can
+  // reference it. Both produce confusing "no new columns" errors later.
+  // Issue #341/#343.
+  const seenNames = new Set<string>();
+  const existingColumns = new Set(dataset.columns.map((column) => column.name));
+  for (const feature of enabledFeatures) {
+    if (!feature.featureName) {
+      throw new Error('Each feature must have a non-empty featureName.');
+    }
+    if (seenNames.has(feature.featureName)) {
+      throw new Error(`Duplicate featureName "${feature.featureName}" in apply request.`);
+    }
+    if (existingColumns.has(feature.featureName)) {
+      throw new Error(
+        `Feature "${feature.featureName}" collides with an existing dataset column. `
+          + 'Pick a different name or drop the source column first.',
+      );
+    }
+    seenNames.add(feature.featureName);
+  }
+
   const datasetFilePath = join(env.datasetStorageDir, dataset.datasetId, dataset.filename);
   if (!existsSync(datasetFilePath)) {
     throw new Error('Dataset file is missing on disk.');

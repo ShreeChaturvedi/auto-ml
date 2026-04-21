@@ -19,6 +19,16 @@ import type { NotebookSlice, NotebookState } from './types';
 const _hmr = (import.meta.hot?.data ?? {}) as { wsCleanup?: () => void };
 let wsListenersCleanup: (() => void) | null = _hmr.wsCleanup ?? null;
 
+function isSelectablePhaseNotebook(entry: Pick<Notebook, 'kind' | 'metadata'>): boolean {
+  if (entry.kind !== 'phase') {
+    return false;
+  }
+  const metadata = entry.metadata && typeof entry.metadata === 'object' && !Array.isArray(entry.metadata)
+    ? entry.metadata as Record<string, unknown>
+    : null;
+  return metadata?.phase !== 'archived';
+}
+
 // ============================================================
 // Session state helpers
 // ============================================================
@@ -101,7 +111,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
       const resolvedNotebookId =
         preferredNotebookId && notebooks.some((entry) => entry.notebookId === preferredNotebookId)
           ? preferredNotebookId
-          : notebooks.find((nb) => nb.kind === 'phase')?.notebookId ?? null;
+          : notebooks.find((nb) => isSelectablePhaseNotebook(nb))?.notebookId ?? null;
       const resolvedNotebook =
         notebooks.find((entry) => entry.notebookId === resolvedNotebookId) ?? null;
 
@@ -194,7 +204,7 @@ export const createSessionSlice: NotebookSlice<SessionSlice> = (set, get) => ({
         const nextActiveNotebookId =
           state.activeNotebookId && notebooks.some((entry) => entry.notebookId === state.activeNotebookId)
             ? state.activeNotebookId
-            : notebooks.find((nb) => nb.kind === 'phase')?.notebookId ?? null;
+            : notebooks.find((nb) => isSelectablePhaseNotebook(nb))?.notebookId ?? null;
 
         const nextNotebook =
           notebooks.find((entry) => entry.notebookId === nextActiveNotebookId) ?? null;

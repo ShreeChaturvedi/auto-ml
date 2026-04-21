@@ -1,0 +1,142 @@
+---
+// Gmail email-detail lookalike. Renders the verification email from
+// "Agentic AutoML" with the CTA linking to the real frontend verify page.
+// Arriving here from `/mock-gmail` is the second step in the signup→verify
+// capture flow.
+import Root from '@/layouts/Root.astro';
+import GmailHeader from '@/components/mock/GmailHeader.astro';
+import GmailSidebar from '@/components/mock/GmailSidebar.astro';
+import VerificationEmailBody from '@/components/mock/VerificationEmailBody.astro';
+import { getVerifyEmailUrl } from '@/lib/appLinks';
+
+// Token value matches `MOCK_VERIFY_TOKEN` in `video/scripts/capture-demo.ts`.
+const VERIFY_URL = getVerifyEmailUrl('mock-verify-token-abc123');
+const RECIPIENT_NAME = 'Ayush';
+---
+
+<Root title="Verify your email - Inbox">
+  <div class="gm-shell">
+    <GmailHeader />
+    <div class="gm-body">
+      <GmailSidebar activeLabel="inbox" />
+
+      <main class="gm-main">
+        <div class="gm-toolbar">
+          <a href="/mock-gmail" class="gm-icon-btn" aria-label="Back to Inbox">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#5F6368" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+          </a>
+          <span class="gm-toolbar-spacer"></span>
+        </div>
+
+        <header class="gm-thread-head">
+          <h1 class="gm-thread-subject-head">Verify your email</h1>
+          <div class="gm-thread-meta">
+            <div class="gm-sender-avatar" aria-hidden="true">A</div>
+            <div class="gm-sender-block">
+              <span class="gm-sender-name">Agentic AutoML</span>
+              <span class="gm-sender-to">to me</span>
+            </div>
+            <span class="gm-sender-time">Wed, Apr 15, 3:30 PM (0 minutes ago)</span>
+          </div>
+        </header>
+
+        <VerificationEmailBody verifyUrl={VERIFY_URL} recipientName={RECIPIENT_NAME} />
+      </main>
+    </div>
+  </div>
+</Root>
+
+<style is:global>
+  body { margin: 0; background: #F6F8FC; }
+</style>
+<style>
+  .gm-shell {
+    min-height: 100vh;
+    background: #F6F8FC;
+    color: #202124;
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  .gm-body {
+    display: flex;
+  }
+  .gm-main {
+    flex: 1;
+    background: #FFFFFF;
+    margin: 0 16px 16px 0;
+    border-radius: 16px;
+    min-height: calc(100vh - 80px);
+    overflow: hidden;
+  }
+
+  .gm-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #F0F1F3;
+  }
+  .gm-toolbar-spacer { flex: 1; }
+  .gm-icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: background-color 120ms ease-out;
+  }
+  .gm-icon-btn:hover { background: rgba(60,64,67,0.08); }
+
+  .gm-thread-head {
+    padding: 24px 48px 16px;
+  }
+  .gm-thread-subject-head {
+    margin: 0 0 16px;
+    font-size: 22px;
+    font-weight: 500;
+    color: #202124;
+    letter-spacing: -0.01em;
+  }
+  .gm-thread-meta {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    align-items: center;
+    gap: 12px;
+  }
+  .gm-sender-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #0A0A0B;
+    color: #F7F8F8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .gm-sender-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .gm-sender-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #202124;
+  }
+  .gm-sender-to {
+    font-size: 12px;
+    color: #5F6368;
+  }
+  .gm-sender-time {
+    font-size: 12px;
+    color: #5F6368;
+    white-space: nowrap;
+  }
+</style>

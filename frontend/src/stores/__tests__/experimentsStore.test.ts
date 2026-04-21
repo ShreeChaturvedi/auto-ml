@@ -116,6 +116,14 @@ describe('experimentsStore', () => {
     expect(useExperimentsStore.getState().evaluations['model-1']).toEqual(MOCK_EVALUATION);
   });
 
+  it('fetchEvaluation() leaves cache unresolved when evaluation is still being generated', async () => {
+    fetchEvaluationMock.mockResolvedValue(undefined);
+
+    await useExperimentsStore.getState().fetchEvaluation('model-1');
+
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+  });
+
   it('fetchEvaluation() does not re-fetch if already cached', async () => {
     fetchEvaluationMock.mockResolvedValue(MOCK_EVALUATION);
 
@@ -145,6 +153,14 @@ describe('experimentsStore', () => {
     expect(useExperimentsStore.getState().evaluations['model-1']).toBeNull();
   });
 
+  it('fetchEvaluation() can skip caching failures so pending evaluations keep polling', async () => {
+    fetchEvaluationMock.mockRejectedValue(new Error('404'));
+
+    await useExperimentsStore.getState().fetchEvaluation('model-1', false, false);
+
+    expect(useExperimentsStore.getState().evaluations['model-1']).toBeUndefined();
+  });
+
   it('fetchEvaluation() does not re-fetch after failure (null cached)', async () => {
     fetchEvaluationMock.mockRejectedValue(new Error('404'));
 
@@ -162,6 +178,14 @@ describe('experimentsStore', () => {
     expect(useExperimentsStore.getState().shapData['model-1']).toBeNull();
   });
 
+  it('fetchShap() treats an empty backend response as unavailable instead of throwing', async () => {
+    fetchShapMock.mockResolvedValue(undefined as never);
+
+    await useExperimentsStore.getState().fetchShap('model-1');
+
+    expect(useExperimentsStore.getState().shapData['model-1']).toBeNull();
+  });
+
   it('fetchShap() does not re-fetch after 404 (null cached)', async () => {
     fetchShapMock.mockRejectedValue(new Error('Not found'));
 
@@ -173,6 +197,14 @@ describe('experimentsStore', () => {
 
   it('fetchErrorAnalysis() sets null on 404 to prevent infinite loading', async () => {
     fetchErrorAnalysisMock.mockRejectedValue(new Error('Not found'));
+
+    await useExperimentsStore.getState().fetchErrorAnalysis('model-1');
+
+    expect(useExperimentsStore.getState().errorAnalysis['model-1']).toBeNull();
+  });
+
+  it('fetchErrorAnalysis() treats an empty backend response as unavailable instead of throwing', async () => {
+    fetchErrorAnalysisMock.mockResolvedValue(undefined as never);
 
     await useExperimentsStore.getState().fetchErrorAnalysis('model-1');
 

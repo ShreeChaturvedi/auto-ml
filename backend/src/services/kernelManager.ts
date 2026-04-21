@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 
 import { WebSocket } from 'ws';
 
+import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import type { ExecutionResult, RichOutput } from '../types/execution.js';
 
@@ -41,6 +42,34 @@ export {
 /* ------------------------------------------------------------------ */
 
 const kernels = new Map<string, KernelConnection>();
+const KERNEL_CHANNEL_OPEN_TIMEOUT_MS = Math.max(env.kernelStartupTimeoutMs, 30_000);
+const KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS = 3;
+
+function wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function openKernelChannels(container: KernelContainer, kernelId: string): Promise<WebSocket> {
+    const url = wsUrl(container, kernelId);
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS; attempt += 1) {
+        try {
+            return await openWebSocket(url, KERNEL_CHANNEL_OPEN_TIMEOUT_MS);
+        } catch (error) {
+            lastError = error;
+            if (attempt < KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS) {
+                await wait(500 * attempt);
+            }
+        }
+    }
+
+    throw new Error(
+        `Failed to open WebSocket to kernel ${kernelId} on container ${container.id} `
+        + `after ${KERNEL_CHANNEL_OPEN_MAX_ATTEMPTS} attempts: `
+        + `${lastError instanceof Error ? lastError.message : 'connection failed'}`,
+    );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Kernel init code — runs once after a kernel is first connected    */
@@ -117,6 +146,34 @@ def _display_df(df):
 
 # Preprocessing helpers — called by generated cell code so the user sees
 # exactly what runs (no invisible wrapping).
+def _dataset_extension(filename):
+    """Return the lowercased extension (sans dot) of the dataset filename, or empty string."""
+    if not filename:
+        return ""
+    _, _, ext = str(filename).rpartition(".")
+    return ext.lower() if ext else ""
+
+def _read_csv_robust(path, sep=","):
+    """Read CSV tolerating ragged rows and non-UTF-8 encodings.
+
+    Ragged CSVs (extra/missing fields per row) crash the default C engine
+    with ParserError; Windows-1252/Latin-1 files raise UnicodeDecodeError.
+    Mirrors the ingest-time leniency in fileParser.ts so the kernel never
+    sees a stricter parser than the upload layer accepted. Issue #341.
+    """
+    import pandas as pd
+    attempts = [
+        {"encoding": "utf-8", "on_bad_lines": "skip", "engine": "python"},
+        {"encoding": "latin-1", "on_bad_lines": "skip", "engine": "python"},
+    ]
+    last_err = None
+    for kwargs in attempts:
+        try:
+            return pd.read_csv(path, sep=sep, **kwargs)
+        except Exception as err:
+            last_err = err
+    raise last_err if last_err else RuntimeError(f"Failed to read CSV at {path}")
+
 def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     """Load a dataset into the kernel namespace, reusing a cached copy if available."""
     import pandas as pd
@@ -125,35 +182,82 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     if cache_key in globals() and isinstance(globals()[cache_key], pd.DataFrame):
         globals()[df_name] = globals()[cache_key].copy()
         return globals()[df_name]
-    path = resolve_dataset_path(filename, dataset_id)
-    if file_type == "json":
-        try:
-            frame = pd.read_json(path)
-        except ValueError:
-            frame = pd.read_json(path, lines=True)
-    elif file_type == "xlsx":
-        frame = pd.read_excel(path)
+    # Prefer a base_processed.ext sibling if one exists (chained
+    # preprocessing steps save there). Falling through to the pristine
+    # original keeps step 1 reading the raw upload. Issue #342 root cause.
+    ext = _dataset_extension(filename)
+    processed_sibling = None
+    if filename and "." in filename and not filename.rsplit(".", 1)[0].endswith("_processed"):
+        _base, _dot, _ext = filename.rpartition(".")
+        processed_sibling = _base + "_processed." + _ext
+    if processed_sibling:
+        processed_path = resolve_dataset_path(processed_sibling, dataset_id)
+        if processed_path and Path(processed_path).exists():
+            path = processed_path
+        else:
+            path = resolve_dataset_path(filename, dataset_id)
     else:
-        frame = pd.read_csv(path)
+        path = resolve_dataset_path(filename, dataset_id)
+    if file_type == "json" or ext in ("json", "jsonl", "ndjson"):
+        if ext in ("jsonl", "ndjson"):
+            frame = pd.read_json(path, lines=True)
+        else:
+            try:
+                frame = pd.read_json(path)
+            except ValueError:
+                frame = pd.read_json(path, lines=True)
+    elif file_type == "xlsx" or ext == "xlsx":
+        frame = pd.read_excel(path)
+    elif ext in ("tsv", "tab"):
+        frame = _read_csv_robust(path, sep="\t")
+    else:
+        frame = _read_csv_robust(path, sep=",")
     globals()[df_name] = frame
     globals()[cache_key] = frame.copy()
     globals()["dataset_path"] = path
     globals()["active_dataset_id"] = dataset_id
     return frame
 
+def _derive_processed_filename(filename):
+    """Return base_processed.ext so save never clobbers the source file."""
+    if not filename:
+        return "_processed"
+    s = str(filename)
+    if "." in s:
+        base, _, ext = s.rpartition(".")
+        # Avoid stacking suffixes like foo_processed_processed.csv on re-saves.
+        if base.endswith("_processed"):
+            return s
+        return base + "_processed." + ext
+    return s + "_processed" if not s.endswith("_processed") else s
+
 def save_preprocessing_dataset(filename, dataset_id, file_type, df_name):
-    """Validate the dataframe and write it back to disk."""
+    """Validate the dataframe and write it to a _processed sibling file.
+
+    Writing to base_processed.ext (instead of overwriting the original
+    at /workspace/datasets/<id>/<filename>) means the raw upload's
+    workspace copy stays pristine for downstream phases (training /
+    feature-engineering / evaluation) that need to reload the source
+    shape. Issue #342 root cause.
+    """
     import pandas as pd
     frame = globals().get(df_name)
     if frame is None:
         raise ValueError(f"Preprocessing cell must leave the active dataframe in variable '{df_name}'.")
     if not isinstance(frame, pd.DataFrame):
         raise TypeError(f"Preprocessing variable '{df_name}' must be a pandas DataFrame.")
-    path = resolve_dataset_path(filename, dataset_id)
-    if file_type == "json":
-        frame.to_json(path, orient="records")
-    elif file_type == "xlsx":
+    processed_filename = _derive_processed_filename(filename)
+    path = resolve_dataset_path(processed_filename, dataset_id)
+    ext = _dataset_extension(processed_filename)
+    if file_type == "json" or ext in ("json", "jsonl", "ndjson"):
+        if ext in ("jsonl", "ndjson"):
+            frame.to_json(path, orient="records", lines=True)
+        else:
+            frame.to_json(path, orient="records")
+    elif file_type == "xlsx" or ext == "xlsx":
         frame.to_excel(path, index=False)
+    elif ext in ("tsv", "tab"):
+        frame.to_csv(path, sep="\t", index=False)
     else:
         frame.to_csv(path, index=False)
     # Invalidate cache after save — the data on disk is now transformed,
@@ -205,6 +309,35 @@ def save_to_project(df, name):
 print("Kernel initialized")
 `.trim();
 
+const KERNEL_SITE_REFRESH_CODE = `
+import importlib, site, sys
+site.addsitedir("/workspace/.python")
+if "/workspace/.python" not in sys.path:
+    sys.path.insert(0, "/workspace/.python")
+importlib.invalidate_caches()
+print("Kernel package cache refreshed")
+`.trim();
+
+function buildKernelImportVerificationCode(moduleNames: string[]): string {
+    const payload = JSON.stringify(moduleNames);
+    return `
+import importlib
+import json
+import site
+import sys
+
+site.addsitedir("/workspace/.python")
+if "/workspace/.python" not in sys.path:
+    sys.path.insert(0, "/workspace/.python")
+importlib.invalidate_caches()
+
+modules = json.loads(${JSON.stringify(payload)})
+for module_name in modules:
+    importlib.import_module(module_name)
+print("Kernel package import verification passed")
+`.trim();
+}
+
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
@@ -226,7 +359,7 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
             conn.ws.removeAllListeners();
             conn.ws.terminate();
         }
-        conn.ws = await openWebSocket(wsUrl(container, conn.kernelId));
+        conn.ws = await openKernelChannels(container, conn.kernelId);
         return;
     }
 
@@ -264,22 +397,17 @@ export async function connectKernel(container: KernelContainer): Promise<void> {
     const kernel = (await res.json()) as { id: string; name: string };
 
     // Open WebSocket channels
-    let ws: WebSocket;
     try {
-        ws = await openWebSocket(wsUrl(container, kernel.id));
+        const ws = await openKernelChannels(container, kernel.id);
+        kernels.set(container.id, {
+            kernelId: kernel.id,
+            gatewayUrl: base,
+            ws,
+            sessionId,
+        });
     } catch (err) {
-        throw new Error(
-            `Failed to open WebSocket to kernel ${kernel.id} on container ${container.id}: ` +
-            `${err instanceof Error ? err.message : 'connection failed'}`,
-        );
+        throw new Error(err instanceof Error ? err.message : 'Failed to open WebSocket to kernel');
     }
-
-    kernels.set(container.id, {
-        kernelId: kernel.id,
-        gatewayUrl: base,
-        ws,
-        sessionId,
-    });
 
     // Run kernel init code (environment setup, helpers)
     try {
@@ -308,6 +436,41 @@ export async function execute(
     onOutput?: (output: RichOutput) => void,
 ): Promise<ExecutionResult> {
     return executeOnKernel(connectKernel, kernels, container, code, timeoutMs, onOutput);
+}
+
+/**
+ * Refresh Python import caches inside a live kernel after an out-of-band pip install.
+ * This preserves notebook state while making newly installed packages importable.
+ */
+export async function refreshKernelPythonPath(container: KernelContainer): Promise<void> {
+    if (!hasKernel(container)) {
+        return;
+    }
+
+    const result = await execute(container, KERNEL_SITE_REFRESH_CODE, 10_000);
+    if (result.status !== 'success') {
+        throw new Error(result.error || result.stderr || 'Failed to refresh kernel package cache');
+    }
+}
+
+export async function verifyKernelImports(
+    container: KernelContainer,
+    moduleNames: string[],
+    timeoutMs = 20_000,
+): Promise<void> {
+    const uniqueModuleNames = Array.from(new Set(moduleNames.map((value) => value.trim()).filter(Boolean)));
+    if (uniqueModuleNames.length === 0) {
+        return;
+    }
+
+    const result = await execute(
+        container,
+        buildKernelImportVerificationCode(uniqueModuleNames),
+        timeoutMs,
+    );
+    if (result.status !== 'success') {
+        throw new Error(result.error || result.stderr || 'Kernel import verification failed');
+    }
 }
 
 /**
@@ -343,7 +506,7 @@ export async function restartKernel(container: KernelContainer): Promise<void> {
 
     // Reconnect WebSocket with fresh session
     conn.sessionId = randomUUID();
-    conn.ws = await openWebSocket(wsUrl(container, conn.kernelId));
+    conn.ws = await openKernelChannels(container, conn.kernelId);
 
     // Re-run init code so helpers (resolve_dataset_path, load/save_preprocessing_dataset)
     // survive kernel restarts — fixes #132.
@@ -383,4 +546,3 @@ export async function shutdownKernel(container: KernelContainer): Promise<void> 
 export function hasKernel(container: KernelContainer): boolean {
     return kernels.has(container.id);
 }
-

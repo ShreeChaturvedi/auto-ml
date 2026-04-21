@@ -103,11 +103,17 @@ const loadCaptureDuration = async (
 /**
  * Resolve a scene's duration (in frames) and its optional alignment sidecar.
  *
- * Duration priority: voiceover MP3 length → capture meta duration →
- * scene.durationInFrames. VO durations drive total composition length so scene
- * content determines pacing rather than hardcoded numbers. When a capture beat
- * exists but the MP3 does not, `.meta.json` keeps demo scenes aligned to the
- * trimmed clip length instead of holding on a dead last frame.
+ * Duration priority:
+ *   - **Demo scenes**: `max(captureDuration, voiceoverDuration)` — the MP4
+ *     always plays to completion; VO is treated as narration overlay. When
+ *     the MP3 is shorter than the clip (deliberately sparse narration with
+ *     silent holds), the scene still runs for the full clip length.
+ *   - **Non-demo scenes**: voiceover MP3 length → `scene.durationInFrames`.
+ *     Slides/cards let the narration budget drive the beat.
+ *
+ * When a capture beat exists but the MP3 does not, `.meta.json` keeps demo
+ * scenes aligned to the trimmed clip length instead of holding on a dead
+ * last frame.
  *
  * MP3 duration, alignment JSON, and capture metadata are loaded **in parallel**
  * per scene, so metadata resolution across many scenes parallelises fully via
@@ -124,9 +130,15 @@ const resolveSceneData = async (
     loadCaptureDuration(scene),
   ]);
 
+  // Demos: MP4 length is authoritative; VO is overlay. Slides: MP3 length wins.
+  const demoDuration =
+    scene.type === "demo" && captureDuration !== null
+      ? Math.max(captureDuration, voiceoverDuration ?? 0)
+      : null;
+
   return {
     durationInFrames:
-      voiceoverDuration ?? captureDuration ?? scene.durationInFrames,
+      demoDuration ?? voiceoverDuration ?? captureDuration ?? scene.durationInFrames,
     voiceoverAvailable:
       hasVoiceover(scene) && voiceoverDuration !== null,
     ...(alignment ? { alignment } : {}),

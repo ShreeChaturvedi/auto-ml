@@ -1,27 +1,31 @@
 import React from "react";
 import { interpolate, useCurrentFrame } from "remotion";
-import { EASE_IN_OUT, EASE_OUT, SPRING_SETTLE } from "../../../config/easing";
+import { ARCH_PALETTE } from "../../../config/arch-layout";
+import { EASE_IN_OUT, EASE_OUT } from "../../../config/easing";
 import { MONOSPACE_FONT, REGULAR_FONT, SERIF_FONT, TITLE_FONT } from "../../../config/fonts";
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
+import { DiagramConnector } from "../../primitives/DiagramConnector";
+import { GraphNode } from "../../primitives/GraphNode";
+import { MaskReveal } from "../../primitives/MaskReveal";
 import { MotionLine } from "../../primitives/MotionLine";
+import { BreathingHaloRing } from "../../primitives/NodeHaloRing";
 import { SlideShell } from "../../primitives/SlideShell";
 import { LABEL_RATE, TypeOnText } from "../../primitives/TypeOnText";
-import type { StaggeredItem } from "../../primitives/useStaggeredFadeIn";
-import { useStaggeredFadeIn } from "../../primitives/useStaggeredFadeIn";
 import type { PhaseInfo } from "../../primitives/useTimeline";
 import { useTimeline } from "../../primitives/useTimeline";
 import type { SlideBodyProps } from "./index";
 
 /** 8-phase frame budget (60fps). Sum = 1440 = 24s.
  *   1. 0–20      eyebrow + heading
- *   2. 20–80     axis draws left→right
- *   3. 80–380    4 markers on 75f beat (80/155/230/305): tick + dot + year + supporting line
+ *   2. 20–80     axis draws left→right + dotted secondary baseline draws
+ *   3. 80–380    4 markers on 75f beat (80/155/230/305): tick + dot + year + supporting
+ *                  + breathing halo rings on each marker
  *   4. 380–440   2026 "easy 20%" single pulse (opacity 1→0.3→1, 30f EASE_IN_OUT)
- *   5. 440–600   timeline translates up 120px; two cards rise with 60f stagger
- *   6. 600–1200  bullet items reveal 10f stagger
- *   7. 1200–1380 right-card accent bar draws + closing serif fades in
+ *   5. 440–600   timeline translates up 120px; two lanes of GraphNodes stagger in
+ *   6. 600–1200  vertical "GAP" connector draws + label fades in
+ *   7. 1200–1380 italic serif header above lanes + closing serif fade
  *   8. 1380–1440 hold */
 const PHASES = [20, 60, 300, 60, 160, 600, 180, 60] as const;
 
@@ -43,34 +47,56 @@ const MARKER_TICK_DRAW = 20;
 const MARKER_YEAR_DELAY = 12;
 const MARKER_LINE_DELAY = 24;
 const MARKER_LINE_FADE = 30;
-const SUPPORT_MAX_WIDTH = 300;
+const SUPPORT_MAX_WIDTH = 320;
+const SECONDARY_AXIS_OFFSET = 6;
+const SECONDARY_AXIS_DELAY = 20;
+const SECONDARY_AXIS_DURATION = 48;
+const HALO_PAD = 14;
 
 // --- Phase-4 pulse for "easy 20%" -------------------------------------------
 const PULSE_START = 395;
 const PULSE_DURATION = 30;
 
-// --- Phase-5 timeline lift + card stagger -----------------------------------
+// --- Phase-5 timeline lift + lane stagger -----------------------------------
 const TIMELINE_LIFT_PX = 120;
-const CARD_STAGGER = 60;
-const CARD_TRANSLATE_Y = 24;
 
-// --- Card layout (mirrors ProblemTrioSlide treatment) -----------------------
-const CARD_WIDTH = 700;
-const CARD_GAP = 40;
-const CARD_PADDING = 36;
-const CARD_RADIUS = 8;
-/** Matches app `shadow-sm` (light-mode card.tsx). */
-const CARD_SHADOW = "0 2px 12px rgba(0, 0, 0, 0.04)";
-/** Mirrors app `--border-subtle`. */
-const CARD_BORDER = "rgba(0, 0, 0, 0.10)";
+// --- Diagram (lane) geometry ------------------------------------------------
+const DIAGRAM_WIDTH = 1440;
+/** Container vertical anchor — pulled up from the original 55% so the 200px
+ *  vertical gap connector + both lanes + italic header all fit above the
+ *  closing serif without crowding. */
+const DIAGRAM_TOP_PCT = 47;
 
-// --- Bullet list reveal -----------------------------------------------------
-const BULLET_STAGGER = 10;
-const BULLET_TRANSLATE_Y = 6;
+const LEFT_NODE_W = 180;
+const LEFT_NODE_H = 52;
+const LEFT_NODE_GAP = 16;
+const LEFT_LANE_LINE_WIDTH = 680;
+const LEFT_LANE_LINE_DRAW = 56;
+const LEFT_STAGGER_STEP = 12;
+const LEFT_STAGGER_DELAY = 40;
 
-// --- Phase 7 — accent bar + closing serif -----------------------------------
-const ACCENT_BAR_WIDTH = 2;
-const ACCENT_BAR_DRAW = 48;
+const RIGHT_NODE_W = 160;
+const RIGHT_NODE_H = 48;
+const RIGHT_NODE_GAP = 16;
+const RIGHT_LANE_LINE_DRAW = 56;
+const RIGHT_STAGGER_STEP = 12;
+/** Right lane begins 30f after the left lane (per spec). */
+const RIGHT_STAGGER_DELAY = LEFT_STAGGER_DELAY + 30;
+
+const LANE_LINE_TO_NODES_GAP = 16;
+const TOP_LANE_TO_CONNECTOR_GAP = 8;
+const CONNECTOR_TO_BOTTOM_LANE_GAP = 8;
+const HEADER_TO_TOP_LANE_GAP = 18;
+
+// --- Vertical gap connector --------------------------------------------------
+const CONNECTOR_HEIGHT = 200;
+const CONNECTOR_DRAW_FRAMES = 48;
+const CONNECTOR_SVG_WIDTH = 24;
+const GAP_LABEL_DELAY_AFTER_CONNECTOR = 20;
+const GAP_LABEL_FADE_FRAMES = 18;
+
+// --- Phase 7 — italic serif header + closing serif --------------------------
+const HEADER_DELAY_OFFSET = 0;
 const CLOSING_DELAY_OFFSET = 24;
 
 // --- Timeline markers -------------------------------------------------------
@@ -80,7 +106,7 @@ type TimelineMarker = {
   x: number;
   supporting: string;
   /** True on the 2026 inflection marker — dot + the inline "easy 20%" phrase
-   *  carry ACCENT_COLOR. */
+   *  carry ACCENT_COLOR, and the breathing halo runs louder. */
   accent?: boolean;
 };
 
@@ -108,7 +134,6 @@ const TIMELINE_MARKERS: readonly TimelineMarker[] = [
   },
 ] as const;
 
-const LEFT_PANEL_HEADER = "What Previous Tools Automated";
 const LEFT_PANEL_ITEMS = [
   "model search",
   "hyperparameter tuning",
@@ -116,7 +141,6 @@ const LEFT_PANEL_ITEMS = [
   "metric evaluation",
 ] as const;
 
-const RIGHT_PANEL_HEADER = "What they didn't";
 const RIGHT_PANEL_ITEMS = [
   "domain framing",
   "data profiling",
@@ -129,7 +153,7 @@ const RIGHT_PANEL_ITEMS = [
 // --- Shared style constants --------------------------------------------------
 const HEADING_STYLE: React.CSSProperties = {
   ...TITLE_FONT,
-  fontSize: 48,
+  fontSize: 52,
   letterSpacing: "-0.025em",
   lineHeight: 1.15,
   maxWidth: 1500,
@@ -140,7 +164,7 @@ const HEADING_STYLE: React.CSSProperties = {
 
 const YEAR_LABEL_STYLE: React.CSSProperties = {
   ...MONOSPACE_FONT,
-  fontSize: 18,
+  fontSize: 24,
   fontVariantNumeric: "tabular-nums",
   lineHeight: 1.1,
   textAlign: "center",
@@ -148,38 +172,54 @@ const YEAR_LABEL_STYLE: React.CSSProperties = {
 
 const SUPPORT_LINE_STYLE: React.CSSProperties = {
   ...REGULAR_FONT,
-  fontSize: 16,
-  lineHeight: 1.45,
+  fontSize: 20,
+  lineHeight: 1.4,
   textAlign: "center",
   maxWidth: SUPPORT_MAX_WIDTH,
 };
 
-const CARD_HEADER_STYLE: React.CSSProperties = {
-  ...TITLE_FONT,
-  fontSize: 24,
-  lineHeight: 1.2,
-  letterSpacing: "-0.01em",
-};
-
-const CARD_ITEM_STYLE: React.CSSProperties = {
-  ...REGULAR_FONT,
-  fontSize: 18,
-  lineHeight: 1.6,
-};
-
-const CLOSING_STYLE: React.CSSProperties = {
+const LANE_HEADER_STYLE: React.CSSProperties = {
   ...SERIF_FONT,
   fontSize: 36,
-  letterSpacing: "0em",
   lineHeight: 1.2,
+  letterSpacing: "0em",
   textAlign: "center",
+  textWrap: "balance",
+};
+
+const GAP_LABEL_STYLE: React.CSSProperties = {
+  ...MONOSPACE_FONT,
+  fontSize: 14,
+  fontWeight: 600,
+  letterSpacing: "0.15em",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+
+// Lane pill label — matches the `<span>` pattern used inside ProblemTrio's
+// Panel1 / Panel3 GraphNodes. GraphNode's default label (22px uppercase bold)
+// overflows these 160-180 px pills; the `children` slot is the documented
+// escape hatch for non-arch consumers that need tighter typography.
+const LANE_PILL_LABEL_STYLE: React.CSSProperties = {
+  ...MONOSPACE_FONT,
+  fontSize: 14,
+  fontWeight: 600,
+  letterSpacing: "0.05em",
+  textTransform: "uppercase",
+  lineHeight: 1.15,
+  textAlign: "center",
+  padding: "0 10px",
+  textWrap: "balance",
 };
 
 /**
  * WhyNowSlide — industry timeline to the 2026 inflection point (24s / 1440f).
  *
- * Sole accent colorants: the 2026 dot, the inline "easy 20%" phrase on the
- * 2026 supporting line, and the right-card's 2px accent bar.
+ * Sole accent colorants: the 2026 dot + breathing halo, the inline
+ * "easy 20%" phrase on the 2026 supporting line, and the closing italic.
+ * The "gap" diagram below uses ARCH_PALETTE.redFlash for the vertical
+ * connector + GAP label (incomplete-work semantic) — INSTITUTIONAL.MIAMI_RED
+ * is reserved for chrome.
  */
 export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const frame = useCurrentFrame();
@@ -189,13 +229,13 @@ export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
     ,
     pPulse,
     pLift,
-    pBullets,
+    pGap,
     pClose,
   ] = useTimeline([...PHASES]) as EightPhases;
   const c = COLORS[theme];
 
-  // Phase 5 — timeline lifts up 120px while cards rise. Progress runs the full
-  // lift window, then holds at the lifted position for the rest of the slide.
+  // Phase 5 — timeline lifts up 120px while lane nodes rise. Progress runs the
+  // full lift window, then holds at the lifted position for the rest of the slide.
   const liftProgress = interpolate(
     frame,
     [pLift.start, pLift.end],
@@ -204,33 +244,78 @@ export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   );
   const liftY = interpolate(liftProgress, [0, 1], [0, -TIMELINE_LIFT_PX]);
 
-  // Phase 5 — two cards, 60f stagger.
-  const cards = useStaggeredFadeIn(2, {
-    step: CARD_STAGGER,
-    startDelay: pLift.start,
-    translateY: CARD_TRANSLATE_Y,
-    damping: SPRING_SETTLE.damping,
+  // Phase 5 — lane node entry frames. GraphNode runs its own spring on
+  // `enterFrame`, so we just compute the per-index start frame here (left lane
+  // staggers across LEFT_STAGGER_STEP frames; right lane offsets 30f after).
+  const leftLaneStart = pLift.start + LEFT_STAGGER_DELAY;
+  const rightLaneStart = pLift.start + RIGHT_STAGGER_DELAY;
+
+  // Phase 1 — slide title fades in (canonical useFadeIn — no typewriter).
+  const titleFade = useFadeIn({
+    translateY: 8,
+    damping: 200,
+    delay: 0,
   });
 
-  // Phase 7 — closing serif line fades in alongside the accent bar draw.
+  // Phase 7 — italic serif header above the lanes fades in.
+  const headerFade = useFadeIn({
+    translateY: 8,
+    delay: pClose.start + HEADER_DELAY_OFFSET,
+  });
+
+  // Phase 7 — closing serif line fades in alongside the header.
   const closingFade = useFadeIn({
     translateY: 8,
     delay: pClose.start + CLOSING_DELAY_OFFSET,
   });
 
+  // GAP label fades in 20f after the connector finishes drawing.
+  const gapLabelStart =
+    pGap.start + CONNECTOR_DRAW_FRAMES + GAP_LABEL_DELAY_AFTER_CONNECTOR;
+  const gapLabelOpacity = interpolate(
+    frame,
+    [gapLabelStart, gapLabelStart + GAP_LABEL_FADE_FRAMES],
+    [0, 1],
+    { easing: EASE_OUT, extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+
+  // Lane horizontal centering math (within DIAGRAM_WIDTH).
+  const leftLaneWidth =
+    LEFT_PANEL_ITEMS.length * LEFT_NODE_W +
+    (LEFT_PANEL_ITEMS.length - 1) * LEFT_NODE_GAP;
+  const leftLaneStartX = (DIAGRAM_WIDTH - leftLaneWidth) / 2;
+  const rightLaneWidth =
+    RIGHT_PANEL_ITEMS.length * RIGHT_NODE_W +
+    (RIGHT_PANEL_ITEMS.length - 1) * RIGHT_NODE_GAP;
+  const rightLaneStartX = (DIAGRAM_WIDTH - rightLaneWidth) / 2;
+  const rightLaneLineWidth = rightLaneWidth + 24;
+
+  // Vertical layout offsets within the diagram container.
+  const headerHeight = 52;
+  const topLaneTop = headerHeight + HEADER_TO_TOP_LANE_GAP;
+  const topLaneNodeTop = topLaneTop + LANE_LINE_TO_NODES_GAP;
+  const topLaneBottom = topLaneNodeTop + LEFT_NODE_H;
+  const connectorTop = topLaneBottom + TOP_LANE_TO_CONNECTOR_GAP;
+  const connectorBottom = connectorTop + CONNECTOR_HEIGHT;
+  const bottomLaneLineTop = connectorBottom + CONNECTOR_TO_BOTTOM_LANE_GAP;
+  const bottomLaneNodeTop = bottomLaneLineTop + LANE_LINE_TO_NODES_GAP;
+  const diagramHeight = bottomLaneNodeTop + RIGHT_NODE_H;
+
   return (
     <SlideShell theme={theme} eyebrow="WHY NOW" pageNumber="06">
       {/* Phase 1 — heading. */}
-      <div style={{ ...HEADING_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
-        <TypeOnText
-          text="The tools have caught up with the ambition."
-          rate={LABEL_RATE}
-          delay={0}
-          caret={false}
-        />
+      <div
+        style={{
+          ...HEADING_STYLE,
+          color: c.WORD_COLOR_ON_BG_APPEARED,
+          opacity: titleFade.opacity,
+          transform: titleFade.transform,
+        }}
+      >
+        The tools have caught up with the ambition.
       </div>
 
-      {/* Phases 2–5 — timeline container. Lifts -120px across phase 5. */}
+      {/* Phases 2–4 — timeline container. Lifts -120px across phase 5. */}
       <div
         style={{
           position: "relative",
@@ -239,7 +324,7 @@ export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
           transform: `translateY(${liftY}px)`,
         }}
       >
-        {/* Axis — drawn left→right over 48f in phase 2. */}
+        {/* Primary axis — drawn left→right over 48f in phase 2. */}
         <div style={{ position: "absolute", top: AXIS_Y, left: 0 }}>
           <MotionLine
             x1={0}
@@ -252,6 +337,41 @@ export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
             svgWidth={AXIS_WIDTH}
             svgHeight={2}
           />
+        </div>
+
+        {/* Secondary dotted baseline — masked sweep so only this hairline
+         *  is revealed (a sweep over the whole timeline row would re-mask the
+         *  year labels typed in during phase 3). */}
+        <div
+          style={{
+            position: "absolute",
+            top: AXIS_Y + SECONDARY_AXIS_OFFSET,
+            left: 0,
+            width: AXIS_WIDTH,
+            height: 2,
+          }}
+        >
+          <MaskReveal
+            delay={pAxis.start + AXIS_DRAW_FRAMES + SECONDARY_AXIS_DELAY}
+            durationInFrames={SECONDARY_AXIS_DURATION}
+          >
+            <svg
+              width={AXIS_WIDTH}
+              height={2}
+              viewBox={`0 0 ${AXIS_WIDTH} 2`}
+              style={{ overflow: "visible" }}
+            >
+              <line
+                x1={0}
+                y1={1}
+                x2={AXIS_WIDTH}
+                y2={1}
+                stroke={c.BORDER_COLOR}
+                strokeWidth={1}
+                strokeDasharray="3 5"
+              />
+            </svg>
+          </MaskReveal>
         </div>
 
         {/* Phase 3 — markers on 75f beat (absolute frames 80/155/230/305). */}
@@ -267,62 +387,200 @@ export const WhyNowSlide: React.FC<SlideBodyProps> = ({ theme }) => {
         ))}
       </div>
 
-      {/* Phase 5+ — two-card row. Sits where the timeline visually vacates. */}
+      {/* Phases 5+ — comparison diagram. Two stacked lanes split by a
+       *  vertical "GAP" connector. Replaces the previous two-card layout. */}
       <div
         style={{
           position: "absolute",
-          top: "55%",
+          top: `${DIAGRAM_TOP_PCT}%`,
           left: "50%",
           transform: "translateX(-50%)",
-          display: "flex",
-          gap: CARD_GAP,
-          alignItems: "flex-start",
-          width: CARD_WIDTH * 2 + CARD_GAP,
+          width: DIAGRAM_WIDTH,
+          height: diagramHeight,
         }}
       >
-        <PanelCard
-          theme={theme}
-          header={LEFT_PANEL_HEADER}
-          items={LEFT_PANEL_ITEMS}
-          enter={cards[0]!}
-          bulletsStart={pBullets.start}
-          accentBarDelay={null}
-        />
-        <PanelCard
-          theme={theme}
-          header={RIGHT_PANEL_HEADER}
-          items={RIGHT_PANEL_ITEMS}
-          enter={cards[1]!}
-          bulletsStart={pBullets.start}
-          accentBarDelay={pClose.start}
-        />
+        {/* Phase 7 — italic serif flanking the gap connector. Both labels sit
+         *  at the connector's vertical midpoint so they bracket the GAP marker:
+         *  past-state on the left, present-action on the right. */}
+        <div
+          style={{
+            position: "absolute",
+            top: connectorTop + CONNECTOR_HEIGHT / 2,
+            left: 0,
+            width: DIAGRAM_WIDTH / 2 - CONNECTOR_SVG_WIDTH / 2 - 60,
+            display: "flex",
+            justifyContent: "flex-end",
+            opacity: headerFade.opacity,
+            transform: `translateY(-50%) ${headerFade.transform}`,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              ...LANE_HEADER_STYLE,
+              color: c.WORD_COLOR_ON_BG_APPEARED,
+              textAlign: "right",
+              maxWidth: 360,
+            }}
+          >
+            Previous tools stopped here.
+          </div>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            top: connectorTop + CONNECTOR_HEIGHT / 2,
+            left: DIAGRAM_WIDTH / 2 + CONNECTOR_SVG_WIDTH / 2 + 60,
+            width: DIAGRAM_WIDTH / 2 - CONNECTOR_SVG_WIDTH / 2 - 60,
+            display: "flex",
+            justifyContent: "flex-start",
+            opacity: closingFade.opacity,
+            transform: `translateY(-50%) ${closingFade.transform}`,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              ...LANE_HEADER_STYLE,
+              color: c.WORD_COLOR_ON_BG_APPEARED,
+              textAlign: "left",
+              maxWidth: 360,
+            }}
+          >
+            Our agent picks up the rest.
+          </div>
+        </div>
+
+        {/* Top lane — overhead "assembly line" + 4 deterministic-style nodes. */}
+        <div
+          style={{
+            position: "absolute",
+            top: topLaneTop,
+            left: (DIAGRAM_WIDTH - LEFT_LANE_LINE_WIDTH) / 2,
+            width: LEFT_LANE_LINE_WIDTH,
+          }}
+        >
+          <MotionLine
+            x1={0}
+            y1={0}
+            x2={LEFT_LANE_LINE_WIDTH}
+            y2={0}
+            delay={pLift.start}
+            durationInFrames={LEFT_LANE_LINE_DRAW}
+            color={c.WORD_COLOR_ON_BG_APPEARED}
+            strokeWidth={1.5}
+            svgWidth={LEFT_LANE_LINE_WIDTH}
+            svgHeight={2}
+          />
+        </div>
+        {LEFT_PANEL_ITEMS.map((label, i) => (
+          <GraphNode
+            key={label}
+            x={leftLaneStartX + i * (LEFT_NODE_W + LEFT_NODE_GAP)}
+            y={topLaneNodeTop}
+            w={LEFT_NODE_W}
+            h={LEFT_NODE_H}
+            tier="deterministic"
+            status="success"
+            background={c.BACKGROUND_ELEVATED}
+            borderColor={c.WORD_COLOR_ON_BG_APPEARED}
+            textColor={c.WORD_COLOR_ON_BG_APPEARED}
+            enterFrame={leftLaneStart + i * LEFT_STAGGER_STEP}
+          >
+            <span style={LANE_PILL_LABEL_STYLE}>{label}</span>
+          </GraphNode>
+        ))}
+
+        {/* Vertical gap connector + GAP label (phase 6). */}
+        <div
+          style={{
+            position: "absolute",
+            top: connectorTop,
+            left: DIAGRAM_WIDTH / 2 - CONNECTOR_SVG_WIDTH / 2,
+            width: CONNECTOR_SVG_WIDTH,
+            height: CONNECTOR_HEIGHT,
+          }}
+        >
+          <DiagramConnector
+            height={CONNECTOR_HEIGHT}
+            drawStartFrame={pGap.start}
+            drawDurationFrames={CONNECTOR_DRAW_FRAMES}
+            strokeColor={ARCH_PALETTE.redFlash}
+            strokeWidth={2}
+            svgWidth={CONNECTOR_SVG_WIDTH}
+          />
+        </div>
+        {/* GAP label — sibling of the connector, centered on its midpoint. */}
+        <div
+          style={{
+            position: "absolute",
+            top: connectorTop + CONNECTOR_HEIGHT / 2,
+            left: 0,
+            right: 0,
+            display: "flex",
+            justifyContent: "center",
+            opacity: gapLabelOpacity,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              ...GAP_LABEL_STYLE,
+              color: ARCH_PALETTE.redFlash,
+              background: c.BACKGROUND,
+              padding: "6px 14px",
+              transform: "translateY(-50%)",
+            }}
+          >
+            GAP
+          </div>
+        </div>
+
+        {/* Bottom lane — dashed overhead line + 6 llm-delegated-style nodes. */}
+        <div
+          style={{
+            position: "absolute",
+            top: bottomLaneLineTop,
+            left: (DIAGRAM_WIDTH - rightLaneLineWidth) / 2,
+            width: rightLaneLineWidth,
+            height: 2,
+          }}
+        >
+          <DashedDrawLine
+            width={rightLaneLineWidth}
+            color={c.WORD_COLOR_ON_BG_GREYED}
+            delay={pLift.start + 30}
+            durationInFrames={RIGHT_LANE_LINE_DRAW}
+          />
+        </div>
+        {RIGHT_PANEL_ITEMS.map((label, i) => (
+          <GraphNode
+            key={label}
+            x={rightLaneStartX + i * (RIGHT_NODE_W + RIGHT_NODE_GAP)}
+            y={bottomLaneNodeTop}
+            w={RIGHT_NODE_W}
+            h={RIGHT_NODE_H}
+            tier="llm_delegated"
+            status="idle"
+            background={c.BACKGROUND_ELEVATED}
+            borderColor={c.WORD_COLOR_ON_BG_GREYED}
+            textColor={c.WORD_COLOR_ON_BG_GREYED}
+            innerRing={false}
+            enterFrame={rightLaneStart + i * RIGHT_STAGGER_STEP}
+          >
+            <span style={LANE_PILL_LABEL_STYLE}>{label}</span>
+          </GraphNode>
+        ))}
       </div>
 
-      {/* Phase 7 — closing serif line, centered below the cards. */}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 80,
-          display: "flex",
-          justifyContent: "center",
-          opacity: closingFade.opacity,
-          transform: closingFade.transform,
-          pointerEvents: "none",
-        }}
-      >
-        <div style={{ ...CLOSING_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
-          We build for the right column.
-        </div>
-      </div>
     </SlideShell>
   );
 };
 
 /** One timeline beat: vertical tick (drawn) + dot (scale-in) + Monaspace year
- *  label (typed) + supporting line (faded). The 2026 variant renders the
- *  inline "easy 20%" pulse in Phase 4 via `Accent2026Supporting`. */
+ *  label (typed) + supporting line (faded) + a continuous BreathingHaloRing
+ *  around the dot. The 2026 variant renders the inline "easy 20%" pulse in
+ *  Phase 4 via `Accent2026Supporting` and breathes louder. */
 const TimelineMarkerNode: React.FC<{
   theme: Theme;
   marker: TimelineMarker;
@@ -350,6 +608,9 @@ const TimelineMarkerNode: React.FC<{
   );
 
   const dotColor = marker.accent ? c.ACCENT_COLOR : c.WORD_COLOR_ON_BG_APPEARED;
+  const haloColor = marker.accent ? c.ACCENT_COLOR : c.WORD_COLOR_ON_BG_GREYED;
+  const haloMaxOpacity = marker.accent ? 0.45 : 0.2;
+  const haloMinOpacity = 0.1;
 
   return (
     <>
@@ -374,6 +635,25 @@ const TimelineMarkerNode: React.FC<{
         />
       </div>
 
+      {/* Continuous breathing halo wrapping the dot — louder for 2026.
+       *  Gated until the dot finishes scaling in: BreathingHaloRing holds at
+       *  minOpacity (0.1) while frame < at, which would cause a faint ring to
+       *  appear under the slide title before the marker beats arrive. */}
+      {pulseFrame >= beatStart + MARKER_IN_FRAMES ? (
+        <BreathingHaloRing
+          x={marker.x - DOT_RADIUS - HALO_PAD}
+          y={AXIS_Y - DOT_RADIUS - HALO_PAD}
+          w={DOT_RADIUS * 2 + HALO_PAD * 2}
+          h={DOT_RADIUS * 2 + HALO_PAD * 2}
+          radius={DOT_RADIUS + HALO_PAD}
+          at={beatStart + MARKER_IN_FRAMES}
+          color={haloColor}
+          minOpacity={haloMinOpacity}
+          maxOpacity={haloMaxOpacity}
+          strokeWidth={1.5}
+        />
+      ) : null}
+
       {/* Dot — 6px radius, centered on axis x-intersection. */}
       <div
         style={{
@@ -393,9 +673,9 @@ const TimelineMarkerNode: React.FC<{
       <div
         style={{
           position: "absolute",
-          top: AXIS_Y - TICK_HEIGHT - 30,
-          left: marker.x - 40,
-          width: 80,
+          top: AXIS_Y - TICK_HEIGHT - 36,
+          left: marker.x - 60,
+          width: 120,
           color: c.WORD_COLOR_ON_BG_APPEARED,
         }}
       >
@@ -413,7 +693,7 @@ const TimelineMarkerNode: React.FC<{
       <div
         style={{
           position: "absolute",
-          top: AXIS_Y + 24,
+          top: AXIS_Y + 28,
           left: marker.x - SUPPORT_MAX_WIDTH / 2,
           width: SUPPORT_MAX_WIDTH,
           opacity: lineOpacity,
@@ -465,98 +745,44 @@ const Accent2026Supporting: React.FC<{
   );
 };
 
-/** Left/right column of the two-panel split. The right card receives an
- *  animated 2px accent bar on its leading edge during phase 7 (accentBarDelay
- *  non-null). Bullet items stagger in during phase 6. */
-const PanelCard: React.FC<{
-  theme: Theme;
-  header: string;
-  items: readonly string[];
-  enter: StaggeredItem;
-  bulletsStart: number;
-  /** Absolute frame at which the left-edge ACCENT_COLOR bar begins drawing.
-   *  `null` for the left card (no accent). */
-  accentBarDelay: number | null;
-}> = ({ theme, header, items, enter, bulletsStart, accentBarDelay }) => {
-  const c = COLORS[theme];
-  const bullets = useStaggeredFadeIn(items.length, {
-    step: BULLET_STAGGER,
-    startDelay: bulletsStart,
-    translateY: BULLET_TRANSLATE_Y,
-    damping: 200,
-  });
-
+/** Dashed horizontal line that draws left→right over `durationInFrames`,
+ *  matching MotionLine's strokeDashoffset technique but with an overlaid dash
+ *  pattern. MotionLine itself doesn't expose a strokeDasharray prop — keeping
+ *  this slide-local rather than reaching outside the scene file. */
+const DashedDrawLine: React.FC<{
+  width: number;
+  color: string;
+  delay: number;
+  durationInFrames: number;
+}> = ({ width, color, delay, durationInFrames }) => {
+  const frame = useCurrentFrame();
+  const progress = interpolate(
+    frame,
+    [delay, delay + durationInFrames],
+    [0, 1],
+    {
+      easing: EASE_OUT,
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    },
+  );
+  const visibleWidth = progress * width;
   return (
-    <div
-      style={{
-        position: "relative",
-        width: CARD_WIDTH,
-        padding: CARD_PADDING,
-        borderRadius: CARD_RADIUS,
-        background: c.BACKGROUND_ELEVATED,
-        border: `1px solid ${CARD_BORDER}`,
-        boxShadow: CARD_SHADOW,
-        opacity: enter.opacity,
-        transform: enter.transform,
-      }}
+    <svg
+      width={width}
+      height={2}
+      viewBox={`0 0 ${width} 2`}
+      style={{ overflow: "visible" }}
     >
-      {accentBarDelay !== null ? (
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            pointerEvents: "none",
-          }}
-        >
-          <MotionLine
-            x1={0}
-            y1={0}
-            x2={0}
-            y2={CARD_PADDING * 2 + 32 + items.length * 32}
-            delay={accentBarDelay}
-            durationInFrames={ACCENT_BAR_DRAW}
-            color={c.ACCENT_COLOR}
-            strokeWidth={ACCENT_BAR_WIDTH}
-            svgWidth={ACCENT_BAR_WIDTH}
-            svgHeight={CARD_PADDING * 2 + 32 + items.length * 32}
-          />
-        </div>
-      ) : null}
-
-      <div style={{ ...CARD_HEADER_STYLE, color: c.WORD_COLOR_ON_BG_APPEARED }}>
-        {header}
-      </div>
-      <ul
-        style={{
-          listStyle: "none",
-          padding: 0,
-          margin: "16px 0 0 0",
-        }}
-      >
-        {items.map((item, i) => (
-          <li
-            key={item}
-            style={{
-              ...CARD_ITEM_STYLE,
-              color: c.WORD_COLOR_ON_BG_GREYED,
-              display: "flex",
-              alignItems: "baseline",
-              gap: 10,
-              opacity: bullets[i]!.opacity,
-              transform: bullets[i]!.transform,
-            }}
-          >
-            <span
-              aria-hidden="true"
-              style={{ color: c.WORD_COLOR_ON_BG_GREYED }}
-            >
-              •
-            </span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+      <line
+        x1={0}
+        y1={1}
+        x2={visibleWidth}
+        y2={1}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeDasharray="6 6"
+      />
+    </svg>
   );
 };

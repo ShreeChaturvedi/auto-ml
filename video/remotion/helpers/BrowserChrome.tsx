@@ -60,6 +60,12 @@ export type BrowserChromeProps = {
    * opacity tween + `pointer-events: none` once the chrome has fully faded.
    */
   style?: CSSProperties;
+  /** Render traffic-light dots with gradient + inner shadow (opt-in polish). */
+  glassTrafficLights?: boolean;
+  /** Render a subtle 1px specular highlight on top of the title bar. */
+  refinedTitleBar?: boolean;
+  /** Render back/forward/refresh cluster left of the URL pill (browser variant only). */
+  showNavCluster?: boolean;
   /** Optional — when absent, the content slot renders empty (for overlay use). */
   children?: ReactNode;
 };
@@ -81,6 +87,9 @@ export const BrowserChrome: React.FC<BrowserChromeProps> = ({
   outerBackground = "#0A0A0B",
   cardBackground = "#ffffff",
   style,
+  glassTrafficLights = false,
+  refinedTitleBar = false,
+  showNavCluster = false,
   children,
 }) => {
   if (variant === "none") {
@@ -114,7 +123,14 @@ export const BrowserChrome: React.FC<BrowserChromeProps> = ({
         }}
       >
         {tabs ? <ChromeTabStrip tabs={tabs} /> : null}
-        <ChromeTitleBar variant={variant} url={url} urlChildren={urlChildren} />
+        <ChromeTitleBar
+          variant={variant}
+          url={url}
+          urlChildren={urlChildren}
+          glassTrafficLights={glassTrafficLights}
+          refinedTitleBar={refinedTitleBar}
+          showNavCluster={showNavCluster}
+        />
         <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
           {children}
         </div>
@@ -127,26 +143,51 @@ type ChromeTitleBarProps = {
   variant: "mac" | "browser";
   url?: string;
   urlChildren?: ReactNode;
+  glassTrafficLights?: boolean;
+  refinedTitleBar?: boolean;
+  showNavCluster?: boolean;
 };
 
 const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
   variant,
   url,
   urlChildren,
+  glassTrafficLights = false,
+  refinedTitleBar = false,
+  showNavCluster = false,
 }) => {
   // Title bar with traffic lights (always LEFT)
   const trafficLights = (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      <Dot color="#FF5F57" />
-      <Dot color="#FEBC2E" />
-      <Dot color="#28C840" />
+      <Dot color="#FF5F57" glass={glassTrafficLights} />
+      <Dot color="#FEBC2E" glass={glassTrafficLights} />
+      <Dot color="#28C840" glass={glassTrafficLights} />
     </div>
   );
+
+  // Subtle 1px specular highlight ribbon at the top edge — only renders when
+  // `refinedTitleBar` is opted-in. Base background unchanged.
+  const titleBarHighlight = refinedTitleBar ? (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 2,
+        background:
+          "linear-gradient(to bottom, rgba(255,255,255,0.6) 0%, transparent 100%)",
+        pointerEvents: "none",
+      }}
+    />
+  ) : null;
 
   if (variant === "mac") {
     return (
       <div
         style={{
+          position: "relative",
           height: CONTINUITY.titleBarHeight,
           background: "#F5F5F7",
           borderBottom: "1px solid rgba(0,0,0,0.08)",
@@ -155,15 +196,20 @@ const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
           padding: "0 16px",
         }}
       >
+        {titleBarHighlight}
         {trafficLights}
       </div>
     );
   }
 
   // variant === "browser"
+  // When `showNavCluster`, the leftmost grid cell holds traffic lights AND the
+  // back/forward/refresh cluster in a single flex row. Grid stays 3-column so
+  // the URL pill remains naturally centered by the `1fr` middle cell.
   return (
     <div
       style={{
+        position: "relative",
         height: CONTINUITY.titleBarHeight,
         background: "#F5F5F7",
         borderBottom: "1px solid rgba(0,0,0,0.08)",
@@ -174,7 +220,15 @@ const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
         padding: "0 16px",
       }}
     >
-      {trafficLights}
+      {titleBarHighlight}
+      {showNavCluster ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {trafficLights}
+          <NavCluster />
+        </div>
+      ) : (
+        trafficLights
+      )}
       {urlChildren !== undefined ? (
         <ChromeAddressBar>{urlChildren}</ChromeAddressBar>
       ) : (
@@ -185,6 +239,52 @@ const ChromeTitleBar: React.FC<ChromeTitleBarProps> = ({
     </div>
   );
 };
+
+/**
+ * Back / forward / refresh glyph cluster rendered left of the URL pill when
+ * `showNavCluster` is enabled. 14×14 SVGs at #8C8C92 with 8px gaps.
+ */
+const NavCluster: React.FC = () => (
+  <div
+    aria-hidden
+    style={{ display: "flex", alignItems: "center", gap: 8, color: "#8C8C92" }}
+  >
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M15 6l-6 6 6 6"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M9 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <path
+        d="M3 12a9 9 0 0 1 15.5-6.2L21 8"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M21 3v5h-5"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  </div>
+);
 
 /**
  * Chrome-style tab strip rendered above the title bar when `tabs` is provided.
@@ -265,13 +365,52 @@ const TabPill: React.FC<{ tab: ChromeTab }> = ({ tab }) => {
   );
 };
 
-const Dot: React.FC<{ color: string }> = ({ color }) => (
-  <div
-    style={{
-      width: CONTINUITY.trafficLightSize,
-      height: CONTINUITY.trafficLightSize,
-      borderRadius: "50%",
-      background: color,
-    }}
-  />
-);
+const Dot: React.FC<{ color: string; glass?: boolean }> = ({ color, glass = false }) => {
+  if (!glass) {
+    return (
+      <div
+        style={{
+          width: CONTINUITY.trafficLightSize,
+          height: CONTINUITY.trafficLightSize,
+          borderRadius: "50%",
+          background: color,
+        }}
+      />
+    );
+  }
+  // Glass variant: radial gradient adds a top-left highlight; inset shadow
+  // sells depth at the bottom edge; outer drop-shadow softens the boundary
+  // against the title bar background.
+  return (
+    <div
+      style={{
+        width: CONTINUITY.trafficLightSize,
+        height: CONTINUITY.trafficLightSize,
+        borderRadius: "50%",
+        background: `radial-gradient(circle at 30% 30%, ${lighten(color, 0.35)}, ${color})`,
+        boxShadow:
+          "inset 0 -1px 1px rgba(0,0,0,0.15), 0 0.5px 1px rgba(0,0,0,0.1)",
+      }}
+    />
+  );
+};
+
+/**
+ * Lighten a 6-digit hex color by `amount` (0–1) toward white. Used by the
+ * glass traffic-light dots to compute the highlight stop without baking in
+ * a per-color literal.
+ */
+function lighten(hex: string, amount: number): string {
+  const m = hex.match(/^#([0-9a-fA-F]{6})$/);
+  const group = m?.[1];
+  if (!group) return hex;
+  const num = parseInt(group, 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  const toHex = (v: number) => v.toString(16).padStart(2, "0");
+  return `#${toHex(lr)}${toHex(lg)}${toHex(lb)}`;
+}

@@ -1,0 +1,68 @@
+/* Print sizing. Puppeteer and Chrome both honor @page when `printBackground`
+ * is on. Margins: 0 because the poster itself handles internal padding. */
+
+@page {
+  size: 48in 36in;
+  margin: 0;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  color: #171717;
+  /* Preserve exact colors in print — by default, browsers strip backgrounds
+   * and faint greys to save ink. Poster prints need 1:1 color fidelity. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  font-family:
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 500;
+  color-adjust: exact;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  display: block;
+}
+
+/* Hide any text artifacts below the poster on scrolling, but keep the poster
+ * itself pristine. The poster root is exactly 48 × 36 in. */
+.poster-root {
+  position: relative;
+  width: 48in;
+  height: 36in;
+  overflow: hidden;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* Every numeric block we treat as data should honor tabular-nums so columns
+ * align cleanly across rows. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* When we want to debug the grid during dev, append ?debug-grid to the URL.
+ * In production this class is never added. */
+.debug-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(29, 78, 216, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(29, 78, 216, 0.1) 1px, transparent 1px);
+  background-size: 1in 1in;
+  z-index: 9999;
+}

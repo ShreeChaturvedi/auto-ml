@@ -191,7 +191,7 @@ function TrainingConversationPane({
       }
       return changed ? next : prev;
     });
-  }, [pendingProposalCount, pendingProposalIds.length, pendingProposals, setProposalSelections]);
+  }, [pendingProposalCount, pendingProposalIds.length, pendingProposals, proposalSelections.size, setProposalSelections]);
 
   const lastProposalSignatureRef = useRef<string>('');
   useEffect(() => {
@@ -326,6 +326,7 @@ export function TrainingPanel() {
   // Track proposal selections for multi-model approval flow
   const [proposalSelections, setProposalSelections] = useState<Map<string, TrainingProposalSelection>>(new Map());
   const [proposalsSubmitted, setProposalsSubmitted] = useState(false);
+  const hasMountedProposalStateRef = useRef(false);
 
   const { executeCode: executeWithStore } = useExecutionStore();
 
@@ -648,6 +649,10 @@ export function TrainingPanel() {
   ]);
 
   useEffect(() => {
+    if (!hasMountedProposalStateRef.current) {
+      hasMountedProposalStateRef.current = true;
+      return;
+    }
     setProposalSelections(new Map());
     setProposalsSubmitted(false);
   }, [activeTrainingWorkbookId, trainingChatSessionVersion]);

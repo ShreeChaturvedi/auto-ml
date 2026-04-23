@@ -1,4 +1,6 @@
 ---
+import { GITLAB_REPO_URL } from '@/lib/publicLinks';
+
 const productLinks = [
   { label: 'Features',     href: '#features' },
   { label: 'How it works', href: '#how-it-works' },
@@ -14,11 +16,13 @@ const team = [
 
 const resourceLinks = [
   { label: 'Docs',       href: '#', comingSoon: true },
-  { label: 'GitLab repo', href: 'https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain' },
+  { label: 'GitLab repo', href: GITLAB_REPO_URL },
   { label: 'Security',   href: '#', comingSoon: true },
   { label: 'Privacy',    href: '#', comingSoon: true },
   { label: 'Contact',    href: 'mailto:chaturs@miamioh.edu' },
 ];
+
+const repoUrl = GITLAB_REPO_URL;
 ---
 
 <footer class="footer">
@@ -28,7 +32,7 @@ const resourceLinks = [
         <p class="footer-wordmark">Agentic AutoML Platform</p>
         <a
           class="footer-brand-repo"
-          href="https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain"
+          href={repoUrl}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="GitLab repository"

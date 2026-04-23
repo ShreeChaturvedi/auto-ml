@@ -16,6 +16,7 @@ const repoStore = new Map<string, Record<string, unknown>>();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
+const mockDatasetGetById = vi.fn();
 
 vi.mock('../../../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
@@ -48,12 +49,9 @@ vi.mock('../../../config.js', () => ({
   }
 }));
 
-// Dataset repo only used by the buildSampleRequestFromDataset helper;
-// return null so the helper falls back to {} (which is what the
-// existing tests expected before the sampleRequest wiring).
 vi.mock('../../../repositories/datasetRepository.js', () => ({
   createDatasetRepository: () => ({
-    getById: vi.fn(async () => null),
+    getById: mockDatasetGetById,
     listByProject: vi.fn(async () => [])
   })
 }));
@@ -102,6 +100,29 @@ function buildTurn(): WorkflowTurnRequest {
   };
 }
 
+function makeDataset() {
+  return {
+    datasetId: 'dataset-1',
+    projectId: 'project-1',
+    filename: 'training.csv',
+    fileType: 'csv' as const,
+    size: 128,
+    nRows: 2,
+    nCols: 3,
+    columns: [
+      { name: 'feat1', dtype: 'float' as const, nullCount: 0 },
+      { name: 'feat2', dtype: 'string' as const, nullCount: 0 },
+      { name: 'target', dtype: 'integer' as const, nullCount: 0 },
+    ],
+    sample: [
+      { feat1: 1.5, feat2: 'north', target: 1 },
+      { feat1: 2.5, target: 0 },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function buildCtx(args: Record<string, unknown>, runOverride?: WorkflowRunState): TrainingToolContext {
   return {
     projectId: 'project-1',
@@ -141,6 +162,9 @@ describe('registerModel', () => {
 
     mockDelete.mockReset();
     mockDelete.mockImplementation(async (modelId: string) => repoStore.delete(modelId));
+
+    mockDatasetGetById.mockReset();
+    mockDatasetGetById.mockResolvedValue(makeDataset());
   });
 
   afterEach(async () => {
@@ -214,6 +238,8 @@ describe('registerModel', () => {
     expect(createArg.status).toBe('completed');
     expect(createArg.evaluationStatus).toBe('pending');
     expect(createArg.featureColumns).toEqual(['feat1', 'feat2']);
+    expect(createArg.featureTypes).toEqual({ feat1: 'float', feat2: 'str' });
+    expect(createArg.sampleRequest).toEqual({ feat1: 1.5, feat2: 'north' });
     expect(createArg.metadata).toEqual(expect.objectContaining({
       workflowRunId: 'run-1',
       experimentId: 'exp-1',
@@ -260,6 +286,29 @@ describe('registerModel', () => {
     expect(experiments['exp-1'].modelType).toBe('catboost');
     expect(experiments['exp-1'].registeredModelType).toBe('catboost');
     expect(experiments['exp-1'].runtimeDependencies).toEqual(['catboost']);
+  });
+
+  it('derives serving schema from the trained dataset when experiment.featureColumns is undefined', async () => {
+    const sourcePath = join(workspaceDir, 'project-1', 'model.joblib');
+    await writeFile(sourcePath, Buffer.from('x'));
+
+    const run = buildRun();
+    const experiments = run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    delete experiments['exp-1'].featureColumns;
+
+    const result = await registerModel(buildCtx({
+      experimentId: 'exp-1',
+      modelName: 'RF Baseline',
+      modelType: 'random_forest',
+      metrics: { accuracy: 0.92, f1: 0.89 },
+      artifactPath: 'model.joblib',
+    }, run));
+
+    expect(result.error).toBeUndefined();
+    const createArg = mockCreate.mock.calls[0][0];
+    expect(createArg.featureColumns).toEqual(['feat1', 'feat2']);
+    expect(createArg.featureTypes).toEqual({ feat1: 'float', feat2: 'str' });
+    expect(createArg.sampleRequest).toEqual({ feat1: 1.5, feat2: 'north' });
   });
 
   it('stores persistedModelId on experiment state', async () => {

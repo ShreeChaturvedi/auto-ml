@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelRecord } from '../types/model.js';
 
 const mockGetModelById = vi.fn();
+const mockModelUpdate = vi.fn();
+const mockDatasetGetById = vi.fn();
 const mockEnsureRuntimeImage = vi.fn();
 const mockExecDocker = vi.fn();
 const mockBuildInferenceDockerRunArgs = vi.fn();
@@ -24,10 +26,25 @@ const mockDeploymentRepo = {
 let tmpRoot = '';
 let deploymentStorageDir = '';
 let modelStorageDir = '';
+let storedModel: ModelRecord | undefined;
+let storedDataset: {
+  datasetId: string;
+  projectId: string;
+  filename: string;
+  fileType: 'csv';
+  size: number;
+  nRows: number;
+  nCols: number;
+  columns: Array<{ name: string; dtype: 'float' | 'string' | 'integer'; nullCount: number }>;
+  sample: Array<Record<string, unknown>>;
+  createdAt: string;
+  updatedAt: string;
+};
 
 vi.mock('../config.js', () => ({
   env: {
     get modelMetadataPath() { return join(tmpRoot || tmpdir(), 'models.json'); },
+    get datasetMetadataPath() { return join(tmpRoot || tmpdir(), 'datasets.json'); },
     get modelStorageDir() { return modelStorageDir; },
     get deploymentStorageDir() { return deploymentStorageDir; },
   },
@@ -36,6 +53,13 @@ vi.mock('../config.js', () => ({
 vi.mock('../repositories/modelRepository.js', () => ({
   createModelRepository: vi.fn(() => ({
     getById: mockGetModelById,
+    update: mockModelUpdate,
+  })),
+}));
+
+vi.mock('../repositories/datasetRepository.js', () => ({
+  createDatasetRepository: vi.fn(() => ({
+    getById: mockDatasetGetById,
   })),
 }));
 
@@ -60,6 +84,29 @@ vi.mock('./inferenceServerBuilder.js', () => ({
 }));
 
 const { deployModel, startDeployment } = await import('./deploymentManager.js');
+
+function makeDataset() {
+  return {
+    datasetId: 'dataset-1',
+    projectId: 'project-1',
+    filename: 'training.csv',
+    fileType: 'csv' as const,
+    size: 128,
+    nRows: 2,
+    nCols: 3,
+    columns: [
+      { name: 'age', dtype: 'float' as const, nullCount: 0 },
+      { name: 'segment', dtype: 'string' as const, nullCount: 0 },
+      { name: 'target', dtype: 'integer' as const, nullCount: 0 },
+    ],
+    sample: [
+      { age: 42, target: 1 },
+      { segment: 'north', target: 0 },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 function makeModel(overrides: Partial<ModelRecord> = {}): ModelRecord {
   return {
@@ -106,6 +153,8 @@ describe('deploymentManager', () => {
     await mkdir(modelStorageDir, { recursive: true });
 
     mockGetModelById.mockReset();
+    mockModelUpdate.mockReset();
+    mockDatasetGetById.mockReset();
     mockEnsureRuntimeImage.mockReset();
     mockExecDocker.mockReset();
     mockBuildInferenceDockerRunArgs.mockReset();
@@ -150,6 +199,23 @@ describe('deploymentManager', () => {
       updatedAt: new Date().toISOString(),
     }));
 
+    storedModel = undefined;
+    storedDataset = makeDataset();
+    mockGetModelById.mockImplementation(async () => storedModel);
+    mockModelUpdate.mockImplementation(async (_modelId: string, updater: (current: ModelRecord) => ModelRecord) => {
+      if (!storedModel) {
+        return undefined;
+      }
+      storedModel = {
+        ...updater(storedModel),
+        modelId: storedModel.modelId,
+        createdAt: storedModel.createdAt,
+        updatedAt: new Date().toISOString(),
+      };
+      return storedModel;
+    });
+    mockDatasetGetById.mockImplementation(async () => storedDataset);
+
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
   });
 
@@ -168,8 +234,8 @@ describe('deploymentManager', () => {
         size: 80680,
       },
     });
+    storedModel = model;
     await persistArtifact(model);
-    mockGetModelById.mockResolvedValue(model);
 
     await deployModel(model.modelId, model.projectId, 'endpoint');
 
@@ -184,8 +250,8 @@ describe('deploymentManager', () => {
       algorithm: 'xgboost',
       metadata: { runtimeDependencies: ['xgboost'] } as Record<string, unknown>,
     });
+    storedModel = model;
     await persistArtifact(model);
-    mockGetModelById.mockResolvedValue(model);
 
     await deployModel(model.modelId, model.projectId, 'endpoint');
 
@@ -199,8 +265,8 @@ describe('deploymentManager', () => {
       modelId: 'cat-model',
       algorithm: 'catboost',
     });
+    storedModel = model;
     await persistArtifact(model);
-    mockGetModelById.mockResolvedValue(model);
 
     await deployModel(model.modelId, model.projectId, 'endpoint');
 
@@ -211,8 +277,8 @@ describe('deploymentManager', () => {
 
   it('passes empty runtimeDependencies for plain sklearn models (no regression)', async () => {
     const model = makeModel({ modelId: 'sk-model', algorithm: 'ridge' });
+    storedModel = model;
     await persistArtifact(model);
-    mockGetModelById.mockResolvedValue(model);
 
     await deployModel(model.modelId, model.projectId, 'endpoint');
 
@@ -230,8 +296,8 @@ describe('deploymentManager', () => {
         size: 80680,
       },
     });
+    storedModel = model;
     await persistArtifact(model);
-    mockGetModelById.mockResolvedValue(model);
     mockDeploymentRepo.getById.mockResolvedValue({
       deploymentId: 'deployment-1',
       modelId: model.modelId,
@@ -261,18 +327,43 @@ describe('deploymentManager', () => {
         size: 42,
       },
     });
-    mockGetModelById.mockResolvedValue(model);
+    storedModel = model;
 
     await expect(deployModel(model.modelId, model.projectId, 'endpoint')).rejects.toThrow();
     expect(mockBuildInferenceDockerRunArgs).not.toHaveBeenCalled();
+  });
+
+  it('backfills missing serving schema for legacy model rows before generating serve.py', async () => {
+    const model = makeModel({
+      featureColumns: undefined,
+      featureTypes: undefined,
+      sampleRequest: undefined,
+      targetColumn: 'target',
+    });
+    storedModel = model;
+    await persistArtifact(model);
+
+    await deployModel(model.modelId, model.projectId, 'endpoint');
+
+    expect(mockModelUpdate).toHaveBeenCalledTimes(1);
+    expect(storedModel).toEqual(expect.objectContaining({
+      featureColumns: ['age', 'segment'],
+      featureTypes: { age: 'float', segment: 'str' },
+      sampleRequest: { age: 42, segment: '' },
+    }));
+    expect(mockBuildInferenceServerScript).toHaveBeenCalledWith(expect.objectContaining({
+      featureColumns: ['age', 'segment'],
+      featureTypes: { age: 'float', segment: 'str' },
+      sampleRequest: { age: 42, segment: '' },
+    }));
   });
 
   it('marks the deployment failed when the inference container exits during readiness', async () => {
     vi.useFakeTimers();
 
     const model = makeModel();
+    storedModel = model;
     await persistArtifact(model);
-    mockGetModelById.mockResolvedValue(model);
 
     const fetchMock = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
     vi.stubGlobal('fetch', fetchMock);

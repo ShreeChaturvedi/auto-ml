@@ -16,7 +16,6 @@ import { getDbPool, hasDatabaseConfiguration } from '../db.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
-import type { ColumnDataType, DatasetProfile } from '../types/dataset.js';
 import type { ModelTemplate, ModelTemplateParam } from '../types/model.js';
 import {
   copyArtifactsToPermanentStorage,
@@ -32,6 +31,7 @@ import {
   buildStandardImports,
   buildTrainTestSplitLines,
 } from './pythonScriptUtils.js';
+import { deriveServingSchema } from './servingSchema.js';
 
 /* ------------------------------------------------------------------ */
 /*  Sklearn scoring-string mapping                                     */
@@ -77,47 +77,6 @@ const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
 
 const logger = appLogger.child({ service: 'tuningService' });
-
-function toModelFeatureType(dtype: ColumnDataType | undefined): 'float' | 'int' | 'str' {
-  switch (dtype) {
-    case 'float':
-      return 'float';
-    case 'integer':
-      return 'int';
-    default:
-      return 'str';
-  }
-}
-
-function deriveServingSchema(
-  dataset: DatasetProfile,
-  targetColumn: string,
-  summaryFeatureColumns?: string[],
-): {
-  featureColumns: string[];
-  featureTypes: Record<string, 'float' | 'int' | 'str'>;
-  sampleRequest?: Record<string, unknown>;
-} {
-  const datasetFeatureColumns = dataset.columns
-    .map((column) => column.name)
-    .filter((column) => column !== targetColumn);
-  const featureColumns = summaryFeatureColumns?.length ? summaryFeatureColumns : datasetFeatureColumns;
-  const datasetColumnsByName = new Map(dataset.columns.map((column) => [column.name, column]));
-  const featureTypes = Object.fromEntries(
-    featureColumns.map((column) => [column, toModelFeatureType(datasetColumnsByName.get(column)?.dtype)])
-  );
-
-  const sampleRow = dataset.sample.find((row) => featureColumns.every((column) => column in row)) ?? dataset.sample[0];
-  const sampleRequest = sampleRow
-    ? Object.fromEntries(
-        featureColumns
-          .filter((column) => column in sampleRow)
-          .map((column) => [column, sampleRow[column]])
-      )
-    : undefined;
-
-  return { featureColumns, featureTypes, sampleRequest };
-}
 
 /* ------------------------------------------------------------------ */
 /*  Script generation                                                  */
@@ -535,6 +494,9 @@ export async function runTuningStudy(
         feature_columns?: string[];
       };
       const servingSchema = deriveServingSchema(dataset, targetColumn, summary.feature_columns);
+      if (!servingSchema.ok) {
+        throw new Error(servingSchema.error);
+      }
 
       const dateTag = new Date().toISOString().slice(0, 10);
       const newRecord = await modelRepository.create({

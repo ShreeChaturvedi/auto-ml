@@ -13,6 +13,15 @@ import type { AuthRequest } from '../types/auth.js';
 import { loadModelFile } from '../utils/modelFileLoader.js';
 import { resolveTargetColumn } from '../utils/modelUtils.js';
 
+function getStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object' || !('statusCode' in error)) {
+    return undefined;
+  }
+
+  const statusCode = (error as { statusCode?: unknown }).statusCode;
+  return typeof statusCode === 'number' ? statusCode : undefined;
+}
+
 export function createDeploymentsRouter(): Router {
   const router = Router();
   const deploymentRepo = createDeploymentRepository();
@@ -26,8 +35,16 @@ export function createDeploymentsRouter(): Router {
       res.status(400).json({ error: 'modelId, projectId, and name are required' });
       return;
     }
-    const deployment = await deploymentManager.deployModel(modelId, projectId, name);
-    res.status(201).json({ deployment });
+    try {
+      const deployment = await deploymentManager.deployModel(modelId, projectId, name);
+      res.status(201).json({ deployment });
+    } catch (error) {
+      if (getStatusCode(error) === 400) {
+        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid deployment request' });
+        return;
+      }
+      throw error;
+    }
   }));
 
   // GET / — List deployments for project

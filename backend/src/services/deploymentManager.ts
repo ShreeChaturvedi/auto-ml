@@ -11,7 +11,9 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 
 import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
+import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
+import type { ModelRecord } from '../types/model.js';
 import type {
   DeploymentCacheEntry,
   DeploymentRecord,
@@ -24,6 +26,7 @@ import { buildInferenceDockerRunArgs } from './container/inferenceDockerBuilder.
 import { execDocker } from './dockerUtils.js';
 import { buildInferenceServerScript } from './inferenceServerBuilder.js';
 import { loadRuntimeDependencies } from './runtimeDependencies.js';
+import { deriveServingSchema, hasCompleteServingSchema } from './servingSchema.js';
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -48,6 +51,7 @@ const LOG_TAG = '[deploymentManager]';
 /* ------------------------------------------------------------------ */
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
+const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 
 /* ------------------------------------------------------------------ */
 /*  Deployment repository (lazy — created concurrently)               */
@@ -135,6 +139,49 @@ async function resolveModelArtifactDir(
   }
 
   return dirname(resolvedArtifactPath);
+}
+
+function badDeploymentRequest(message: string): Error & { statusCode: 400 } {
+  return Object.assign(new Error(message), { statusCode: 400 as const });
+}
+
+async function ensureModelServingSchema(model: ModelRecord): Promise<ModelRecord> {
+  if (hasCompleteServingSchema(model)) {
+    return model;
+  }
+
+  const dataset = await datasetRepository.getById(model.datasetId);
+  if (!dataset) {
+    throw badDeploymentRequest(
+      `Model ${model.modelId} is missing its deployment schema, and dataset "${model.datasetId}" could not be loaded to recover it.`,
+    );
+  }
+
+  const derived = deriveServingSchema(dataset, model.targetColumn, model.featureColumns);
+  if (!derived.ok) {
+    throw badDeploymentRequest(
+      `Model ${model.modelId} is missing its deployment schema, and recovery failed: ${derived.error}`,
+    );
+  }
+
+  const updated = await modelRepository.update(model.modelId, (current) => ({
+    ...current,
+    featureColumns: derived.featureColumns,
+    featureTypes: derived.featureTypes,
+    sampleRequest: derived.sampleRequest,
+  }));
+
+  if (!updated) {
+    throw new Error(`Model ${model.modelId} could not be updated while recovering its deployment schema`);
+  }
+
+  appLogger.info(`${LOG_TAG} Recovered missing deployment schema from dataset metadata`, {
+    modelId: model.modelId,
+    datasetId: model.datasetId,
+    featureCount: derived.featureColumns.length,
+  });
+
+  return updated;
 }
 
 function summarizeContainerLogs(stdout: string, stderr: string): string {
@@ -315,7 +362,8 @@ async function deployModelInternal(
   if (!model.artifact?.path) {
     throw new Error('Model has no artifact — train the model before deploying');
   }
-  const modelArtifactDir = await resolveModelArtifactDir(model, modelId);
+  const hydratedModel = await ensureModelServingSchema(model);
+  const modelArtifactDir = await resolveModelArtifactDir(hydratedModel, modelId);
 
   // 3. Write 'creating' row to DB BEFORE anything else (crash safety)
   let record: DeploymentRecord = await repo.create({
@@ -328,7 +376,7 @@ async function deployModelInternal(
   const deploymentId = record.deploymentId;
 
   // 4. Generate serve.py and write to deployment storage
-  const servePy = buildInferenceServerScript(model);
+  const servePy = buildInferenceServerScript(hydratedModel);
   const deploymentDir = join(env.deploymentStorageDir, deploymentId);
   await mkdir(deploymentDir, { recursive: true });
   await writeFile(join(deploymentDir, 'serve.py'), servePy, 'utf8');
@@ -339,7 +387,7 @@ async function deployModelInternal(
 
     // 7. docker run
     const containerName = `automl-serve-${deploymentId.slice(0, 8)}`;
-    const runtimeDependencies = loadRuntimeDependencies(model);
+    const runtimeDependencies = loadRuntimeDependencies(hydratedModel);
     if (runtimeDependencies.length > 0) {
       appLogger.info(`${LOG_TAG} Deployment ${deploymentId} will pip-install runtime deps at boot: ${runtimeDependencies.join(', ')}`);
     }

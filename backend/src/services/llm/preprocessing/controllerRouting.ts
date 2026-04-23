@@ -9,6 +9,11 @@ function isWorkflowThreadReference(value: string | null | undefined): boolean {
   return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
 }
 
+const INVALID_RUN_REFERENCE_REASON_CODES = new Set([
+  'RUN_NOT_FOUND',
+  'RUN_PROJECT_MISMATCH'
+]);
+
 export type PreprocessingControllerNode =
   | 'answer'
   | 'plan_step'
@@ -156,7 +161,15 @@ export function getLatestRunId(toolResults?: ToolResult[]): string | undefined {
     if (!output || typeof output !== 'object' || Array.isArray(output)) {
       continue;
     }
-    const runId = (output as Record<string, unknown>).runId;
+    const outputRecord = output as Record<string, unknown>;
+    const isError = outputRecord.isError === true;
+    const reasonCode = typeof outputRecord.reasonCode === 'string'
+      ? outputRecord.reasonCode
+      : undefined;
+    if (isError && reasonCode && INVALID_RUN_REFERENCE_REASON_CODES.has(reasonCode)) {
+      continue;
+    }
+    const runId = outputRecord.runId;
     if (typeof runId === 'string' && runId.trim() && !isWorkflowThreadReference(runId)) {
       return runId.trim();
     }

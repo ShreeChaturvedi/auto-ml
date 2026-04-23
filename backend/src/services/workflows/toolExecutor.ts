@@ -252,6 +252,13 @@ async function executeWorkflowToolCall(
     enrichedArgs.runId = state.run.runId;
   }
 
+  if (phaseConfig?.phase === 'preprocessing' && phaseConfig.isPhaseSpecificTool(call.tool)) {
+    const controllerRunId = getPreprocessingControllerRunId(state.controllerSummary);
+    if (controllerRunId) {
+      enrichedArgs.runId = controllerRunId;
+    }
+  }
+
   // PhaseConfig dispatch for phase-specific tools
   if (phaseConfig?.isPhaseSpecificTool(call.tool)) {
     const phaseResult = await phaseConfig.executePhaseSpecificTool(
@@ -312,6 +319,20 @@ function resolveApprovalSource(
   return state.run.pendingInputKind === 'approval' || state.controllerSummary?.pendingApproval === true
     ? 'user'
     : 'agent';
+}
+
+function getPreprocessingControllerRunId(controllerSummary: WorkflowGraphState['controllerSummary']): string | undefined {
+  if (!controllerSummary || typeof controllerSummary !== 'object' || Array.isArray(controllerSummary)) {
+    return undefined;
+  }
+
+  const runId = (controllerSummary as Record<string, unknown>).runId;
+  if (typeof runId !== 'string' || !runId.trim()) {
+    return undefined;
+  }
+
+  const trimmed = runId.trim();
+  return /^(?:[a-z]+-)*thread[-:]/i.test(trimmed) ? undefined : trimmed;
 }
 
 function extractLatestCellId(results: ToolResult[]): string | undefined {

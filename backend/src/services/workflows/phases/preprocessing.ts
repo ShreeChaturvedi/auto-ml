@@ -6,7 +6,6 @@ import { createDatasetRepository } from '../../../repositories/datasetRepository
 import {
   createFilePreprocessingRunRepository
 } from '../../../repositories/preprocessingRunRepository.js';
-import type { DatasetFileType } from '../../../types/dataset.js';
 import { ToolCallSchema } from '../../../types/llm.js';
 import type { ToolResult } from '../../../types/llm.js';
 import { asRecord, asString } from '../../../utils/typeCoercion.js';
@@ -21,7 +20,7 @@ import {
 import { fail } from '../../llm/preprocessingTools/helpers.js';
 import { TOOL_HANDLERS } from '../../llm/preprocessingTools/index.js';
 import * as notebookService from '../../notebook/notebookService.js';
-import { buildPreprocessingCellContent } from '../../notebook/preprocessingExecutionContext.js';
+import { buildPreprocessingCellContents } from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
   PhaseConfig,
@@ -108,6 +107,7 @@ export function buildPreprocessingCodeGenerationSystemPrompt(): string {
 
 RULES:
 - Work on a DataFrame variable named \`df\` (already loaded in scope).
+- Standard imports are guaranteed in every preprocessing cell: \`import pandas as pd\` and \`import numpy as np\`.
 - Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
 - Use pandas/numpy idioms. Keep the code minimal and focused.
 - If the step has more than one logical notebook phase, you MUST separate it with explicit comment markers like \`# Cell 1\`, \`# Cell 2\`.
@@ -351,54 +351,6 @@ async function resolveLatestStepNotebookContext(
     cellIds: [...step.cellIds]
   };
 }
-
-
-
-export function buildSegmentedPreprocessingCellContent(params: {
-  segment: string;
-  segmentIndex: number;
-  segmentCount: number;
-  dataset?: {
-    filename: string;
-    datasetId: string;
-    fileType: DatasetFileType;
-  };
-}): string {
-  const trimmedSegment = params.segment.trim();
-  const dataset = params.dataset;
-  if (!dataset) {
-    return trimmedSegment;
-  }
-
-  if (params.segmentCount <= 1) {
-    return buildPreprocessingCellContent({
-      filename: dataset.filename,
-      datasetId: dataset.datasetId,
-      fileType: dataset.fileType,
-      dataframeName: 'df',
-      userCode: trimmedSegment
-    });
-  }
-
-  if (params.segmentIndex === 0) {
-    return [
-      `df = load_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`,
-      '',
-      trimmedSegment
-    ].join('\n');
-  }
-
-  if (params.segmentIndex === params.segmentCount - 1) {
-    return [
-      trimmedSegment,
-      '',
-      `save_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`
-    ].join('\n');
-  }
-
-  return trimmedSegment;
-}
-
 // ---------------------------------------------------------------------------
 // Preprocessing PhaseConfig — replaces Systems A (preprocessingRuntime) and
 // B (controller). The coordinator lives here, while stage configuration,
@@ -422,6 +374,14 @@ function isWorkflowThreadReference(value: string | null | undefined): boolean {
     return false;
   }
   return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
+}
+
+function buildWorkflowOwnedPreprocessingRunId(workflowRunId: string | undefined): string | undefined {
+  const trimmed = workflowRunId?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return `prep-${trimmed}`;
 }
 
 
@@ -469,16 +429,14 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   if (activeDatasetId) {
     const dataset = await datasetRepository.getById(activeDatasetId);
     if (dataset && dataset.projectId === state.run.projectId) {
-      cellContent = buildSegmentedPreprocessingCellContent({
-        segment: nextSegment,
-        segmentIndex: nextSegmentIndex,
-        segmentCount: codeSegments.length,
-        dataset: {
-          filename: dataset.filename,
-          datasetId: dataset.datasetId,
-          fileType: dataset.fileType
-        }
+      const visibleCellContents = buildPreprocessingCellContents({
+        filename: dataset.filename,
+        datasetId: dataset.datasetId,
+        fileType: dataset.fileType,
+        dataframeName: 'df',
+        userCode: step.code
       });
+      cellContent = visibleCellContents[nextSegmentIndex] ?? nextSegment;
     }
   }
 
@@ -684,23 +642,43 @@ async function buildCodeGenerationAction(
 async function executePreprocessingToolCall(
   projectId: string,
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  workflowRunId?: string
 ): Promise<{ output?: unknown; error?: string }> {
   const explicitRunId = asString(args.runId);
   const sanitizedRunId = explicitRunId && !isWorkflowThreadReference(explicitRunId)
     ? explicitRunId
     : undefined;
   const toolCallId = asString(args.toolCallId);
+  const workflowOwnedRunId = buildWorkflowOwnedPreprocessingRunId(workflowRunId);
 
   // Resolve run
   let run;
   if (sanitizedRunId) {
     const existing = await runRepository.getById(sanitizedRunId);
-    if (!existing) {
-      return fail(sanitizedRunId, 'RUN_NOT_FOUND', `Run ${sanitizedRunId} not found.`);
+    if (existing && existing.projectId !== projectId) {
+      return fail(
+        sanitizedRunId,
+        'RUN_PROJECT_MISMATCH',
+        `Run ${sanitizedRunId} belongs to another project and cannot be used here.`
+      );
     }
     run = existing;
-  } else {
+  }
+
+  if (!run && workflowOwnedRunId) {
+    const existingWorkflowRun = await runRepository.getById(workflowOwnedRunId);
+    if (existingWorkflowRun && existingWorkflowRun.projectId !== projectId) {
+      return fail(
+        workflowOwnedRunId,
+        'RUN_PROJECT_MISMATCH',
+        `Run ${workflowOwnedRunId} belongs to another project and cannot be used here.`
+      );
+    }
+    run = await runRepository.getOrCreate(projectId, workflowOwnedRunId);
+  }
+
+  if (!run) {
     run = await runRepository.getOrCreate(projectId);
   }
 
@@ -792,7 +770,8 @@ export const preprocessingPhaseConfig: PhaseConfig = {
     const rawResult = await executePreprocessingToolCall(
       ctx.projectId,
       name,
-      toolArgs
+      toolArgs,
+      ctx.run.runId
     );
 
     // Sync LangGraph state (same as the old syncPreprocessingLangGraphState)

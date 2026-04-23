@@ -155,6 +155,33 @@ export function buildInferenceServerScript(model: ModelRecord): string {
   L('');
   L('');
 
+  // --- pipeline helpers ---
+  L('def resolve_model_step(pipeline):');
+  L('    if hasattr(pipeline, "named_steps"):');
+  L('        named_steps = getattr(pipeline, "named_steps", {}) or {}');
+  L('        if "model" in named_steps:');
+  L('            return named_steps["model"]');
+  L('        ordered_steps = list(named_steps.values())');
+  L('        if ordered_steps:');
+  L('            return ordered_steps[-1]');
+  L('    if hasattr(pipeline, "steps"):');
+  L('        steps = getattr(pipeline, "steps", []) or []');
+  L('        if steps:');
+  L('            return steps[-1][1]');
+  L('    return pipeline');
+  L('');
+  L('def resolve_classes(pipeline, probas=None):');
+  L('    if hasattr(pipeline, "classes_"):');
+  L('        return pipeline.classes_');
+  L('    model_step = resolve_model_step(pipeline)');
+  L('    if hasattr(model_step, "classes_"):');
+  L('        return model_step.classes_');
+  L('    if probas is not None:');
+  L('        return list(range(len(probas)))');
+  L('    return []');
+  L('');
+  L('');
+
   // --- lifespan ---
   L('app_state = {}');
   L('');
@@ -167,7 +194,7 @@ export function buildInferenceServerScript(model: ModelRecord): string {
   L('    # Cache SHAP explainer');
   L('    try:');
   L('        import shap');
-  L('        model_step = pipeline.named_steps["model"]');
+  L('        model_step = resolve_model_step(pipeline)');
   L('        if hasattr(model_step, "estimators_") or hasattr(model_step, "get_booster"):');
   L('            app_state["explainer"] = shap.TreeExplainer(model_step)');
   L('        elif hasattr(model_step, "coef_"):');
@@ -205,7 +232,7 @@ export function buildInferenceServerScript(model: ModelRecord): string {
   if (isClassification) {
     L('    if hasattr(pipeline, "predict_proba"):');
     L('        probas = pipeline.predict_proba(df)[0]');
-    L('        classes = pipeline.named_steps["model"].classes_');
+    L('        classes = resolve_classes(pipeline, probas)');
     L('        result["prediction"] = str(prediction)');
     L('        result["probabilities"] = {str(c): float(p) for c, p in zip(classes, probas)}');
     L('    else:');
@@ -253,7 +280,7 @@ export function buildInferenceServerScript(model: ModelRecord): string {
   if (isClassification) {
     L('    if hasattr(pipeline, "predict_proba"):');
     L('        probas = pipeline.predict_proba(df)');
-    L('        classes = pipeline.named_steps["model"].classes_');
+    L('        classes = resolve_classes(pipeline, probas[0] if len(probas) > 0 else None)');
     L('        for i, pred in enumerate(predictions):');
     L('            results.append({');
     L('                "prediction": str(pred),');

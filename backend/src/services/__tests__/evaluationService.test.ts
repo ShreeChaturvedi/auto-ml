@@ -296,6 +296,9 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('fitted_model = pipeline.steps[-1][1]');
     expect(script).toContain('fitted_model._get_cat_feature_indices()');
     expect(script).toContain('fillna("__MISSING__").astype(str)');
+    expect(script).toContain('boolean_column_set.update(frame.select_dtypes(include=["bool", "boolean"]).columns.tolist())');
+    expect(script).toContain('X_test[col] = X_test[col].fillna(False).astype("int64")');
+    expect(script).toContain('test_df[col] = test_df[col].fillna(False).astype("int64")');
     expect(script).toContain('requires_refit_categorical_metadata = is_direct_catboost and len(categorical_columns) > 0');
     expect(script).toContain('Learning curve skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
     expect(script).toContain('Cross-validation skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');

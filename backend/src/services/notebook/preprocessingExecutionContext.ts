@@ -16,6 +16,7 @@ export interface PreprocessingExecutionContext {
 const DEFAULT_DATAFRAME_NAME = 'df';
 const PYTHON_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const CELL_MARKER_RE = /^\s*#\s*(?:cell\b.*|%%.*)$/i;
+const STANDARD_PREPROCESSING_IMPORTS = ['import numpy as np', 'import pandas as pd'];
 const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
 
 function sanitizeIdentifier(name: string | undefined): string {
@@ -79,6 +80,8 @@ export function buildPreprocessingCellContent(opts: {
   const df = JSON.stringify(opts.dataframeName);
 
   return [
+    ...STANDARD_PREPROCESSING_IMPORTS,
+    '',
     `${opts.dataframeName} = load_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`,
     '',
     opts.userCode.trim(),
@@ -137,6 +140,7 @@ export function buildPreprocessingCellContents(opts: {
 
   return codeSegments.map((segment, index) => {
     const lines: string[] = [];
+    lines.push(...STANDARD_PREPROCESSING_IMPORTS, '');
     if (index === 0) {
       lines.push(`${opts.dataframeName} = load_preprocessing_dataset(${fn}, ${ds}, ${ft}, ${df})`, '');
     }

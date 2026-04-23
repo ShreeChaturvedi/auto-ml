@@ -116,6 +116,38 @@ describe('resolvePreprocessingControllerTurn', () => {
     expect(decision.request.messages[1]?.content).toContain('Run ID: (none)');
   });
 
+  it('does not adopt failed RUN_NOT_FOUND run references from prior tool results', async () => {
+    const client = createClient({
+      turnMode: 'action_required',
+      rationale: 'The user asked to modify preprocessing.'
+    });
+    const toolResults: ToolResult[] = [
+      {
+        id: 'result-1',
+        tool: 'profile_active_dataset',
+        error: 'Run run-short-preprocess not found.',
+        output: {
+          runId: 'run-short-preprocess',
+          isError: true,
+          reasonCode: 'RUN_NOT_FOUND'
+        }
+      }
+    ];
+
+    const decision = await resolvePreprocessingControllerTurn({
+      client,
+      dataset,
+      prompt: 'Continue',
+      toolResults,
+      continuation: true,
+      threadId: 'prep-thread:test:ignore-missing-run'
+    });
+
+    expect(decision.summary.runId).toBeUndefined();
+    expect(decision.summary.currentNode).toBe('plan_step');
+    expect(decision.request.messages[1]?.content).toContain('Run ID: (none)');
+  });
+
   it('routes successful executed steps to validation with validate-only tools', async () => {
     const client = createClient({
       turnMode: 'action_required',

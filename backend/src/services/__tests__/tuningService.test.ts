@@ -932,7 +932,7 @@ describe('runTuningStudy', () => {
       best_trial_number: 4,
       optimization_history: { trial_numbers: [0, 1], values: [0.85, 0.91], best_values: [0.85, 0.91] },
       param_importances: { params: ['alpha'], importances: [1] },
-      feature_columns: ['age', 'income'],
+      feature_columns: ['feat1', 'feat2'],
     }));
     vi.mocked(mockStat).mockResolvedValue({ size: 80680 } as never);
 

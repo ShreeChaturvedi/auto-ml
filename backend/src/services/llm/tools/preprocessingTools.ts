@@ -1,5 +1,8 @@
 import type { LlmToolDefinition } from '../llmClient.js';
 
+const OPTIONAL_RUN_ID_DESCRIPTION =
+  'Optional preprocessing run identifier. Reuse only a runId previously returned by the backend. If no real runId has been returned yet, omit this field. Never invent or paraphrase a runId.';
+
 export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
   {
     name: 'list_project_datasets',
@@ -7,7 +10,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string', description: 'Optional preprocessing run identifier.' }
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION }
       }
     }
   },
@@ -17,7 +20,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         datasetId: { type: 'string' }
       },
       required: ['datasetId']
@@ -29,7 +32,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         datasetId: { type: 'string' }
       }
     }
@@ -40,7 +43,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         datasetId: { type: 'string' },
         label: { type: 'string' },
         stepIds: { type: 'array', items: { type: 'string' } }
@@ -53,7 +56,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         datasetId: { type: 'string' }
       },
       required: ['datasetId']
@@ -65,7 +68,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' }
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION }
       }
     }
   },
@@ -75,7 +78,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         checkpointId: { type: 'string' },
         operation: {
           type: 'string',
@@ -93,7 +96,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string' },
         title: { type: 'string' },
         intentType: { type: 'string' },
@@ -109,7 +112,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string' },
         code: { type: 'string' }
       },
@@ -122,7 +125,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string' },
         cellId: { type: 'string' },
         cellIds: { type: 'array', items: { type: 'string' } },
@@ -139,7 +142,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string' },
         rowCountBefore: { type: 'number' },
         rowCountAfter: { type: 'number' },
@@ -158,7 +161,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string' },
         approved: { type: 'boolean' },
         rejectionReason: { type: 'string' },
@@ -174,7 +177,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string', description: 'Optional single-step divergence check target.' },
         cellId: { type: 'string', description: 'Optional single-cell divergence check target.' }
       }
@@ -186,7 +189,7 @@ export const PREPROCESSING_ORCHESTRATION_TOOLS: LlmToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        runId: { type: 'string' },
+        runId: { type: 'string', description: OPTIONAL_RUN_ID_DESCRIPTION },
         stepId: { type: 'string' },
         strategy: {
           type: 'string',

@@ -54,6 +54,14 @@ const DATASET_PATH = path.resolve(testDir, '../fixtures', DATASET_FILENAME);
 const TARGET_COLUMN = process.env.FUNCTIONAL_TARGET_COLUMN ?? 'churned';
 const SKIP_WORKFLOWS = process.env.FUNCTIONAL_SKIP_WORKFLOWS === '1';
 const RUN_DEPLOY = process.env.FUNCTIONAL_DEPLOY === '1';
+const FUNCTIONAL_MODEL = process.env.FUNCTIONAL_MODEL;
+const FUNCTIONAL_REASONING = process.env.FUNCTIONAL_REASONING as
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | undefined;
 
 interface AuthResponse {
   accessToken: string;
@@ -165,6 +173,14 @@ async function streamWorkflow(
   return body.split('\n').filter((line) => line.trim().length > 0);
 }
 
+function withWorkflowOverrides(payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...payload,
+    ...(FUNCTIONAL_MODEL ? { model: FUNCTIONAL_MODEL } : {}),
+    ...(FUNCTIONAL_REASONING ? { reasoningEffort: FUNCTIONAL_REASONING } : {})
+  };
+}
+
 function parseNdjson(lines: string[]): Record<string, unknown>[] {
   const events: Record<string, unknown>[] = [];
   for (const line of lines) {
@@ -243,6 +259,10 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
   const auth = await registerUser(request);
   const project = await createProject(request, auth.accessToken);
   await seedAuth(page, auth, project);
+  test.info().annotations.push({
+    type: 'note',
+    description: `workflow-model=${FUNCTIONAL_MODEL ?? 'default'} reasoning=${FUNCTIONAL_REASONING ?? 'default'}`
+  });
 
   // Keep /api/auth/me from overwriting the seeded verified user.
   await page.route('**/api/auth/me', async (route) => {
@@ -320,14 +340,14 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const lines = await streamWorkflow(
       request,
       auth.accessToken,
-      {
+      withWorkflowOverrides({
         projectId: project.id,
         phase: 'preprocessing',
         datasetId: uploadDatasetId,
         targetColumn: TARGET_COLUMN,
         prompt:
           'Drop rows with missing values and one-hot encode any categorical columns. Keep the run short.',
-      },
+      }),
       240_000,
     );
     const events = parseNdjson(lines);
@@ -358,13 +378,13 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const lines = await streamWorkflow(
       request,
       auth.accessToken,
-      {
+      withWorkflowOverrides({
         projectId: project.id,
         phase: 'feature_engineering',
         datasetId: preprocessedDatasetId,
         targetColumn: TARGET_COLUMN,
         prompt: `Propose 2 engineered features that should help predict ${TARGET_COLUMN}. Keep it simple.`,
-      },
+      }),
       240_000,
     );
     const events = parseNdjson(lines);
@@ -420,14 +440,14 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const firstTurnLines = await streamWorkflow(
       request,
       auth.accessToken,
-      {
+      withWorkflowOverrides({
         projectId: project.id,
         phase: 'training',
         datasetId: fePreparedDatasetId,
         targetColumn: TARGET_COLUMN,
         prompt:
           `Train a logistic_regression model to predict ${TARGET_COLUMN}. Use the correct task type.`,
-      },
+      }),
       240_000,
     );
     const firstEvents = parseNdjson(firstTurnLines);
@@ -457,7 +477,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const approvalLines = await streamWorkflow(
       request,
       auth.accessToken,
-      {
+      withWorkflowOverrides({
         projectId: project.id,
         phase: 'training',
         runId,
@@ -465,7 +485,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
         datasetId: fePreparedDatasetId,
         targetColumn: TARGET_COLUMN,
         prompt: `Approved. Proceed with training the selected model: ${experimentName}.`,
-      },
+      }),
       540_000,
     );
     const approvalEvents = parseNdjson(approvalLines);

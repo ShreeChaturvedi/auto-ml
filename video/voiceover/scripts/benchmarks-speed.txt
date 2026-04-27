@@ -1,0 +1,7 @@
+{{TITLE}} From raw CSV to a held-out evaluation, in **minutes**.
+
+{{BARS}} Five Kaggle datasets, timed on the same clock from upload to metric, with **manual Jupyter** in grey and **AutoGluon** in amber.
+
+{{HERO}} The median across all five runs is **seven times faster**.
+
+{{SAVED}} That is a hundred and sixteen minutes of an afternoon, **back** in your pocket.

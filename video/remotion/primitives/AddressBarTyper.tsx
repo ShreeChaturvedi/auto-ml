@@ -102,9 +102,21 @@ export const AddressBarTyper: React.FC<AddressBarTyperProps> = ({
     commitDurationFrames,
   );
 
+  // Ghost placeholder — renders "Search Google or type a URL" in muted gray
+  // for the first 6 frames before any character is typed, then fades to 0.
+  // Pure JSX-level logic; computeAddressBarTyper signature is unchanged.
+  const showGhost = typed.length === 0 && frame < startFrame + 6;
+  const ghostOpacity = showGhost
+    ? interpolate(frame, [startFrame, startFrame + 6], [1, 0], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 0;
+
   return (
     <span
       style={{
+        position: "relative",
         display: "inline-flex",
         alignItems: "center",
         transform: `scale(${popScale})`,
@@ -117,15 +129,33 @@ export const AddressBarTyper: React.FC<AddressBarTyperProps> = ({
         fontFeatureSettings: '"tnum"',
       }}
     >
+      {ghostOpacity > 0 ? (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: 0,
+            top: "50%",
+            transform: "translateY(-50%)",
+            color: "rgba(60,60,67,0.35)",
+            opacity: ghostOpacity,
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Search Google or type a URL
+        </span>
+      ) : null}
       <span>{typed}</span>
       <span
         aria-hidden
         style={{
           display: "inline-block",
-          width: 1.5,
+          width: 2,
           height: 14,
           marginLeft: typed.length > 0 ? 1 : 0,
           background: "#3c4043",
+          boxShadow: "0 0 1px rgba(60,64,67,0.5)",
           opacity: caretVisible ? 1 : 0,
         }}
       />

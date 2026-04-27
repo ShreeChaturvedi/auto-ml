@@ -21,12 +21,9 @@
  *   L  42.2–43.2 s 2nd meta-card SVG
  *   M  43.2–44.2 s 3rd meta-card SVG
  *   N  44.2–46.7 s scroll to footer over 2.5 s
- *   O  46.7–49.7 s pause at bottom on FooterCta
- *   P  49.7–50.9 s click FooterCta; hold for signup cut
- *
- * The handoff to signup is handled by restoring browser chrome near the end
- * of the scene, then clicking the bottom-of-page Get Started CTA and holding
- * for ~1 second before the cut into the real core-app signup beat.
+ *   O  46.7–49.2 s pause at bottom on FooterCta
+ *   P  49.2–50.2 s cursor sweeps up to `a.nav-cta` (smooth 50 steps)
+ *   Q  50.2–51.5 s click + 1.1 s post-click tail (ClickRipple animates)
  */
 import type { Page } from "playwright";
 import { centerOf, pageTopOf } from "./helpers";
@@ -204,26 +201,19 @@ export async function drive(
   // into the bottom-of-page hold and clip the wordmark's letter ascenders.
   await page.waitForTimeout(150);
 
-  // --- Phase O/P: FooterCta pause + click for signup handoff ---------------
+  // --- Phase O: FooterCta pause — cursor on CTA button ---------------------
   const footerCta = await safeCenter(page, ".footer-cta-button");
   await cursor.move(page, footerCta.x, footerCta.y, 6);
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(2500);
 
-  // Prevent the real navigation so the landing clip can end on the compacted
-  // browser view; Remotion hard-cuts into the dedicated signup capture.
-  await page.locator(".footer-cta-button").evaluate((el) => {
-    el.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      },
-      { once: true },
-    );
-  });
+  // --- Phase P: sweep cursor up to nav CTA ---------------------------------
+  const navCtaFinal = await centerOf(page, "a.nav-cta");
+  await cursor.move(page, navCtaFinal.x, navCtaFinal.y, 50);
+  await page.waitForTimeout(200);
 
-  await cursor.click(page, footerCta.x, footerCta.y);
-  await page.waitForTimeout(1000);
+  // --- Phase Q: click + tail -----------------------------------------------
+  await cursor.click(page, navCtaFinal.x, navCtaFinal.y);
+  await page.waitForTimeout(1100);
 }
 
 /**

@@ -1,0 +1,11 @@
+{{HEADING}} The tooling has finally caught up with the ambition.
+
+{{T2020}} In **twenty-twenty**, we had transformer-scale models that were brilliant on paper and brittle in production.
+
+{{T2023}} By **twenty-twenty-three**, ReAct and structured tool use meant agents could finally reason through a task instead of guessing at it.
+
+{{T2024}} **Twenty-twenty-four** brought LangGraph and MCP, which made those agents typed, durable, and observable.
+
+{{T2026}} And in **twenty-twenty-six**, classical AutoML is still optimizing the **easy twenty percent** while the other **eighty** stays human.
+
+{{CLOSER}} This platform is built for the **right column**.

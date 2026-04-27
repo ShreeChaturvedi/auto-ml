@@ -1,0 +1,7 @@
+{{EYEBROW}} Training begins here.
+
+{{ANSWER}} Stage one is **answer**, where the agent restates what you actually asked it to do.
+
+{{CONFIGURE}} Stage two is **configure_experiment**, which pins down the dataset, the target column, and the metric.
+
+{{PROPOSE}} Stage three is **propose_model**, where the agent lines up three candidates and hands the choice to a **human**.

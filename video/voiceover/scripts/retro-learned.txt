@@ -1,0 +1,7 @@
+{{TITLE}} What we **learned** over the year.
+
+{{S1}} **State machines** beat chained prompts, every single time.
+
+{{S2}} **Retrieval** beat prompt tuning once the corpus got real.
+
+{{S3}} Eval harnesses are infrastructure, and you ship them in sprint **one**, not sprint nine.

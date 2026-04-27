@@ -1,0 +1,29 @@
+{
+  "name": "poster",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5180",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 5180",
+    "pdf": "node scripts/export-pdf.mjs",
+    "frames": "node scripts/grab-phase-frames.mjs",
+    "capture": "node scripts/capture-product-ui.mjs"
+  },
+  "dependencies": {
+    "@fontsource/instrument-serif": "^5.1.1",
+    "@fontsource/plus-jakarta-sans": "^5.1.1",
+    "qrcode.react": "^4.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "puppeteer": "^23.10.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

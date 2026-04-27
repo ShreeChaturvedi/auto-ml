@@ -1,6 +1,6 @@
 import React from "react";
 import { Img, staticFile } from "remotion";
-import { MONOSPACE_FONT, REGULAR_FONT, TITLE_FONT } from "../../../config/fonts";
+import { MONOSPACE_FONT, REGULAR_FONT, SERIF_FONT, TITLE_FONT } from "../../../config/fonts";
 import type { Theme } from "../../../config/themes";
 import { COLORS } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
@@ -156,14 +156,16 @@ const NAME_STYLE: React.CSSProperties = {
   textAlign: "center",
 };
 
+// Instrument Serif — editorial accent font used throughout the video. Reads
+// optically smaller than Plus Jakarta Sans, so bump the size slightly and
+// loosen tracking to restore presence.
 const MAJORS_STYLE: React.CSSProperties = {
-  ...REGULAR_FONT,
-  fontWeight: 500,
-  fontSize: 20,
-  letterSpacing: "0.005em",
-  lineHeight: 1.3,
+  ...SERIF_FONT,
+  fontSize: 24,
+  letterSpacing: "0.01em",
+  lineHeight: 1.25,
   textAlign: "center",
-  minHeight: 26,
+  minHeight: 30,
 };
 
 // Shared with AcknowledgementsSlide (slide 04) so the two adjacent slides
@@ -347,11 +349,13 @@ const MemberColumn: React.FC<{
         {member.name}
       </div>
 
-      {/* Major: types in at LABEL_RATE after the name lands. */}
+      {/* Major: types in at LABEL_RATE after the name lands. Rendered in
+          the fully-appeared foreground color (black on the light theme) so
+          the serif reads with editorial weight rather than secondary muted. */}
       <div
         style={{
           ...MAJORS_STYLE,
-          color: c.WORD_COLOR_ON_BG_GREYED,
+          color: c.WORD_COLOR_ON_BG_APPEARED,
           marginTop: NAME_TO_MAJOR,
         }}
       >

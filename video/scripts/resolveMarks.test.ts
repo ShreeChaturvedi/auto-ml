@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveMarks, type AlignmentBlock } from "./resolveMarks";
+import {
+  resolveMarks,
+  walkScript,
+  type AlignmentBlock,
+} from "./resolveMarks";
 
 /**
  * Tiny helper to build an alignment block whose character timestamps are
@@ -75,6 +79,43 @@ describe("resolveMarks", () => {
     expect(marks["A-B"]).toBe(12);
     // 'D' at index 3 → 0.3s → 18
     expect(marks["SECTION_3"]).toBe(18);
+  });
+
+  it("strips **bold** markdown delimiters from the TTS payload", () => {
+    const { strippedText, marks } = walkScript("Run **fast** now.");
+    expect(strippedText).toBe("Run fast now.");
+    expect(marks).toEqual({});
+  });
+
+  it("strips *single-asterisk* and _underscore_ emphasis", () => {
+    expect(walkScript("be *bold* there").strippedText).toBe("be bold there");
+    expect(walkScript("be _quiet_ now").strippedText).toBe("be quiet now");
+  });
+
+  it("preserves underscores inside identifiers (snake_case)", () => {
+    const { strippedText } = walkScript(
+      "Stage four — execute_training runs the cell.",
+    );
+    expect(strippedText).toBe("Stage four — execute_training runs the cell.");
+  });
+
+  it("keeps marks accurate when they sit immediately before a **bold** word", () => {
+    const raw = "go {{NOW}}**fast**.";
+    // Stripped: "go fast." — mark sits at index 3 (the 'f').
+    const { strippedText, marks } = walkScript(raw);
+    expect(strippedText).toBe("go fast.");
+    expect(marks.NOW).toBe(3);
+  });
+
+  it("walkScript and resolveMarks share the same stripped length so they stay in lockstep", () => {
+    // Realistic line from voiceover/scripts/title.txt
+    const raw =
+      "{{TAGLINE}} From a dataset, to deployed models — **agentically**, and **autonomously**.";
+    const { strippedText } = walkScript(raw);
+    const alignment = makeAlignment(strippedText);
+    // Should NOT throw — proves voiceover.mts (which uses walkScript) and
+    // resolveMarks (also walkScript) agree on the character payload.
+    expect(() => resolveMarks(raw, alignment, FPS)).not.toThrow();
   });
 
   it("throws when alignment.characters length doesn't match stripped text length", () => {

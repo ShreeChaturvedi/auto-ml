@@ -32,10 +32,6 @@ const alignmentFileFor = (mp3File: string): string =>
 
 type SceneTimingData = {
   durationInFrames: number;
-  captureSize?: {
-    width: number;
-    height: number;
-  };
   alignment?: SceneAlignment;
   /** False when the scene declared a `voiceoverFile` but the MP3 failed to
    * load — used downstream to strip the filename so `<SceneVoiceover>` stays
@@ -80,65 +76,44 @@ const loadDuration = async (
 
 type CaptureMeta = {
   durationMs?: number;
-  width?: number;
-  height?: number;
 };
 
-const loadCaptureData = async (
+const loadCaptureDuration = async (
   scene: SelectableScene,
-): Promise<{
-  durationInFrames: number | null;
-  captureSize?: {
-    width: number;
-    height: number;
-  };
-}> => {
-  if (scene.type !== "demo") {
-    return { durationInFrames: null };
-  }
+): Promise<number | null> => {
+  if (scene.type !== "demo") return null;
 
   const metaFile = captureMetaFileForVideo(scene.videoFile);
   const url = staticFile(capturesPath(metaFile));
 
   try {
     const res = await fetch(url);
-    if (!res.ok) {
-      return { durationInFrames: null };
-    }
+    if (!res.ok) return null;
     const meta = (await res.json()) as CaptureMeta;
-    const captureSize =
-      Number.isFinite(meta.width) &&
-      Number.isFinite(meta.height) &&
-      (meta.width ?? 0) > 0 &&
-      (meta.height ?? 0) > 0
-        ? {
-            width: Math.round(meta.width ?? 0),
-            height: Math.round(meta.height ?? 0),
-          }
-        : undefined;
-
-    return {
-      durationInFrames: getCaptureMediaDurationFrames({
-        durationMs: meta.durationMs ?? Number.NaN,
-        startOffsetSeconds: scene.startOffset,
-        endOffsetSeconds: scene.endOffset,
-        fps: FPS,
-      }),
-      ...(captureSize ? { captureSize } : {}),
-    };
+    return getCaptureMediaDurationFrames({
+      durationMs: meta.durationMs ?? Number.NaN,
+      startOffsetSeconds: scene.startOffset,
+      fps: FPS,
+    });
   } catch {
-    return { durationInFrames: null };
+    return null;
   }
 };
 
 /**
  * Resolve a scene's duration (in frames) and its optional alignment sidecar.
  *
- * Duration priority: voiceover MP3 length → capture meta duration →
- * scene.durationInFrames. VO durations drive total composition length so scene
- * content determines pacing rather than hardcoded numbers. When a capture beat
- * exists but the MP3 does not, `.meta.json` keeps demo scenes aligned to the
- * trimmed clip length instead of holding on a dead last frame.
+ * Duration priority:
+ *   - **Demo scenes**: `max(captureDuration, voiceoverDuration)` — the MP4
+ *     always plays to completion; VO is treated as narration overlay. When
+ *     the MP3 is shorter than the clip (deliberately sparse narration with
+ *     silent holds), the scene still runs for the full clip length.
+ *   - **Non-demo scenes**: voiceover MP3 length → `scene.durationInFrames`.
+ *     Slides/cards let the narration budget drive the beat.
+ *
+ * When a capture beat exists but the MP3 does not, `.meta.json` keeps demo
+ * scenes aligned to the trimmed clip length instead of holding on a dead
+ * last frame.
  *
  * MP3 duration, alignment JSON, and capture metadata are loaded **in parallel**
  * per scene, so metadata resolution across many scenes parallelises fully via
@@ -147,20 +122,25 @@ const loadCaptureData = async (
 const resolveSceneData = async (
   scene: SelectableScene,
 ): Promise<SceneTimingData> => {
-  const [voiceoverDuration, alignment, captureData] = await Promise.all([
+  const [voiceoverDuration, alignment, captureDuration] = await Promise.all([
     hasVoiceover(scene) ? loadDuration(scene.voiceoverFile) : Promise.resolve(null),
     hasVoiceover(scene)
       ? loadAlignment(scene.voiceoverFile)
       : Promise.resolve(undefined),
-    loadCaptureData(scene),
+    loadCaptureDuration(scene),
   ]);
+
+  // Demos: MP4 length is authoritative; VO is overlay. Slides: MP3 length wins.
+  const demoDuration =
+    scene.type === "demo" && captureDuration !== null
+      ? Math.max(captureDuration, voiceoverDuration ?? 0)
+      : null;
 
   return {
     durationInFrames:
-      voiceoverDuration ?? captureData.durationInFrames ?? scene.durationInFrames,
+      demoDuration ?? voiceoverDuration ?? captureDuration ?? scene.durationInFrames,
     voiceoverAvailable:
       hasVoiceover(scene) && voiceoverDuration !== null,
-    ...(captureData.captureSize ? { captureSize: captureData.captureSize } : {}),
     ...(alignment ? { alignment } : {}),
   };
 };
@@ -197,7 +177,6 @@ const computeScenesWithMetadata = async (
       from,
       durationInFrames: timing.durationInFrames,
       chapter: getChapterTitle(resolvedScene),
-      ...(timing.captureSize ? { captureSize: timing.captureSize } : {}),
       ...(timing.alignment ? { alignment: timing.alignment } : {}),
     };
   });

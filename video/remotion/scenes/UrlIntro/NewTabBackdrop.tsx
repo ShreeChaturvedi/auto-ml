@@ -1,5 +1,5 @@
 import React from "react";
-import { staticFile } from "remotion";
+import { interpolate, staticFile, useCurrentFrame } from "remotion";
 
 /**
  * Painterly new-tab backdrop rendered inside the UrlIntro scene's browser
@@ -23,11 +23,12 @@ export type NewTabBackdropProps = {
 };
 
 export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset }) => {
-  // Fallback to a pastel CSS gradient when no asset is supplied — keeps
+  // Fallback to a warm pastel CSS gradient when no asset is supplied — keeps
   // Studio previewing the scene layout even before the webp is generated.
+  // Warm peach → terracotta, no blue stops; matches Miami Red brand family.
   const bgImage = backgroundAsset
     ? `url(${staticFile(backgroundAsset)})`
-    : "radial-gradient(ellipse at 30% 20%, #F6D7C8 0%, #E3C7D9 35%, #C8D5E9 70%, #B8C7DF 100%)";
+    : "radial-gradient(ellipse at 28% 18%, #F7E4D2 0%, #F2CFC0 30%, #ECB7B1 62%, #D8A097 100%)";
 
   return (
     <div
@@ -35,7 +36,7 @@ export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset 
         position: "absolute",
         inset: 0,
         overflow: "hidden",
-        background: "#E6D2CA",
+        background: "#D8A097",
       }}
     >
       {/* 1. Painterly background image (or fallback gradient). */}
@@ -46,7 +47,7 @@ export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset 
           backgroundImage: bgImage,
           backgroundSize: "cover",
           backgroundPosition: "center",
-          filter: "saturate(0.9) brightness(1.02) contrast(0.94)",
+          filter: "saturate(0.85) brightness(1.04) contrast(0.96)",
         }}
       />
 
@@ -59,8 +60,8 @@ export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset 
           width: "36%",
           height: "42%",
           background:
-            "radial-gradient(ellipse at center, rgba(242,175,195,0.22) 0%, rgba(242,175,195,0) 70%)",
-          filter: "blur(24px)",
+            "radial-gradient(ellipse at center, rgba(242,175,195,0.16) 0%, rgba(242,175,195,0) 70%)",
+          filter: "blur(12px)",
           pointerEvents: "none",
         }}
       />
@@ -72,8 +73,8 @@ export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset 
           width: "32%",
           height: "38%",
           background:
-            "radial-gradient(ellipse at center, rgba(196,220,240,0.2) 0%, rgba(196,220,240,0) 70%)",
-          filter: "blur(24px)",
+            "radial-gradient(ellipse at center, rgba(232,195,180,0.22) 0%, rgba(232,195,180,0) 70%)",
+          filter: "blur(12px)",
           pointerEvents: "none",
         }}
       />
@@ -89,14 +90,14 @@ export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset 
         }}
       />
 
-      {/* 3b. Chromatic fringe — subtle pastel blobs on edges. */}
+      {/* 3b. Chromatic fringe — subtle warm pastel blobs on edges. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           background:
             "radial-gradient(ellipse at 30% 20%, rgba(232,170,170,0.08), transparent 60%), " +
-            "radial-gradient(ellipse at 75% 80%, rgba(140,170,200,0.06), transparent 55%)",
+            "radial-gradient(ellipse at 75% 80%, rgba(210,160,150,0.04), transparent 55%)",
           mixBlendMode: "screen",
           pointerEvents: "none",
         }}
@@ -110,7 +111,7 @@ export const NewTabBackdrop: React.FC<NewTabBackdropProps> = ({ backgroundAsset 
           width: "100%",
           height: "100%",
           mixBlendMode: "soft-light",
-          opacity: 0.18,
+          opacity: 0.10,
           pointerEvents: "none",
         }}
         aria-hidden
@@ -165,7 +166,7 @@ const Wordmark: React.FC = () => {
         fontWeight: 400,
         letterSpacing: -2,
         lineHeight: 1,
-        textShadow: "0 2px 12px rgba(0,0,0,0.15)",
+        textShadow: "0 1px 3px rgba(0,0,0,0.08)",
         userSelect: "none",
       }}
     >
@@ -179,24 +180,38 @@ const Wordmark: React.FC = () => {
 };
 
 /**
- * Google-style search bar — 584×46 with magnifier, mic, and lens icons.
+ * Google-style search bar — 620×48 with magnifier, mic, and lens icons.
  * Visual twin of `newtab.astro`'s `.gg-search`. No real input — this is a
  * static Remotion frame. The UrlIntro scene's typing happens in the browser
  * chrome's address bar, not here.
  */
+const SHIMMER_PERIOD_FRAMES = 90;
+
 const SearchBar: React.FC = () => {
+  const frame = useCurrentFrame();
+  // Sweep a soft highlight across the placeholder text on a 90f loop.
+  // Position interpolates from -100% → 200% so the band travels fully off
+  // the right edge before restarting.
+  const shimmerPos = interpolate(
+    frame % SHIMMER_PERIOD_FRAMES,
+    [0, SHIMMER_PERIOD_FRAMES],
+    [-100, 200],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+
   return (
     <div
       style={{
-        width: 584,
-        height: 46,
+        width: 620,
+        height: 48,
         padding: "0 14px",
         background: "rgba(255,255,255,0.96)",
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
         border: "1px solid #dfe1e5",
         borderRadius: 24,
-        boxShadow: "0 1px 6px rgba(32,33,36,.12)",
+        boxShadow:
+          "0 1px 6px rgba(32,33,36,.18), 0 0 0 1px rgba(32,33,36,0.04)",
         display: "flex",
         alignItems: "center",
         gap: 10,
@@ -210,17 +225,44 @@ const SearchBar: React.FC = () => {
         />
       </svg>
 
-      {/* Placeholder text */}
+      {/* Placeholder text — base color stays #5f6368; an overlay band sweeps
+          left-to-right on a 90f loop for a subtle shimmer on top of the text. */}
       <span
         style={{
           flex: 1,
+          position: "relative",
           font: "16px/24px Arial,sans-serif",
           color: "#5f6368",
           userSelect: "none",
+          overflow: "hidden",
         }}
       >
         Search Google or type a URL
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%)`,
+            backgroundSize: "40% 100%",
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: `${shimmerPos}% center`,
+            mixBlendMode: "overlay",
+          }}
+        />
       </span>
+
+      {/* Vertical divider between placeholder and right-side icons */}
+      <div
+        aria-hidden
+        style={{
+          width: 1,
+          height: 24,
+          background: "#dfe1e5",
+          flexShrink: 0,
+        }}
+      />
 
       {/* Voice (mic) icon */}
       <svg width={20} height={20} viewBox="0 0 24 24" fill="none" aria-hidden>

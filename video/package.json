@@ -8,12 +8,14 @@
     "build": "remotion render remotion/index.ts main out/final.mp4 --crf 18",
     "build:draft": "remotion render remotion/index.ts main out/draft.mp4 --crf 28 --scale 0.5 --x264-preset fast",
     "build:only": "remotion render remotion/index.ts main out/partial.mp4",
-    "render:app-demo:chunks": "tsx scripts/render-app-demo-chunks.ts --phase=all",
-    "render:app-demo:chunks:draft": "tsx scripts/render-app-demo-chunks.ts --phase=all --draft",
     "render:lambda": "tsx scripts/render-lambda.mts",
     "voiceover": "tsx scripts/voiceover.mts",
     "capture:demo": "tsx scripts/capture-demo.ts",
     "capture:landing-previews": "tsx scripts/capture-landing-previews.ts",
+    "present": "vite --config presentation/vite.config.ts",
+    "present:build": "vite build --config presentation/vite.config.ts",
+    "present:preview": "vite preview --config presentation/vite.config.ts",
+    "present:export-pdf": "tsx scripts/export-presenter-pdf.mts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -25,6 +27,7 @@
     "@remotion/fonts": "4.0.448",
     "@remotion/google-fonts": "4.0.448",
     "@remotion/media-utils": "4.0.448",
+    "@remotion/player": "4.0.448",
     "@remotion/renderer": "4.0.448",
     "@remotion/transitions": "4.0.448",
     "@remotion/zod-types": "4.0.448",
@@ -32,6 +35,7 @@
     "react-dom": "19.2.3",
     "remotion": "4.0.448",
     "shiki": "^1.24.0",
+    "simple-icons": "^16.16.0",
     "zod": "4.3.6"
   },
   "devDependencies": {
@@ -39,12 +43,15 @@
     "@remotion/eslint-config-flat": "4.0.448",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
     "eslint": "9.19.0",
+    "pdf-lib": "^1.17.1",
     "playwright": "^1.49.0",
     "prettier": "3.8.1",
     "prettier-plugin-organize-imports": "3.2.3",
     "tsx": "^4.19.2",
     "typescript": "5.9.3",
+    "vite": "^6.3.0",
     "vitest": "^3.2.4"
   }
 }

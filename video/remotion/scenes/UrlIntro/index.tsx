@@ -1,14 +1,44 @@
 import React from "react";
-import { AbsoluteFill } from "remotion";
+import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import type { z } from "zod";
 import type { urlIntroScene } from "../../../config/scenes";
 import type { Theme } from "../../../config/themes";
 import { getChromeGradient } from "../../../config/themes";
+import { EASE_OUT } from "../../../config/easing";
 import { BrowserChrome } from "../../helpers/BrowserChrome";
 import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { AddressBarTyper } from "../../primitives/AddressBarTyper";
 import { ZoomFrame } from "../../primitives/ZoomFrame";
 import { NewTabBackdrop } from "./NewTabBackdrop";
+
+/** Subtle 1.0 → 1.02 parallax scale on the new-tab backdrop synced to the
+ *  zoom-in window. Adds depth without competing with the zoom on the URL pill. */
+const BackdropParallax: React.FC<{
+  zoomAt: number;
+  zoomDurationFrames: number;
+  children: React.ReactNode;
+}> = ({ zoomAt, zoomDurationFrames, children }) => {
+  const frame = useCurrentFrame();
+  const progress = interpolate(
+    frame,
+    [zoomAt, zoomAt + zoomDurationFrames],
+    [0, 1],
+    { easing: EASE_OUT, extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+  );
+  const scale = 1 + 0.02 * progress;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        transform: `scale(${scale})`,
+        transformOrigin: "center center",
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 type UrlIntroSceneType = z.infer<typeof urlIntroScene>;
 
@@ -66,6 +96,9 @@ export const UrlIntro: React.FC<Props> = ({ scene, theme }) => {
         <BrowserChrome
           variant="browser"
           outerBackground={getChromeGradient(theme)}
+          glassTrafficLights
+          refinedTitleBar
+          showNavCluster
           urlChildren={
             <AddressBarTyper
               url={url}
@@ -76,7 +109,12 @@ export const UrlIntro: React.FC<Props> = ({ scene, theme }) => {
             />
           }
         >
-          <NewTabBackdrop backgroundAsset={scene.backgroundAsset} />
+          <BackdropParallax
+            zoomAt={zoomAt}
+            zoomDurationFrames={zoomDurationFrames}
+          >
+            <NewTabBackdrop backgroundAsset={scene.backgroundAsset} />
+          </BackdropParallax>
         </BrowserChrome>
       </ZoomFrame>
       <SceneVoiceover file={scene.voiceoverFile} />

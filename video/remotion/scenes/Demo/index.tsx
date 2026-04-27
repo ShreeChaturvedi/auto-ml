@@ -13,12 +13,7 @@ import { REGULAR_FONT } from "../../../config/fonts";
 import type { demoScene } from "../../../config/scenes";
 import type { Theme } from "../../../config/themes";
 import { COLORS, getChromeGradient } from "../../../config/themes";
-import {
-  BrowserChrome,
-  ChromeTabStrip,
-  ChromeTitleBar,
-  CONTINUITY,
-} from "../../helpers/BrowserChrome";
+import { BrowserChrome, CONTINUITY } from "../../helpers/BrowserChrome";
 import { capturesPath, mainVideoPath } from "../../helpers/paths";
 import { SceneVoiceover } from "../../helpers/SceneVoiceover";
 import { useTimelineRunner } from "../../hooks/useTimelineRunner";
@@ -32,17 +27,6 @@ import {
 import { ZoomFrame } from "../../primitives/ZoomFrame";
 import type { SceneWithMetadata } from "../../../config/scenes";
 import { cursorJsonToWaypoints, type CursorTrackEntry } from "./cursorJson";
-import {
-  createSourceToViewportTransform,
-  mapCursorPathToViewport,
-  mapSourcePointToViewport,
-  mapSourceRectToViewport,
-  type SourceToViewportAlignX,
-  type SourceToViewportAlignY,
-  type SourceToViewportFit,
-  type SourceToViewportTransform,
-  type ViewportSize,
-} from "./sourceToViewport";
 
 type DemoSceneType = z.infer<typeof demoScene>;
 
@@ -56,73 +40,6 @@ type Props = {
 // chrome dismisses. Kept local so Demo doesn't need a full DIMENSIONS import.
 const COMP_W = 1920;
 const COMP_H = 1080;
-
-const getCaptureSourceSize = (meta?: SceneWithMetadata): ViewportSize => ({
-  width: meta?.captureSize?.width ?? COMP_W,
-  height: meta?.captureSize?.height ?? COMP_H,
-});
-
-const getChromeContentRect = (hasTabs: boolean) => ({
-  top:
-    CONTINUITY.padding +
-    CONTINUITY.frameBorderPx +
-    CONTINUITY.titleBarHeight +
-    CONTINUITY.headerDividerPx +
-    (hasTabs
-      ? CONTINUITY.tabStripHeight + CONTINUITY.headerDividerPx
-      : 0),
-  left: CONTINUITY.padding + CONTINUITY.frameBorderPx,
-  width: COMP_W - CONTINUITY.padding * 2 - CONTINUITY.frameBorderPx * 2,
-  height:
-    COMP_H -
-    CONTINUITY.padding * 2 -
-    CONTINUITY.frameBorderPx * 2 -
-    CONTINUITY.titleBarHeight -
-    CONTINUITY.headerDividerPx -
-    (hasTabs
-      ? CONTINUITY.tabStripHeight + CONTINUITY.headerDividerPx
-      : 0),
-});
-
-const getViewportSizeForScene = (
-  scene: Pick<DemoSceneType, "chrome" | "tabs">,
-): ViewportSize => {
-  if (scene.chrome === "none") {
-    return { width: COMP_W, height: COMP_H };
-  }
-
-  const contentRect = getChromeContentRect(Boolean(scene.tabs?.length));
-  return {
-    width: contentRect.width,
-    height: contentRect.height,
-  };
-};
-
-const getMediaFitForScene = (
-  scene: Pick<DemoSceneType, "chrome">,
-): SourceToViewportFit => {
-  // App-demo captures are currently authored at 1600x1000 while the
-  // composition is 1920x1080. Fullscreen scenes should preserve the whole
-  // capture, even if that means pillarboxing instead of cropping.
-  return scene.chrome === "none" ? "contain" : "cover";
-};
-
-const getMediaAlignForScene = (
-  scene: Pick<DemoSceneType, "mediaAlignX" | "mediaAlignY">,
-): {
-  x: SourceToViewportAlignX;
-  y: SourceToViewportAlignY;
-} => ({
-  x: scene.mediaAlignX ?? "center",
-  y: scene.mediaAlignY ?? "center",
-});
-
-const getChromeOuterRect = () => ({
-  top: CONTINUITY.padding,
-  left: CONTINUITY.padding,
-  width: COMP_W - CONTINUITY.padding * 2,
-  height: COMP_H - CONTINUITY.padding * 2,
-});
 
 /**
  * Demo scene: plays a Playwright-captured screen recording inside an optional
@@ -151,7 +68,7 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
 
   const cursorPath = useCursorPath(scene.cursorFile, fps, scene.startOffset);
 
-  if (scene.chromeDismissAt !== undefined || scene.chromeRestoreAtEnd) {
+  if (scene.chromeDismissAt !== undefined) {
     return (
       <DemoWithDismiss
         scene={scene}
@@ -165,20 +82,6 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
     );
   }
 
-  const viewportSize = getViewportSizeForScene(scene);
-  const mediaFit = getMediaFitForScene(scene);
-  const mediaAlign = getMediaAlignForScene(scene);
-  const sourceTransform = createSourceToViewportTransform(
-    getCaptureSourceSize(meta),
-    viewportSize,
-    mediaFit,
-    mediaAlign.x,
-    mediaAlign.y,
-  );
-  const mappedCursorPath = cursorPath
-    ? mapCursorPathToViewport(cursorPath, sourceTransform)
-    : null;
-
   return (
     <BrowserChrome
       variant={scene.chrome}
@@ -186,12 +89,7 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
       tabs={scene.tabs}
       outerBackground={getChromeGradient(theme)}
     >
-      <TimelineOverlay
-        scene={scene}
-        meta={meta}
-        sourceTransform={sourceTransform}
-        viewportSize={viewportSize}
-      >
+      <TimelineOverlay scene={scene} meta={meta}>
         <PreviewCompatibleVideo
           src={videoSrc}
           startFrom={startFrom}
@@ -199,17 +97,13 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
           style={{
             width: "100%",
             height: "100%",
-            objectFit: mediaFit,
-            objectPosition: `${mediaAlign.x} ${mediaAlign.y}`,
-            background: "#000",
+            objectFit: "cover",
             display: "block",
           }}
         />
       </TimelineOverlay>
 
-      {mappedCursorPath ? (
-        <SyntheticCursor path={mappedCursorPath} theme="dark" />
-      ) : null}
+      {cursorPath ? <SyntheticCursor path={cursorPath} theme="dark" /> : null}
 
       {scene.chapter ? (
         <ChapterBadge theme={theme} text={scene.chapter} />
@@ -227,7 +121,6 @@ export const Demo: React.FC<Props> = ({ scene, theme, meta }) => {
  * dismiss without also populating a duration they don't care about.
  */
 const DEFAULT_CHROME_DISMISS_DURATION_FRAMES = 45;
-const DEFAULT_CHROME_RESTORE_HOLD_FRAMES = 120;
 
 /**
  * Chrome-dismiss variant. Renders the video as a sibling of the chrome and
@@ -240,7 +133,7 @@ const DEFAULT_CHROME_RESTORE_HOLD_FRAMES = 120;
  */
 type DismissProps = {
   scene: DemoSceneType;
-  dismissAt: number | undefined;
+  dismissAt: number;
   theme: Theme;
   meta?: SceneWithMetadata;
   videoSrc: string;
@@ -258,94 +151,41 @@ const DemoWithDismiss: React.FC<DismissProps> = ({
   cursorPath,
 }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
   const dismissDur =
     scene.chromeDismissDurationFrames ?? DEFAULT_CHROME_DISMISS_DURATION_FRAMES;
 
-  const dismissProgress =
-    dismissAt === undefined
-      ? 0
-      : interpolate(
-          frame,
-          [dismissAt, dismissAt + dismissDur],
-          [0, 1],
-          {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-            easing: Easing.inOut(Easing.cubic),
-          },
-        );
-
-  const restoreDur = scene.chromeRestoreDurationFrames ?? dismissDur;
-  const restoreHold =
-    scene.chromeRestoreHoldFrames ?? DEFAULT_CHROME_RESTORE_HOLD_FRAMES;
-  const restoreStart = durationInFrames - restoreHold - restoreDur;
-  const restoreProgress = scene.chromeRestoreAtEnd
-    ? interpolate(
-        frame,
-        [restoreStart, restoreStart + restoreDur],
-        [0, 1],
-        {
-          extrapolateLeft: "clamp",
-          extrapolateRight: "clamp",
-          easing: Easing.inOut(Easing.cubic),
-        },
-      )
-    : 0;
-
-  const progress = Math.max(0, Math.min(1, dismissProgress - restoreProgress));
+  const progress = interpolate(
+    frame,
+    [dismissAt, dismissAt + dismissDur],
+    [0, 1],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+      easing: Easing.inOut(Easing.cubic),
+    },
+  );
   const chromeOpacity = 1 - progress;
 
-  const hasTabs = Boolean(scene.tabs?.length);
-  const tabStripBaseHeight = hasTabs ? CONTINUITY.tabStripHeight : 0;
-  const titleBarHeight = interpolate(
-    progress,
-    [0, 1],
-    [CONTINUITY.titleBarHeight, 0],
-  );
-  const tabStripHeight = interpolate(progress, [0, 1], [tabStripBaseHeight, 0]);
-
-  // Chrome's outer window frame and its inner content rectangle stay coupled
-  // during dismiss/restore so the window bar expands with the content instead
-  // of fading as a static overlay over the fullscreen video.
-  const startOuterRect = getChromeOuterRect();
-  const endRect = { top: 0, left: 0, width: COMP_W, height: COMP_H };
-  const outerRect = {
-    top: interpolate(progress, [0, 1], [startOuterRect.top, endRect.top]),
-    left: interpolate(progress, [0, 1], [startOuterRect.left, endRect.left]),
-    width: interpolate(progress, [0, 1], [startOuterRect.width, endRect.width]),
-    height: interpolate(progress, [0, 1], [startOuterRect.height, endRect.height]),
+  // Chrome's inner content rectangle — what the video appears to live inside
+  // while the chrome is visible. Derived from CONTINUITY tokens so the bounds
+  // stay in lockstep with the rendered chrome.
+  const startRect = {
+    top: CONTINUITY.padding + CONTINUITY.titleBarHeight,
+    left: CONTINUITY.padding,
+    width: COMP_W - CONTINUITY.padding * 2,
+    height: COMP_H - CONTINUITY.padding * 2 - CONTINUITY.titleBarHeight,
   };
+  const endRect = { top: 0, left: 0, width: COMP_W, height: COMP_H };
 
   const videoRect = {
-    top: outerRect.top + tabStripHeight + titleBarHeight,
-    left: outerRect.left,
-    width: outerRect.width,
-    height: outerRect.height - tabStripHeight - titleBarHeight,
+    top: interpolate(progress, [0, 1], [startRect.top, endRect.top]),
+    left: interpolate(progress, [0, 1], [startRect.left, endRect.left]),
+    width: interpolate(progress, [0, 1], [startRect.width, endRect.width]),
+    height: interpolate(progress, [0, 1], [startRect.height, endRect.height]),
   };
-  const mediaFit = getMediaFitForScene(scene);
-  const mediaAlign = getMediaAlignForScene(scene);
-  const sourceTransform = createSourceToViewportTransform(
-    getCaptureSourceSize(meta),
-    {
-      width: videoRect.width,
-      height: videoRect.height,
-    },
-    mediaFit,
-    mediaAlign.x,
-    mediaAlign.y,
-  );
-  const mappedCursorPath = cursorPath
-    ? mapCursorPathToViewport(cursorPath, sourceTransform)
-    : null;
 
   return (
     <>
-      <AbsoluteChromeBackdrop
-        opacity={chromeOpacity}
-        theme={theme}
-      />
-
       {/* Video wrapper — grows from chrome's inner rect to full-bleed. */}
       <div
         style={{
@@ -358,15 +198,7 @@ const DemoWithDismiss: React.FC<DismissProps> = ({
           background: "#000",
         }}
       >
-        <TimelineOverlay
-          scene={scene}
-          meta={meta}
-          sourceTransform={sourceTransform}
-          viewportSize={{
-            width: videoRect.width,
-            height: videoRect.height,
-          }}
-        >
+        <TimelineOverlay scene={scene} meta={meta}>
           <PreviewCompatibleVideo
             src={videoSrc}
             startFrom={startFrom}
@@ -374,38 +206,28 @@ const DemoWithDismiss: React.FC<DismissProps> = ({
             style={{
               width: "100%",
               height: "100%",
-              objectFit: mediaFit,
-              objectPosition: `${mediaAlign.x} ${mediaAlign.y}`,
-              background: "#000",
+              objectFit: "cover",
               display: "block",
             }}
           />
         </TimelineOverlay>
       </div>
 
-      <AnimatedChromeShell
-        scene={scene}
-        outerRect={outerRect}
-        titleBarHeight={titleBarHeight}
-        tabStripHeight={tabStripHeight}
-        opacity={chromeOpacity}
+      {/* Chrome overlay — transparent card so the video shows through. Outer
+          background fades together with the card via the opacity style. */}
+      <BrowserChrome
+        variant={scene.chrome}
+        url={scene.url}
+        tabs={scene.tabs}
+        outerBackground={getChromeGradient(theme)}
+        cardBackground="transparent"
+        style={{
+          opacity: chromeOpacity,
+          pointerEvents: chromeOpacity === 0 ? "none" : undefined,
+        }}
       />
 
-      {mappedCursorPath ? (
-        <div
-          style={{
-            position: "absolute",
-            top: videoRect.top,
-            left: videoRect.left,
-            width: videoRect.width,
-            height: videoRect.height,
-            overflow: "hidden",
-            pointerEvents: "none",
-          }}
-        >
-          <SyntheticCursor path={mappedCursorPath} theme="dark" />
-        </div>
-      ) : null}
+      {cursorPath ? <SyntheticCursor path={cursorPath} theme="dark" /> : null}
 
       {scene.chapter ? (
         <ChapterBadge theme={theme} text={scene.chapter} />
@@ -413,99 +235,6 @@ const DemoWithDismiss: React.FC<DismissProps> = ({
 
       <SceneVoiceover file={scene.voiceoverFile} />
     </>
-  );
-};
-
-const AbsoluteChromeBackdrop: React.FC<{ opacity: number; theme: Theme }> = ({
-  opacity,
-  theme,
-}) => {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        background: getChromeGradient(theme),
-        opacity,
-      }}
-    />
-  );
-};
-
-type AnimatedChromeShellProps = {
-  scene: Pick<DemoSceneType, "chrome" | "url" | "tabs">;
-  outerRect: {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  };
-  titleBarHeight: number;
-  tabStripHeight: number;
-  opacity: number;
-};
-
-const AnimatedChromeShell: React.FC<AnimatedChromeShellProps> = ({
-  scene,
-  outerRect,
-  titleBarHeight,
-  tabStripHeight,
-  opacity,
-}) => {
-  if (scene.chrome === "none" || opacity <= 0.001) {
-    return null;
-  }
-
-  const radius = interpolate(opacity, [0, 1], [0, CONTINUITY.radius]);
-  const borderAlpha = interpolate(opacity, [0, 1], [0, 0.08]);
-  const shellShadowAlpha = interpolate(opacity, [0, 1], [0, 0.6]);
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: outerRect.top,
-        left: outerRect.left,
-        width: outerRect.width,
-        height: outerRect.height,
-        borderRadius: radius,
-        border: `1px solid rgba(255,255,255,${borderAlpha})`,
-        boxShadow: `0 40px 120px -20px rgba(0,0,0,${shellShadowAlpha})`,
-        overflow: "hidden",
-        pointerEvents: "none",
-      }}
-    >
-      {scene.tabs?.length ? (
-        <ChromeSection height={tabStripHeight} opacity={opacity}>
-          <ChromeTabStrip tabs={scene.tabs} />
-        </ChromeSection>
-      ) : null}
-      <ChromeSection height={titleBarHeight} opacity={opacity}>
-        <ChromeTitleBar variant={scene.chrome} url={scene.url} />
-      </ChromeSection>
-    </div>
-  );
-};
-
-const ChromeSection: React.FC<{
-  height: number;
-  opacity: number;
-  children: React.ReactNode;
-}> = ({ height, opacity, children }) => {
-  if (height <= 0.001 || opacity <= 0.001) {
-    return null;
-  }
-
-  return (
-    <div
-      style={{
-        height,
-        overflow: "hidden",
-        opacity,
-      }}
-    >
-      {children}
-    </div>
   );
 };
 
@@ -557,8 +286,6 @@ function useCursorPath(
 type TimelineOverlayProps = {
   scene: DemoSceneType;
   meta?: SceneWithMetadata;
-  sourceTransform: SourceToViewportTransform;
-  viewportSize: ViewportSize;
   children: React.ReactNode;
 };
 
@@ -571,23 +298,12 @@ type TimelineOverlayProps = {
 const TimelineOverlay: React.FC<TimelineOverlayProps> = ({
   scene,
   meta,
-  sourceTransform,
-  viewportSize,
   children,
 }) => {
   if (!scene.timeline || scene.timeline.length === 0 || !meta) {
     return <>{children}</>;
   }
-  return (
-    <TimelineInner
-      scene={scene}
-      meta={meta}
-      sourceTransform={sourceTransform}
-      viewportSize={viewportSize}
-    >
-      {children}
-    </TimelineInner>
-  );
+  return <TimelineInner scene={scene} meta={meta}>{children}</TimelineInner>;
 };
 
 /**
@@ -598,8 +314,6 @@ const TimelineOverlay: React.FC<TimelineOverlayProps> = ({
 const TimelineInner: React.FC<Required<TimelineOverlayProps>> = ({
   scene,
   meta,
-  sourceTransform,
-  viewportSize,
   children,
 }) => {
   // `null` rawScript: demo scenes have no `{{MARK}}` annotations — only
@@ -626,9 +340,8 @@ const TimelineInner: React.FC<Required<TimelineOverlayProps>> = ({
         <ZoomFrame
           at={evt.resolvedStart}
           release={evt.resolvedStart + dur}
-          region={mapSourceRectToViewport(region, sourceTransform)}
+          region={region}
           scale={p.scale}
-          frameSize={viewportSize}
           durationFrames={24}
         >
           {inner}
@@ -648,16 +361,12 @@ const TimelineInner: React.FC<Required<TimelineOverlayProps>> = ({
       {byKind.click.map((evt) => {
         const p = evt.payload as { x?: number; y?: number };
         if (p.x === undefined || p.y === undefined) return null;
-        const point = mapSourcePointToViewport(
-          { x: p.x, y: p.y },
-          sourceTransform,
-        );
         return (
           <ClickRipple
             key={evt.id}
             at={evt.resolvedStart}
-            x={point.x}
-            y={point.y}
+            x={p.x}
+            y={p.y}
             theme="dark"
           />
         );

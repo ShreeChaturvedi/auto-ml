@@ -1,0 +1,7 @@
+{{HEADING}} Here is the next **twenty minutes**.
+
+{{ROWS}} Seven chapters, starting with upload, {{R2}}then exploration, {{R3}}then preprocessing, where the **LangGraph state machine** really shows up, {{R4}}followed by feature work, {{R5}}training inside **Docker**, {{R6}}experiments, {{R7}}and finally what comes next.
+
+{{PROOFS}} Three things we want to prove along the way. That humans stay in the loop **without losing pace**, {{P2}}that an agentic pipeline can be **observed** instead of blindly executed, {{P3}}and that **one platform** can carry the full workflow end to end.
+
+{{PULSE}} Chapter three is **the spine** of the talk, so watch for it.

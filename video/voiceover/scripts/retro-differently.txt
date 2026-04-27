@@ -1,0 +1,5 @@
+{{TITLE}} What we would do **differently**.
+
+{{S1}} Start on **LangGraph** from day one. We spent **nine months** rolling our own orchestrator before we gave up.
+
+{{S2}} Ship the **end-to-end shell** first so you can feel the product on day one, even if every layer is a stub.

@@ -1,0 +1,5 @@
+{{TITLE}} Three measurements, run in a single night.
+
+{{PANELS}} We measured **speed** against a manual Jupyter workflow, **guardrails** against ten seeded data flaws, and **quality** against live Kaggle leaderboards.
+
+{{HERO}} The headline number is **sixteen out of twenty**, and it is the one to watch.

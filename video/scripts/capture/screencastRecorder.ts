@@ -4,29 +4,9 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 
 import type { CDPSession, Page } from "playwright";
-import { FPS } from "../../config/fps";
 
-const DEFAULT_SCREENCAST_FPS = FPS;
-const DEFAULT_CAPTURE_FORMAT = "jpeg";
-const DEFAULT_JPEG_QUALITY = 98;
-const DEFAULT_X264_PRESET = "veryfast";
-const DEFAULT_X264_CRF = 6;
-const DEFAULT_PIXEL_FORMAT = "yuv420p";
-
-type ScreencastFormat = "jpeg" | "png";
-type X264Preset =
-  | "ultrafast"
-  | "superfast"
-  | "veryfast"
-  | "faster"
-  | "fast"
-  | "medium"
-  | "slow"
-  | "slower"
-  | "veryslow"
-  | "placebo";
-type PixelFormat = "yuv420p" | "yuv444p";
-type X264Tune = "animation" | "film" | "stillimage" | "zerolatency";
+const SCREENCAST_FPS = 25;
+const DEFAULT_JPEG_QUALITY = 95;
 
 type RecorderSize = { width: number; height: number };
 
@@ -34,13 +14,7 @@ type RecorderOptions = {
   page: Page;
   outputPath: string;
   size: RecorderSize;
-  format?: ScreencastFormat;
   jpegQuality?: number;
-  fps?: number;
-  x264Preset?: X264Preset;
-  x264Crf?: number;
-  pixelFormat?: PixelFormat;
-  x264Tune?: X264Tune;
 };
 
 type ScreencastFramePayload = {
@@ -67,7 +41,7 @@ function formatFfmpegError(outputPath: string, chunks: string[], code: number | 
 }
 
 /**
- * High-quality browser screencast recorder.
+ * Landing-only high-quality screencast recorder.
  *
  * This intentionally mirrors Playwright's timestamp -> repeated-frame logic so
  * capture timing stays stable, but it swaps out the low-quality built-in VP8
@@ -76,7 +50,6 @@ function formatFfmpegError(outputPath: string, chunks: string[], code: number | 
 export class ScreencastRecorder {
   readonly startedAtWallMs: number;
 
-  private readonly captureFps: number;
   private readonly client: CDPSession;
   private readonly outputPath: string;
   private readonly ffmpeg: ChildProcess;
@@ -96,9 +69,7 @@ export class ScreencastRecorder {
     ffmpeg: ChildProcess,
     ffmpegClosed: Promise<void>,
     startedAtWallMs: number,
-    captureFps: number,
   ) {
-    this.captureFps = captureFps;
     this.client = client;
     this.outputPath = outputPath;
     this.ffmpeg = ffmpeg;
@@ -111,8 +82,6 @@ export class ScreencastRecorder {
 
   static async start(options: RecorderOptions): Promise<ScreencastRecorder> {
     await mkdir(path.dirname(options.outputPath), { recursive: true });
-    const captureFps = Math.max(1, Math.round(options.fps ?? DEFAULT_SCREENCAST_FPS));
-    const captureFormat = options.format ?? DEFAULT_CAPTURE_FORMAT;
 
     const ffmpegArgs = [
       "-loglevel", "error",
@@ -121,16 +90,15 @@ export class ScreencastRecorder {
       "-fpsprobesize", "0",
       "-probesize", "32",
       "-analyzeduration", "0",
-      "-c:v", captureFormat === "png" ? "png" : "mjpeg",
+      "-c:v", "mjpeg",
       "-i", "pipe:0",
       "-y",
       "-an",
-      "-r", String(captureFps),
+      "-r", String(SCREENCAST_FPS),
       "-c:v", "libx264",
-      "-preset", options.x264Preset ?? DEFAULT_X264_PRESET,
-      ...(options.x264Tune ? ["-tune", options.x264Tune] : []),
-      "-crf", String(options.x264Crf ?? DEFAULT_X264_CRF),
-      "-pix_fmt", options.pixelFormat ?? DEFAULT_PIXEL_FORMAT,
+      "-preset", "veryfast",
+      "-crf", "6",
+      "-pix_fmt", "yuv420p",
       "-vf", `pad=${options.size.width}:${options.size.height}:0:0:gray,crop=${options.size.width}:${options.size.height}:0:0`,
       options.outputPath,
     ];
@@ -162,7 +130,6 @@ export class ScreencastRecorder {
       ffmpeg,
       ffmpegClosed,
       startedAtWallMs,
-      captureFps,
     );
     ffmpeg.stderr?.on("data", (chunk: Buffer | string) => {
       ffmpegStderr.push(
@@ -176,10 +143,8 @@ export class ScreencastRecorder {
     client.on("Page.screencastFrame", recorder.onFrame);
     await client.send("Page.enable");
     await client.send("Page.startScreencast", {
-      format: captureFormat,
-      ...(captureFormat === "jpeg"
-        ? { quality: options.jpegQuality ?? DEFAULT_JPEG_QUALITY }
-        : {}),
+      format: "jpeg",
+      quality: options.jpegQuality ?? DEFAULT_JPEG_QUALITY,
       maxWidth: options.size.width,
       maxHeight: options.size.height,
       everyNthFrame: 1,
@@ -232,7 +197,7 @@ export class ScreencastRecorder {
     if (!this.firstFrameTimestampS) {
       this.firstFrameTimestampS = timestampS;
     }
-    const frameNumber = Math.floor((timestampS - this.firstFrameTimestampS) * this.captureFps);
+    const frameNumber = Math.floor((timestampS - this.firstFrameTimestampS) * SCREENCAST_FPS);
     if (this.lastFrame) {
       const repeatCount = frameNumber - this.lastFrame.frameNumber;
       for (let i = 0; i < repeatCount; i += 1) {

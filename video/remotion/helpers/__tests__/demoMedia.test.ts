@@ -37,7 +37,6 @@ describe("getCaptureMediaDurationFrames", () => {
       getCaptureMediaDurationFrames({
         durationMs: 21_880,
         startOffsetSeconds: 4,
-        endOffsetSeconds: 0,
         fps: 60,
       }),
     ).toBe(1_073);
@@ -48,7 +47,6 @@ describe("getCaptureMediaDurationFrames", () => {
       getCaptureMediaDurationFrames({
         durationMs: 500,
         startOffsetSeconds: 1,
-        endOffsetSeconds: 0,
         fps: 60,
       }),
     ).toBe(1);
@@ -59,7 +57,6 @@ describe("getCaptureMediaDurationFrames", () => {
       getCaptureMediaDurationFrames({
         durationMs: Number.NaN,
         startOffsetSeconds: 1,
-        endOffsetSeconds: 0,
         fps: 60,
       }),
     ).toBeNull();

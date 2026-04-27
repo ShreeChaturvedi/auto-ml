@@ -1,0 +1,5 @@
+{{HEADING}} Two advisors **shaped** this project.
+
+{{SAMER}} **Doctor Samer Khamaiseh** pushed us hard on architecture, on sandboxing, and on what the word **working** actually means when you ship software.
+
+{{STAHR}} **Professor Lynn Stahr** set the cadence of the year, read every draft we wrote, and built the review panel that treats today as **real work**.

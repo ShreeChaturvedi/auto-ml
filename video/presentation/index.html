@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agentic AutoML — Presenter</title>
+    <!-- Warm the Google Fonts CDN so @remotion/google-fonts's Plus Jakarta
+         Sans + Instrument Serif requests resolve instantly on first slide.
+         Without preconnect, expo-hall WIFI can add 1-2s FOUC on cold load. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        /* Match light-theme slide background so Player fade-ins don't
+           reveal a dark base. */
+        background: #ffffff;
+        color: #171717;
+        overflow: hidden;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+      }
+      /* Minimal entry animation for every slide change. Re-triggers on
+         each Player remount because the keyed wrapper is a fresh DOM
+         node. 220ms feels snappy without masking the landing frame. */
+      @keyframes presenter-slide-fade-in {
+        from {
+          opacity: 0.6;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+  </body>
+</html>

@@ -65,31 +65,6 @@ describe('buildPreprocessingActionRequest', () => {
     expect(request.messages[0]?.content).toContain(
       'Your next action should validate the executed step and decide whether approval is required.'
     );
-    expect(request.messages[0]?.content).toContain('Never invent, rename, shorten, or paraphrase a preprocessing runId.');
-    expect(request.messages[0]?.content).toContain('Reuse the exact Run ID shown in the prompt');
     expect(request.messages[1]?.content).toContain('RAG snippets:\n1. playbook.md: Mention row-count checks before committing.');
-  });
-
-  it('tells the model to omit runId when no preprocessing run is available yet', () => {
-    const summary: PreprocessingControllerSummary = {
-      threadId: 'prep-thread:test:no-run',
-      runId: undefined,
-      turnMode: 'action_required',
-      currentNode: 'plan_step',
-      allowedTools: ['profile_active_dataset', 'propose_transformation_step'],
-      allowTextResponse: false,
-      requireToolCall: true,
-      pendingApproval: false,
-      activeStepId: undefined,
-      updatedAt: '2026-03-01T00:00:00.000Z'
-    };
-
-    const request = buildPreprocessingActionRequest({
-      dataset,
-      prompt: 'Start preprocessing.'
-    }, summary);
-
-    expect(request.messages[0]?.content).toContain('If the prompt shows "Run ID: (none)", omit runId from tool args');
-    expect(request.messages[1]?.content).toContain('Run ID: (none)');
   });
 });

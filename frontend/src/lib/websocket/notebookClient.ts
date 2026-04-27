@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/authStore';
+import { getWebSocketUrl } from '@/lib/api/client';
 import type {
   WSClientMessage,
   WSServerMessage,
@@ -42,13 +43,7 @@ export class NotebookWSClient {
   private intentionalClose = false;
 
   constructor(baseUrl?: string) {
-    // Derive WebSocket URL from API base URL
-    const apiBase = baseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
-    this.baseUrl = apiBase
-      .replace(/^http:/, 'ws:')
-      .replace(/^https:/, 'wss:')
-      .replace(/\/api$/, '')
-      + '/ws/notebook';
+    this.baseUrl = getWebSocketUrl('/ws/notebook', baseUrl);
   }
 
   // ============================================================

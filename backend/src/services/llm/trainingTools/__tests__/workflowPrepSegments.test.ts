@@ -101,6 +101,51 @@ describe('extractWorkflowPrepSegmentsFromToolCalls — live-content strategy (Ga
     ]);
   });
 
+  it('pairs write_cell calls with toolResults so the initial created cell can be superseded by a later rewrite', () => {
+    const toolCalls = [
+      {
+        tool: 'write_cell',
+        args: {
+          content: 'import pandas as pd',
+          metadata: { trainingDraft: { experimentId, segments: [] } },
+        },
+      },
+      {
+        tool: 'write_cell',
+        args: {
+          content: 'df = pd.read_csv(path)\nraise ValueError("stale")',
+          metadata: { trainingDraft: { experimentId, segments: [] } },
+        },
+      },
+      {
+        tool: 'write_cell',
+        args: {
+          cellId: 'prep-cell',
+          content: "df = pd.read_csv(path, on_bad_lines='skip', engine='python')",
+          metadata: { trainingDraft: { experimentId, segments: [] } },
+        },
+      },
+      {
+        tool: 'write_cell',
+        args: {
+          content: 'model.fit(X, y)',
+          metadata: { trainingDraft: { experimentId, segments: [] } },
+        },
+      },
+    ];
+    const toolResults = [
+      { tool: 'write_cell', output: { cellId: 'imports-cell' } },
+      { tool: 'write_cell', output: { cellId: 'prep-cell' } },
+      { tool: 'write_cell', output: { cellId: 'prep-cell' } },
+      { tool: 'write_cell', output: { cellId: 'fit-cell' } },
+    ];
+
+    expect(extractWorkflowPrepSegmentsFromToolCalls(toolCalls, experimentId, undefined, toolResults)).toEqual([
+      'import pandas as pd',
+      "df = pd.read_csv(path, on_bad_lines='skip', engine='python')",
+    ]);
+  });
+
   it('filters by experimentId so concurrent experiments do not leak into each other', () => {
     const toolCalls = [
       {

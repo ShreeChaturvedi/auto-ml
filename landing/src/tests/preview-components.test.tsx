@@ -191,6 +191,24 @@ describe('preview source guardrails', () => {
     expect(loginPage).not.toContain('Coming Soon');
   });
 
+  it('ships a landing /repo page that redirects to the shared GitLab repository URL', () => {
+    expect(existsSync(path.resolve(landingRoot, 'pages/repo.astro'))).toBe(true);
+
+    const publicLinksSource = readFileSync(
+      path.resolve(landingRoot, 'lib/publicLinks.ts'),
+      'utf8',
+    );
+    const repoPage = readFileSync(path.resolve(landingRoot, 'pages/repo.astro'), 'utf8');
+    const footerSource = readFileSync(path.resolve(landingRoot, 'components/Footer.astro'), 'utf8');
+
+    expect(publicLinksSource).toContain('export const GITLAB_REPO_URL');
+    expect(repoPage).toContain('GITLAB_REPO_URL');
+    expect(repoPage).toContain('window.location.replace(repoUrl)');
+    expect(repoPage).toContain('http-equiv="refresh"');
+    expect(footerSource).toContain("import { GITLAB_REPO_URL } from '@/lib/publicLinks';");
+    expect(footerSource).toContain("href: GITLAB_REPO_URL");
+  });
+
   it('checks in Vercel project config for the landing workspace', () => {
     expect(existsSync(path.resolve(landingRoot, '../../vercel.json'))).toBe(true);
     const vercelConfig = readFileSync(path.resolve(landingRoot, '../../vercel.json'), 'utf8');

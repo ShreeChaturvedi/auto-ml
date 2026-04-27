@@ -143,11 +143,6 @@ export function buildPreprocessingActionRequest(
     'This is an action-required turn. You must use tool calls. Do not end with plain markdown only.',
     `You are currently in the "${summary.currentNode}" state.`,
     'Only use tools from the allowed tool list for this state.',
-    'Never invent, rename, shorten, or paraphrase a preprocessing runId.',
-    summary.runId
-      ? 'Reuse the exact Run ID shown in the prompt for preprocessing tools that accept runId.'
-      : 'If the prompt shows "Run ID: (none)", omit runId from tool args and let the backend bind the preprocessing run automatically.',
-    'If a preprocessing tool returns RUN_NOT_FOUND or RUN_PROJECT_MISMATCH for a runId, omit runId on the retry unless the prompt still shows a valid Run ID.',
     'Notebook code and tool execution are authoritative. The left timeline is derived from tool events only.',
     'If you need to inspect notebook state before acting, use read-only tools from the current allowed set.',
     'When a state is focused on a semantic lifecycle action, advance exactly one stage with the correct tool instead of skipping ahead.',

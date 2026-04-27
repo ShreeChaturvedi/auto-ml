@@ -57,7 +57,7 @@ function createPasswordResetHtml(resetUrl: string): string {
     </div>
     <div class="content">
       <p>Hello,</p>
-      <p>We received a request to reset your password for your AutoML Toolchain account.</p>
+      <p>We received a request to reset your password for your Agentic AutoML Platform account.</p>
       <p>Click the button below to reset your password:</p>
       <p style="text-align: center;">
         <a href="${resetUrl}" class="button">Reset Password</a>
@@ -69,7 +69,7 @@ function createPasswordResetHtml(resetUrl: string): string {
       </div>
     </div>
     <div class="footer">
-      <p>AutoML Toolchain - AI-Augmented Data Science Platform</p>
+      <p>Agentic AutoML Platform - AI-Augmented Data Science Platform</p>
       <p>This is an automated message. Please do not reply.</p>
     </div>
   </div>
@@ -101,7 +101,7 @@ function createVerificationHtml(verifyUrl: string): string {
 <body>
   <div class="container">
     <div class="header">
-      <h1>Welcome to AutoML Toolchain!</h1>
+      <h1>Welcome to Agentic AutoML Platform!</h1>
     </div>
     <div class="content">
       <p>Hello,</p>
@@ -113,7 +113,7 @@ function createVerificationHtml(verifyUrl: string): string {
       <p style="word-break: break-all; font-size: 14px; color: #4b5563;">${verifyUrl}</p>
     </div>
     <div class="footer">
-      <p>AutoML Toolchain - AI-Augmented Data Science Platform</p>
+      <p>Agentic AutoML Platform - AI-Augmented Data Science Platform</p>
       <p>This is an automated message. Please do not reply.</p>
     </div>
   </div>
@@ -170,12 +170,12 @@ export class EmailService {
     await this.transporter.sendMail({
       from: env.smtpFrom,
       to: email,
-      subject: 'Password Reset Request - AutoML Toolchain',
+      subject: 'Password Reset Request - Agentic AutoML Platform',
       html: createPasswordResetHtml(resetUrl),
       text: `
 Password Reset Request
 
-You requested a password reset for your AutoML Toolchain account.
+You requested a password reset for your Agentic AutoML Platform account.
 
 Click the link below to reset your password:
 ${resetUrl}
@@ -185,7 +185,7 @@ This link expires in 1 hour.
 If you didn't request this, please ignore this email.
 
 ---
-AutoML Toolchain - AI-Augmented Data Science Platform
+Agentic AutoML Platform - AI-Augmented Data Science Platform
       `.trim()
     });
 
@@ -212,10 +212,10 @@ AutoML Toolchain - AI-Augmented Data Science Platform
     await this.transporter.sendMail({
       from: env.smtpFrom,
       to: email,
-      subject: 'Verify Your Email - AutoML Toolchain',
+      subject: 'Verify Your Email - Agentic AutoML Platform',
       html: createVerificationHtml(verifyUrl),
       text: `
-Welcome to AutoML Toolchain!
+Welcome to Agentic AutoML Platform!
 
 Thank you for signing up! Please verify your email address to complete your registration.
 
@@ -223,7 +223,7 @@ Click the link below to verify your email:
 ${verifyUrl}
 
 ---
-AutoML Toolchain - AI-Augmented Data Science Platform
+Agentic AutoML Platform - AI-Augmented Data Science Platform
       `.trim()
     });
 

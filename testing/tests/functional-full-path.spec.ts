@@ -35,6 +35,10 @@
  *   FUNCTIONAL_TARGET_COLUMN    override target column (default 'churned')
  *   FUNCTIONAL_DATASET          fixture basename (default
  *                               mock_customer_churn_clean.csv)
+ *   FUNCTIONAL_MODEL            workflow model override (default
+ *                               'gpt-5.4-mini')
+ *   FUNCTIONAL_REASONING        workflow reasoning effort override (default
+ *                               'medium')
  *
  * Runtime targets:
  *   - upload+nav only: ~25-35s
@@ -54,14 +58,8 @@ const DATASET_PATH = path.resolve(testDir, '../fixtures', DATASET_FILENAME);
 const TARGET_COLUMN = process.env.FUNCTIONAL_TARGET_COLUMN ?? 'churned';
 const SKIP_WORKFLOWS = process.env.FUNCTIONAL_SKIP_WORKFLOWS === '1';
 const RUN_DEPLOY = process.env.FUNCTIONAL_DEPLOY === '1';
-const FUNCTIONAL_MODEL = process.env.FUNCTIONAL_MODEL;
-const FUNCTIONAL_REASONING = process.env.FUNCTIONAL_REASONING as
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | undefined;
+const WORKFLOW_MODEL = process.env.FUNCTIONAL_MODEL ?? 'gpt-5.4-mini';
+const WORKFLOW_REASONING = process.env.FUNCTIONAL_REASONING ?? 'medium';
 
 interface AuthResponse {
   accessToken: string;
@@ -173,11 +171,11 @@ async function streamWorkflow(
   return body.split('\n').filter((line) => line.trim().length > 0);
 }
 
-function withWorkflowOverrides(payload: Record<string, unknown>): Record<string, unknown> {
+function withWorkflowModel(payload: Record<string, unknown>): Record<string, unknown> {
   return {
     ...payload,
-    ...(FUNCTIONAL_MODEL ? { model: FUNCTIONAL_MODEL } : {}),
-    ...(FUNCTIONAL_REASONING ? { reasoningEffort: FUNCTIONAL_REASONING } : {})
+    model: WORKFLOW_MODEL,
+    reasoningEffort: WORKFLOW_REASONING,
   };
 }
 
@@ -259,10 +257,6 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
   const auth = await registerUser(request);
   const project = await createProject(request, auth.accessToken);
   await seedAuth(page, auth, project);
-  test.info().annotations.push({
-    type: 'note',
-    description: `workflow-model=${FUNCTIONAL_MODEL ?? 'default'} reasoning=${FUNCTIONAL_REASONING ?? 'default'}`
-  });
 
   // Keep /api/auth/me from overwriting the seeded verified user.
   await page.route('**/api/auth/me', async (route) => {
@@ -340,7 +334,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const lines = await streamWorkflow(
       request,
       auth.accessToken,
-      withWorkflowOverrides({
+      withWorkflowModel({
         projectId: project.id,
         phase: 'preprocessing',
         datasetId: uploadDatasetId,
@@ -378,7 +372,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const lines = await streamWorkflow(
       request,
       auth.accessToken,
-      withWorkflowOverrides({
+      withWorkflowModel({
         projectId: project.id,
         phase: 'feature_engineering',
         datasetId: preprocessedDatasetId,
@@ -440,7 +434,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const firstTurnLines = await streamWorkflow(
       request,
       auth.accessToken,
-      withWorkflowOverrides({
+      withWorkflowModel({
         projectId: project.id,
         phase: 'training',
         datasetId: fePreparedDatasetId,
@@ -477,7 +471,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
     const approvalLines = await streamWorkflow(
       request,
       auth.accessToken,
-      withWorkflowOverrides({
+      withWorkflowModel({
         projectId: project.id,
         phase: 'training',
         runId,

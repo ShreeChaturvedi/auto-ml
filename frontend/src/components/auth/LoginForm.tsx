@@ -6,11 +6,11 @@
  * - Slide-in arrow button with glowing border
  * - Email and password authentication
  * - Remember me checkbox
- * - Google OAuth at the bottom
+ * - Google sign-in CTA placeholder at the bottom
  */
 
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthStore } from '@/stores/authStore';
-import { loginUser, googleAuth } from '@/lib/api/auth';
+import { loginUser } from '@/lib/api/auth';
 import { AuthCard, AuthPageWrapper } from './AuthCard';
 import { AuthSubmitButton, type AuthButtonState } from './AuthSubmitButton';
 import { GoogleAuthButton } from './GoogleAuthButton';
@@ -35,6 +35,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginForm() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const setUser = useAuthStore((state) => state.setUser);
   const setTokens = useAuthStore((state) => state.setTokens);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -42,9 +43,9 @@ export function LoginForm() {
   const clearError = useAuthStore((state) => state.setError);
   const [formError, setFormError] = useState<string | null>(null);
   const [buttonState, setButtonState] = useState<AuthButtonState>('idle');
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
+  const showVerifiedMessage = searchParams.get('verified') === '1';
 
   const {
     register,
@@ -81,20 +82,6 @@ export function LoginForm() {
     }
   };
 
-  const handleGoogleAuth = async () => {
-    setGoogleLoading(true);
-    setFormError(null);
-    try {
-      const response = await googleAuth();
-      if (response.authUrl) {
-        window.location.href = response.authUrl;
-      }
-    } catch {
-      setFormError('Google authentication failed. Please try again.');
-      setGoogleLoading(false);
-    }
-  };
-
   return (
     <AuthPageWrapper>
       <AuthCard>
@@ -111,6 +98,12 @@ export function LoginForm() {
           {authError && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
               {authError}
+            </div>
+          )}
+
+          {showVerifiedMessage && (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+              Email verified. Sign in to continue.
             </div>
           )}
 
@@ -199,10 +192,12 @@ export function LoginForm() {
 
           {/* Google OAuth - at bottom */}
           <GoogleAuthButton
-            onClick={handleGoogleAuth}
-            isLoading={googleLoading}
+            comingSoon
             mode="login"
           />
+          <p className="text-center text-xs text-neutral-500">
+            Google sign-in is disabled for the beta. Use email and password for now.
+          </p>
 
           {/* Footer */}
           <p className="text-center text-sm text-neutral-400">

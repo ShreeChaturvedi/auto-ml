@@ -2,6 +2,7 @@ import type { Request, Router } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 
+import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth, requireAuthAllowUnverified, invalidateUserCache } from '../middleware/auth.js';
@@ -91,6 +92,21 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     await emailService.sendVerificationEmail(email, token);
   }
 
+  function shouldAutoVerifyEmail(): boolean {
+    return env.nodeEnv !== 'production'
+      && (env.devBypassEmailVerification || !emailService.isConfigured());
+  }
+
+  async function ensureVerifiedUser(user: SafeUser): Promise<SafeUser> {
+    if (user.email_verified || !shouldAutoVerifyEmail()) {
+      return user;
+    }
+
+    await userRepository.markEmailVerified(user.user_id);
+    invalidateUserCache(user.user_id);
+    return await userRepository.findById(user.user_id) ?? { ...user, email_verified: true };
+  }
+
   // POST /auth/register
   router.post(
     '/auth/register',
@@ -105,12 +121,15 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
       }
 
       const password_hash = await authService.hashPassword(password);
-      const user = await userRepository.create({ email, name, password_hash });
+      const createdUser = await userRepository.create({ email, name, password_hash });
+      const user = await ensureVerifiedUser(createdUser);
 
-      // Fire-and-forget: don't block registration on email delivery
-      sendVerificationToken(user.user_id, user.email).catch((err) =>
-        appLogger.error(`[auth] failed to send verification email to ${user.email}`, err)
-      );
+      if (!user.email_verified) {
+        // Fire-and-forget: don't block registration on email delivery
+        sendVerificationToken(user.user_id, user.email).catch((err) =>
+          appLogger.error(`[auth] failed to send verification email to ${user.email}`, err)
+        );
+      }
 
       const tokens = await issueAndStoreTokens(user, req);
 
@@ -156,8 +175,9 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         return;
       }
 
-      const user = userRepository.toSafeUser(userWithHash);
-      await userRepository.updateLastLogin(user.user_id);
+      await userRepository.updateLastLogin(userWithHash.user_id);
+      const refreshedUser = await userRepository.findById(userWithHash.user_id) ?? userRepository.toSafeUser(userWithHash);
+      const user = await ensureVerifiedUser(refreshedUser);
       const tokens = await issueAndStoreTokens(user, req, rememberMe);
 
       appLogger.info(`[auth] login ${user.email}`);
@@ -261,7 +281,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     '/auth/me',
     requireAuth,
     asyncHandler(async (req: AuthenticatedRequest, res) => {
-      return res.json({ user: req.user });
+      const user = await ensureVerifiedUser(req.user);
+      return res.json({ user });
     })
   );
 
@@ -395,9 +416,12 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
     requireAuthAllowUnverified,
     validateRequest(resendVerificationSchema),
     asyncHandler(async (req: AuthenticatedRequest, res) => {
-      const user = req.user;
+      const user = await ensureVerifiedUser(req.user);
 
       if (user.email_verified) {
+        if (shouldAutoVerifyEmail()) {
+          return res.json({ message: 'Email verification bypassed' });
+        }
         sendBadRequest(res, 'Email is already verified');
         return;
       }
@@ -439,7 +463,8 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
         sendNotFound(res, 'User');
         return;
       }
-      return res.json({ emailVerified: freshUser.email_verified });
+      const user = await ensureVerifiedUser(freshUser);
+      return res.json({ emailVerified: user.email_verified });
     })
   );
 

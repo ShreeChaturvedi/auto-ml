@@ -1,5 +1,6 @@
 import type { ToolResult } from '../../../types/llm.js';
 
+import { classifyRunCellOutcome } from './runCellOutcome.js';
 import type { PreprocessingTurnMode } from './turnClassification.js';
 
 function isWorkflowThreadReference(value: string | null | undefined): boolean {
@@ -8,11 +9,6 @@ function isWorkflowThreadReference(value: string | null | undefined): boolean {
   }
   return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
 }
-
-const INVALID_RUN_REFERENCE_REASON_CODES = new Set([
-  'RUN_NOT_FOUND',
-  'RUN_PROJECT_MISMATCH'
-]);
 
 export type PreprocessingControllerNode =
   | 'answer'
@@ -161,15 +157,7 @@ export function getLatestRunId(toolResults?: ToolResult[]): string | undefined {
     if (!output || typeof output !== 'object' || Array.isArray(output)) {
       continue;
     }
-    const outputRecord = output as Record<string, unknown>;
-    const isError = outputRecord.isError === true;
-    const reasonCode = typeof outputRecord.reasonCode === 'string'
-      ? outputRecord.reasonCode
-      : undefined;
-    if (isError && reasonCode && INVALID_RUN_REFERENCE_REASON_CODES.has(reasonCode)) {
-      continue;
-    }
-    const runId = outputRecord.runId;
+    const runId = (output as Record<string, unknown>).runId;
     if (typeof runId === 'string' && runId.trim() && !isWorkflowThreadReference(runId)) {
       return runId.trim();
     }
@@ -221,13 +209,21 @@ export function getLatestToolOutcome(toolResults?: ToolResult[]): LatestToolOutc
     : typeof step?.status === 'string'
       ? step.status
       : undefined;
+  const runCellOutcome = latest.tool === 'run_cell'
+    ? classifyRunCellOutcome({
+        status: outputStatus,
+        error: typeof output?.error === 'string' ? output.error : latest.error
+      })
+    : null;
   const executionFailed = latest.tool === 'execute_transformation_step' && outputStatus === 'failed';
   const validationFailed = latest.tool === 'validate_step_result' && outputStatus === 'failed';
 
   return {
     latestToolName: latest.tool,
-    latestToolSucceeded: !latest.error && !executionFailed && !validationFailed,
-    latestOutputStatus: outputStatus
+    latestToolSucceeded: latest.tool === 'run_cell'
+      ? runCellOutcome === 'success'
+      : !latest.error && !executionFailed && !validationFailed,
+    latestOutputStatus: outputStatus ?? (runCellOutcome === 'indeterminate' ? 'indeterminate' : undefined)
   };
 }
 
@@ -245,12 +241,11 @@ export function inferActionNode(state: ControllerRouteState): PreprocessingContr
     case 'edit_cell':
       return state.latestToolSucceeded ? 'write_code' : 'generate_code';
     case 'run_cell':
-      if (!state.latestToolSucceeded) {
-        return 'write_code';
-      }
-      return state.hasPendingNotebookCells ? 'write_code' : 'record_execution';
+      return state.latestToolSucceeded && state.hasPendingNotebookCells
+        ? 'write_code'
+        : 'record_execution';
     case 'execute_transformation_step':
-      return state.latestToolSucceeded ? 'validate' : 'write_code';
+      return state.latestToolSucceeded ? 'validate' : 'generate_code';
     case 'validate_step_result':
       return state.latestToolSucceeded ? 'commit' : 'validate';
     case 'commit_transformation_step':

@@ -63,12 +63,15 @@ export function VerifyEmailPendingPage() {
       if (emailVerified) {
         setEmailVerified(true);
         toast.success('Email verified!');
-        setTimeout(() => navigate('/', { replace: true }), 600);
+        setTimeout(() => {
+          clearAuth();
+          navigate('/login?verified=1', { replace: true });
+        }, 600);
       }
     } catch {
       // Silently ignore polling errors
     }
-  }, [navigate, setEmailVerified]);
+  }, [navigate, setEmailVerified, clearAuth]);
 
   useEffect(() => {
     pollRef.current = setInterval(pollStatus, POLL_INTERVAL_MS);

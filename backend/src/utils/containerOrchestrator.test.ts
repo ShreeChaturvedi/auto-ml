@@ -1,4 +1,8 @@
+import { join } from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { env } from '../config.js';
 
 const hoisted = vi.hoisted(() => ({
   mockCopyFile: vi.fn(),
@@ -40,11 +44,16 @@ vi.mock('../services/packageManager.js', () => ({
   listPackages: hoisted.mockListPackages,
 }));
 
-import { orchestrateContainerExecution } from './containerOrchestrator.js';
+import {
+  copyArtifactsToPermanentStorage,
+  loadArtifactFromStorage,
+  orchestrateContainerExecution,
+} from './containerOrchestrator.js';
 
 const {
   mockCopyFile,
   mockMkdir,
+  mockReadFile,
   mockGetOrCreateContainer,
   mockSyncWorkspaceDatasets,
   mockExecute,
@@ -103,6 +112,9 @@ describe('orchestrateContainerExecution', () => {
 
     expect(mockRestartKernel).toHaveBeenCalledTimes(1);
     expect(mockExecute).toHaveBeenCalledTimes(2);
+    expect(mockGetOrCreateContainer).toHaveBeenCalledWith(expect.objectContaining({
+      workspacePath: join(env.executionWorkspaceDir, 'project-1', 'model-runtime'),
+    }));
     expect(result.executionResult.status).toBe('success');
   });
 
@@ -127,5 +139,45 @@ describe('orchestrateContainerExecution', () => {
     expect(mockConnectKernel).not.toHaveBeenCalled();
     expect(mockExecute).toHaveBeenCalledTimes(1);
     expect(result.executionResult.error).toBe('Execution failed');
+  });
+});
+
+describe('artifact storage helpers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCopyFile.mockResolvedValue(undefined);
+    mockMkdir.mockResolvedValue(undefined);
+    mockReadFile.mockResolvedValue(JSON.stringify({ ok: true }));
+  });
+
+  it('copies artifacts into the resolved model storage directory', async () => {
+    await copyArtifactsToPermanentStorage(
+      'model-1',
+      { workspacePath: '/tmp/workspace/project-1/model-runtime' },
+      [
+        {
+          workspace: 'eval/model-1/evaluation.json',
+          permanent: 'evaluation.json',
+        },
+      ],
+    );
+
+    expect(mockMkdir).toHaveBeenCalledTimes(2);
+    expect(mockMkdir).toHaveBeenNthCalledWith(1, join(env.modelStorageDir, 'model-1'), { recursive: true });
+    expect(mockMkdir).toHaveBeenNthCalledWith(2, join(env.modelStorageDir, 'model-1'), { recursive: true });
+    expect(mockCopyFile).toHaveBeenCalledWith(
+      '/tmp/workspace/project-1/model-runtime/eval/model-1/evaluation.json',
+      join(env.modelStorageDir, 'model-1', 'evaluation.json'),
+    );
+  });
+
+  it('loads artifacts from the resolved model storage directory', async () => {
+    const data = await loadArtifactFromStorage('model-1', 'evaluation.json');
+
+    expect(mockReadFile).toHaveBeenCalledWith(
+      join(env.modelStorageDir, 'model-1', 'evaluation.json'),
+      'utf8',
+    );
+    expect(data).toEqual({ ok: true });
   });
 });

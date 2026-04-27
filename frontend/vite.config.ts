@@ -14,7 +14,9 @@ const VENDOR_CHUNK_RULES = [
     name: 'markdown',
     patterns: ['mermaid', '@streamdown', 'streamdown', 'katex', 'react-markdown', 'remark-', 'rehype-']
   },
-  { name: 'react-core', patterns: ['react-router', 'react-dom', 'react', 'zustand'] }
+  // prop-types is shared by react-dropzone and react-plotly.js. Keep it out of
+  // the Plotly bucket so the root React chunk never depends on the Plotly chunk.
+  { name: 'react-core', patterns: ['react-router', 'react-dom', 'react', 'zustand', 'prop-types'] }
 ] as const
 
 function getVendorChunkName(id: string): string | undefined {

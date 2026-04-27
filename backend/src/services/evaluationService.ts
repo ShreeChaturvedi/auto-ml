@@ -4,7 +4,7 @@ import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
-import type { ModelTaskType } from '../types/model.js';
+import type { ModelRecord, ModelTaskType } from '../types/model.js';
 import {
   copyArtifactsToPermanentStorage,
   orchestrateContainerExecution,
@@ -13,6 +13,7 @@ import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import {
   extractWorkflowPrepSegmentsFromToolCalls,
+  extractWorkflowTargetColumnFromToolResults,
   normalizeWorkflowPrepSegments,
 } from './llm/trainingTools/workflowPrepSegments.js';
 import { resolveModelTestSize } from './modelTestSize.js';
@@ -195,7 +196,11 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     lines.push('    except Exception:');
     lines.push('        return False');
     lines.push('    return "string" in name or name.startswith("str") or (name == "category")');
-    lines.push('_original_series_astype = pd.Series.astype');
+    lines.push('import pandas.core.generic as _automl_pd_generic');
+    lines.push('_original_series_astype = getattr(pd.Series, "_automl_original_astype", None)');
+    lines.push('if _original_series_astype is None:');
+    lines.push('    _original_series_astype = _automl_pd_generic.NDFrame.astype');
+    lines.push('    pd.Series._automl_original_astype = _original_series_astype');
     lines.push('def _safe_series_astype(self, dtype, *args, **kwargs):');
     lines.push('    try:');
     lines.push('        return _original_series_astype(self, dtype, *args, **kwargs)');
@@ -227,7 +232,11 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     //     LLM opens with the default utf-8 encoding)
     // The patch only activates on error — well-formed CSVs go through the
     // original fast C parser with no behavior change. V3 ragged_rows regression.
-    lines.push('_original_read_csv = pd.read_csv');
+    lines.push('import pandas.io.parsers.readers as _automl_pd_readers');
+    lines.push('_original_read_csv = getattr(pd, "_automl_original_read_csv", None)');
+    lines.push('if _original_read_csv is None:');
+    lines.push('    _original_read_csv = _automl_pd_readers.read_csv');
+    lines.push('    pd._automl_original_read_csv = _original_read_csv');
     lines.push('def _safe_read_csv(*args, **kwargs):');
     lines.push('    try:');
     lines.push('        return _original_read_csv(*args, **kwargs)');
@@ -253,7 +262,11 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
     // paths are untouched. Mirrors pd.read_csv/_safe_series_astype pattern.
     // V3 heavy_nan + ragged_rows regression.
     lines.push('import sklearn.model_selection as _automl_sk_model_selection');
-    lines.push('_original_train_test_split = _automl_sk_model_selection.train_test_split');
+    lines.push('import sklearn.model_selection._split as _automl_sk_model_selection_split');
+    lines.push('_original_train_test_split = getattr(_automl_sk_model_selection, "_automl_original_train_test_split", None)');
+    lines.push('if _original_train_test_split is None:');
+    lines.push('    _original_train_test_split = _automl_sk_model_selection_split.train_test_split');
+    lines.push('    _automl_sk_model_selection._automl_original_train_test_split = _original_train_test_split');
     lines.push('def _safe_train_test_split(*args, **kwargs):');
     lines.push('    try:');
     lines.push('        return _original_train_test_split(*args, **kwargs)');
@@ -543,23 +556,6 @@ export function buildEvaluationScript(options: BuildEvaluationScriptOptions): st
   lines.push('            X_test[col] = X_test[col].fillna("__MISSING__").astype(str)');
   lines.push('        if col in X.columns:');
   lines.push('            X[col] = X[col].fillna("__MISSING__").astype(str)');
-  lines.push('');
-  lines.push('# Normalize bool / nullable-boolean dummy columns so numeric imputers can consume them.');
-  lines.push('boolean_columns = []');
-  lines.push('if hasattr(X_train, "columns") and hasattr(X_test, "columns"):');
-  lines.push('    boolean_column_set = set()');
-  lines.push('    for frame in (X_train, X_test):');
-  lines.push('        boolean_column_set.update(frame.select_dtypes(include=["bool", "boolean"]).columns.tolist())');
-  lines.push('    boolean_columns = sorted(boolean_column_set)');
-  lines.push('    for col in boolean_columns:');
-  lines.push('        if col in X_train.columns:');
-  lines.push('            X_train[col] = X_train[col].fillna(False).astype("int64")');
-  lines.push('        if col in X_test.columns:');
-  lines.push('            X_test[col] = X_test[col].fillna(False).astype("int64")');
-  lines.push('        if col in X.columns:');
-  lines.push('            X[col] = X[col].fillna(False).astype("int64")');
-  lines.push('        if "test_df" in globals() and hasattr(test_df, "columns") and col in test_df.columns:');
-  lines.push('            test_df[col] = test_df[col].fillna(False).astype("int64")');
   lines.push('');
   lines.push('has_pipeline_preprocessor = hasattr(pipeline, "named_steps") and "preprocessor" in pipeline.named_steps');
   lines.push('fitted_model_module = str(getattr(fitted_model.__class__, "__module__", "")).lower()');
@@ -1337,38 +1333,61 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
-function extractWorkflowPrepSegmentsFromSnapshot(
-  snapshot: { run: { metadata?: Record<string, unknown> } } | undefined,
-  experimentId: string,
-): string[] {
-  const history = asRecord(snapshot?.run.metadata)?.history;
-  return extractWorkflowPrepSegmentsFromToolCalls(asRecord(history)?.toolCalls, experimentId);
+function normalizeTargetColumn(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
-async function loadWorkflowPrepSegments(
-  model: { metadata?: Record<string, unknown>; projectId: string },
-): Promise<{ segments: string[]; source: 'stored' | 'history' | 'none' }> {
+function extractWorkflowReplayFromSnapshot(
+  snapshot: { run: { metadata?: Record<string, unknown> } } | undefined,
+  experimentId: string,
+): { prepSegments: string[]; targetColumn?: string } {
+  const history = asRecord(snapshot?.run.metadata)?.history;
+  const historyRecord = asRecord(history);
+  return {
+    prepSegments: extractWorkflowPrepSegmentsFromToolCalls(
+      historyRecord?.toolCalls,
+      experimentId,
+      undefined,
+      historyRecord?.toolResults,
+    ),
+    targetColumn: extractWorkflowTargetColumnFromToolResults(historyRecord?.toolResults),
+  };
+}
+
+type WorkflowReplayContext = {
+  segments: string[];
+  prepSource: 'stored' | 'history' | 'none';
+  targetColumn?: string;
+};
+
+async function loadWorkflowReplayContext(
+  model: Pick<ModelRecord, 'metadata' | 'projectId'>,
+): Promise<WorkflowReplayContext> {
   const metadata = asRecord(model.metadata);
   if (metadata?.source !== 'llm-workflow') {
-    return { segments: [], source: 'none' };
+    return { segments: [], prepSource: 'none' };
   }
 
   const experimentId = typeof metadata.experimentId === 'string' ? metadata.experimentId : null;
   if (!experimentId) {
-    return { segments: [], source: 'none' };
+    return { segments: [], prepSource: 'none' };
   }
 
   const storedPrepSegments = normalizeWorkflowPrepSegments(metadata.workflowPrepSegments);
-  if (storedPrepSegments.length > 0) {
-    return { segments: storedPrepSegments, source: 'stored' };
-  }
-
   const workflowRunId = typeof metadata.workflowRunId === 'string' ? metadata.workflowRunId : null;
   if (workflowRunId) {
     const snapshot = await workflowRepository.getRun(workflowRunId);
-    const prepSegments = extractWorkflowPrepSegmentsFromSnapshot(snapshot, experimentId);
-    if (prepSegments.length > 0) {
-      return { segments: prepSegments, source: 'history' };
+    const replay = extractWorkflowReplayFromSnapshot(snapshot, experimentId);
+    if (replay.prepSegments.length > 0 || replay.targetColumn) {
+      return {
+        segments: replay.prepSegments.length > 0 ? replay.prepSegments : storedPrepSegments,
+        prepSource: replay.prepSegments.length > 0 ? 'history' : storedPrepSegments.length > 0 ? 'stored' : 'none',
+        targetColumn: replay.targetColumn,
+      };
     }
   }
 
@@ -1378,13 +1397,57 @@ async function loadWorkflowPrepSegments(
       continue;
     }
     const snapshot = await workflowRepository.getRun(run.runId);
-    const prepSegments = extractWorkflowPrepSegmentsFromSnapshot(snapshot, experimentId);
-    if (prepSegments.length > 0) {
-      return { segments: prepSegments, source: 'history' };
+    const replay = extractWorkflowReplayFromSnapshot(snapshot, experimentId);
+    if (replay.prepSegments.length > 0 || replay.targetColumn) {
+      return {
+        segments: replay.prepSegments.length > 0 ? replay.prepSegments : storedPrepSegments,
+        prepSource: replay.prepSegments.length > 0 ? 'history' : storedPrepSegments.length > 0 ? 'stored' : 'none',
+        targetColumn: replay.targetColumn,
+      };
     }
   }
 
-  return { segments: [], source: 'none' };
+  if (storedPrepSegments.length > 0) {
+    return { segments: storedPrepSegments, prepSource: 'stored' };
+  }
+
+  return { segments: [], prepSource: 'none' };
+}
+
+async function resolveEvaluationTargetColumn(
+  model: Pick<ModelRecord, 'modelId' | 'targetColumn' | 'featureColumns' | 'metadata'>,
+  datasetColumns: { name: string }[],
+  workflowReplay: WorkflowReplayContext,
+): Promise<string> {
+  const storedTargetColumn = normalizeTargetColumn(model.targetColumn);
+  const historyTargetColumn = normalizeTargetColumn(workflowReplay.targetColumn);
+
+  if (historyTargetColumn) {
+    if (historyTargetColumn !== storedTargetColumn) {
+      appLogger.warn('[evaluationService] Recovering workflow target column from training history', {
+        modelId: model.modelId,
+        storedTargetColumn,
+        historyTargetColumn,
+      });
+      await modelRepository.update(model.modelId, (current) => ({
+        ...current,
+        targetColumn: historyTargetColumn,
+      }));
+    }
+    return historyTargetColumn;
+  }
+
+  if (workflowReplay.segments.length > 0 && storedTargetColumn) {
+    if (Array.isArray(model.featureColumns) && model.featureColumns.includes(storedTargetColumn)) {
+      appLogger.warn('[evaluationService] Workflow model target column is also present in featureColumns; keeping stored target because replay code may derive it later', {
+        modelId: model.modelId,
+        storedTargetColumn,
+      });
+    }
+    return storedTargetColumn;
+  }
+
+  return resolveAndHealTargetColumn(model, datasetColumns, modelRepository);
 }
 
 // loadRuntimeDependencies moved to ../runtimeDependencies.ts so the deployment
@@ -1459,20 +1522,22 @@ export async function runEvaluation(modelId: string): Promise<void> {
       throw new Error('Dataset not found');
     }
 
-    // 5. Resolve target column (heals stale metadata)
-    const targetColumn = await resolveAndHealTargetColumn(model, dataset.columns, modelRepository);
+    // 5. Recover workflow replay context before target resolution so
+    //    FE-derived targets can come from live training history instead of
+    //    being "healed" against the raw uploaded dataset schema.
+    const workflowReplay = await loadWorkflowReplayContext(model);
+    const targetColumn = await resolveEvaluationTargetColumn(model, dataset.columns, workflowReplay);
 
     // 6. Pre-compute workspace paths (same pattern as containerOrchestrator)
     const workspaceModelPath = join('models', modelId, 'model.joblib');
     const testSize = resolveModelTestSize(model);
-    const workflowPrep = await loadWorkflowPrepSegments(model);
-    const runtimeDependencies = loadRuntimeDependencies(model, workflowPrep.segments);
-    if (workflowPrep.source === 'history' && workflowPrep.segments.length > 0) {
+    const runtimeDependencies = loadRuntimeDependencies(model, workflowReplay.segments);
+    if (workflowReplay.prepSource === 'history' && workflowReplay.segments.length > 0) {
       await modelRepository.update(modelId, (current) => ({
         ...current,
         metadata: {
           ...(asRecord(current.metadata) ?? {}),
-          workflowPrepSegments: workflowPrep.segments,
+          workflowPrepSegments: workflowReplay.segments,
         },
       }));
     }
@@ -1489,7 +1554,7 @@ export async function runEvaluation(modelId: string): Promise<void> {
           taskType: model.taskType as 'classification' | 'regression',
           targetColumn,
           testSize,
-          workflowPrepSegments: workflowPrep.segments,
+          workflowPrepSegments: workflowReplay.segments,
           featureColumns: Array.isArray(model.featureColumns) ? model.featureColumns : undefined,
         }),
       filesToCopy: [

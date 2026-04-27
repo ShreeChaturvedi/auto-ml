@@ -296,9 +296,6 @@ describe('buildEvaluationScript', () => {
     expect(script).toContain('fitted_model = pipeline.steps[-1][1]');
     expect(script).toContain('fitted_model._get_cat_feature_indices()');
     expect(script).toContain('fillna("__MISSING__").astype(str)');
-    expect(script).toContain('boolean_column_set.update(frame.select_dtypes(include=["bool", "boolean"]).columns.tolist())');
-    expect(script).toContain('X_test[col] = X_test[col].fillna(False).astype("int64")');
-    expect(script).toContain('test_df[col] = test_df[col].fillna(False).astype("int64")');
     expect(script).toContain('requires_refit_categorical_metadata = is_direct_catboost and len(categorical_columns) > 0');
     expect(script).toContain('Learning curve skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
     expect(script).toContain('Cross-validation skipped: direct CatBoost models with raw categorical columns need training-time cat_features metadata for refit.');
@@ -854,6 +851,132 @@ describe('runEvaluation', () => {
       return Array.isArray(metadata?.workflowPrepSegments) && metadata.workflowPrepSegments.length === 2;
     });
     expect(backfillCall).toBeDefined();
+  });
+
+  it('uses canonical pandas/sklearn functions for data-hygiene wrappers so warm-kernel reruns do not recurse', () => {
+    const script = buildEvaluationScript({
+      modelPath: '/workspace/models/m-warm/model.joblib',
+      datasetPath: '/workspace/datasets/data.csv',
+      outputDir: '/workspace/eval/m-warm',
+      taskType: 'classification',
+      targetColumn: 'target',
+      testSize: 0.2,
+      workflowPrepSegments: [
+        'FEATURE_COLUMNS = ["feat1"]',
+        'df = pd.read_csv(WORKFLOW_DATASET_PATH)\nX_train = df[["feat1"]].copy()\ny_train = df["target"].copy()\nX_test = X_train.copy()\ny_test = y_train.copy()',
+      ],
+    });
+
+    expect(script).toContain('import pandas.core.generic as _automl_pd_generic');
+    expect(script).toContain('getattr(pd.Series, "_automl_original_astype", None)');
+    expect(script).toContain('_automl_pd_generic.NDFrame.astype');
+    expect(script).toContain('pd.Series._automl_original_astype = _original_series_astype');
+    expect(script).toContain('import pandas.io.parsers.readers as _automl_pd_readers');
+    expect(script).toContain('getattr(pd, "_automl_original_read_csv", None)');
+    expect(script).toContain('_automl_pd_readers.read_csv');
+    expect(script).toContain('pd._automl_original_read_csv = _original_read_csv');
+    expect(script).toContain('import sklearn.model_selection._split as _automl_sk_model_selection_split');
+    expect(script).toContain('getattr(_automl_sk_model_selection, "_automl_original_train_test_split", None)');
+    expect(script).toContain('_automl_sk_model_selection_split.train_test_split');
+    expect(script).toContain('_automl_sk_model_selection._automl_original_train_test_split = _original_train_test_split');
+  });
+
+  it('recovers the workflow target column from live history and prefers live prep replay over stale stored snapshots', async () => {
+    const model = makeModelRecord({
+      projectId: 'test-project',
+      taskType: 'classification',
+      targetColumn: 'storage_used_gb_per_active_user',
+      featureColumns: ['total_logins', 'storage_used_gb_per_active_user'],
+      metadata: {
+        source: 'llm-workflow',
+        experimentId: 'exp-1',
+        workflowRunId: 'run-1',
+        workflowPrepSegments: ['df = pd.read_csv("stale.csv")'],
+      },
+    });
+    const container = makeContainer();
+    const dataset = {
+      datasetId: 'test-dataset',
+      filename: 'data.csv',
+      projectId: 'test-project',
+      columns: [
+        { name: 'total_logins' },
+        { name: 'storage_used_gb_per_active_user' },
+      ],
+    };
+
+    mockGetById.mockResolvedValue(model);
+    mockUpdate.mockImplementation(async (_id: string, updater: (r: unknown) => unknown) => updater(model));
+    mockDatasetGetById.mockResolvedValue(dataset);
+    mockWorkflowGetRun.mockResolvedValue({
+      run: {
+        metadata: {
+          history: {
+            toolCalls: [
+              {
+                tool: 'write_cell',
+                args: {
+                  cellId: 'cell-1',
+                  content: 'df = pd.read_csv(WORKFLOW_DATASET_PATH)\ndf["churn_proxy"] = (df["total_logins"] < 3).astype(int)',
+                  metadata: {
+                    trainingDraft: {
+                      experimentId: 'exp-1',
+                    },
+                  },
+                },
+              },
+              {
+                tool: 'write_cell',
+                args: {
+                  cellId: 'cell-2',
+                  content: 'X_train = df[["total_logins"]].copy()\ny_train = df["churn_proxy"].copy()\nX_test = X_train.copy()\ny_test = y_train.copy()',
+                  metadata: {
+                    trainingDraft: {
+                      experimentId: 'exp-1',
+                    },
+                  },
+                },
+              },
+            ],
+            toolResults: [
+              {
+                tool: 'run_cell',
+                output: {
+                  status: 'success',
+                  stdout: '__TRAIN_COMPLETE__|{"accuracy":0.91,"target_column":"churn_proxy"}',
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    mockOrchestrateContainerExecution.mockImplementation(async (config: unknown) => {
+      const script = (config as { scriptBuilder: () => string }).scriptBuilder();
+      expect(script).toContain('_EVAL_TARGET_COL = "churn_proxy"');
+      expect(script).toContain('df["churn_proxy"] = (df["total_logins"] < 3).astype(int)');
+      expect(script).not.toContain('pd.read_csv("stale.csv")');
+      return {
+        container,
+        executionResult: { status: 'success', stderr: '', executionMs: 5000 },
+      };
+    });
+
+    await runEvaluation('test-model-id');
+
+    const targetRepairCall = mockUpdate.mock.calls.find(([, updater]) => {
+      const updated = (updater as (record: typeof model) => typeof model)(model);
+      return updated.targetColumn === 'churn_proxy';
+    });
+    expect(targetRepairCall).toBeDefined();
+
+    const prepBackfillCall = mockUpdate.mock.calls.find(([, updater]) => {
+      const updated = (updater as (record: typeof model) => typeof model)(model);
+      const metadata = updated.metadata as Record<string, unknown> | undefined;
+      return Array.isArray(metadata?.workflowPrepSegments)
+        && metadata.workflowPrepSegments.includes('df = pd.read_csv(WORKFLOW_DATASET_PATH)\ndf["churn_proxy"] = (df["total_logins"] < 3).astype(int)');
+    });
+    expect(prepBackfillCall).toBeDefined();
   });
 
   it('normalizes legacy workflow prep syntax and infers runtime dependencies from replayed prep code', async () => {

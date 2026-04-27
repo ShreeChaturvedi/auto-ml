@@ -62,8 +62,15 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASSWORD=
-SMTP_FROM=AutoML Toolchain <noreply@example.com>
+SMTP_FROM=Agentic AutoML Platform <noreply@example.com>
+GOOGLE_AUTH_ENABLED=false
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=http://localhost:5173/auth/google/callback
+LLM_PROVIDER=openai
 ```
+
+`LLM_PROVIDER=mock` is supported only in non-production and only for preprocessing workflow testing. It leaves NL→SQL, experiments, and other non-preprocessing callsites on the normal OpenAI client.
 
 ## Database & Migrations
 
@@ -84,6 +91,15 @@ Run the API benchmark script against a running server:
 ```bash
 npm run benchmark:api
 ```
+
+For no-OpenAI preprocessing validation, run the backend with `LLM_PROVIDER=mock`, then use the repo helpers:
+
+```bash
+LLM_PROVIDER=mock npm run benchmark:preprocessing:mock
+LLM_PROVIDER=mock AUTOML_BENCHMARK_AUTH_BYPASS=true npm run test:preprocessing:burnin
+```
+
+`AUTOML_BENCHMARK_AUTH_BYPASS=true` is non-production-only and exists solely for the raw backend burn-in helper, where requests are driven directly by the harness instead of the browser UI. The Playwright preprocessing benchmark uses normal register/login tokens so it exercises the same auth flow as the real app. Production must keep the bypass unset.
 
 Environment overrides:
 
@@ -154,6 +170,13 @@ Legacy preprocessing endpoints remain mounted only as deprecated guards and retu
 - `POST /api/auth/forgot-password`
 - `POST /api/auth/reset-password`
 - `PATCH /api/auth/profile`
+
+## Beta Deploy Notes
+
+- Set `FRONTEND_URL` and `ALLOWED_ORIGINS` to the public Vercel origin, not localhost.
+- Configure real SMTP credentials (`SMTP_*`) before launching signup or password-reset flows.
+- Leave `GOOGLE_AUTH_ENABLED=false` for the zero-paid beta so the frontend can surface the "coming soon" CTA while backend Google routes stay disabled.
+- Deployment responses now derive public endpoint URLs from the incoming request origin, so production traffic should reach the backend through your DuckDNS+Caddy hostname.
 
 ## Notes
 

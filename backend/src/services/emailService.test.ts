@@ -108,7 +108,7 @@ describe('EmailService', () => {
       smtpSecure: true,
       smtpUser: 'smtp-user',
       smtpPassword: 'smtp-password',
-      smtpFrom: 'AutoML Toolchain <noreply@example.com>'
+      smtpFrom: 'Agentic AutoML Platform <noreply@example.com>'
     };
 
     it('creates a transporter with the configured SMTP settings', async () => {
@@ -137,9 +137,9 @@ describe('EmailService', () => {
       expect(sendMail).toHaveBeenCalledOnce();
       expect(sendMail).toHaveBeenCalledWith(
         expect.objectContaining({
-          from: 'AutoML Toolchain <noreply@example.com>',
+          from: 'Agentic AutoML Platform <noreply@example.com>',
           to: 'user@test.com',
-          subject: 'Password Reset Request - AutoML Toolchain',
+          subject: 'Password Reset Request - Agentic AutoML Platform',
           html: expect.stringContaining('/reset-password?token=token'),
           text: expect.stringContaining('/reset-password?token=token')
         })

@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
+import { env } from '../config.js';
 import { appLogger } from '../logging/logger.js';
 import { getOrCreateContainer } from '../services/containerManager.js';
 import { syncWorkspaceDatasets } from '../services/executionWorkspace.js';
@@ -58,6 +59,14 @@ function isTransientKernelExecutionFailure(result: {
     && result.error.includes('WebSocket closed unexpectedly during execution');
 }
 
+function resolveRuntimeWorkspacePath(projectId: string): string {
+  return join(env.executionWorkspaceDir, projectId, 'model-runtime');
+}
+
+function resolveModelStoragePath(modelId: string): string {
+  return join(env.modelStorageDir, modelId);
+}
+
 /**
  * Orchestrate a container execution following the standard 6-step pattern:
  * 1. Get or create container
@@ -74,7 +83,7 @@ export async function orchestrateContainerExecution(
   const container = await getOrCreateContainer({
     projectId: config.projectId,
     pythonVersion: config.pythonVersion as '3.10' | '3.11',
-    workspacePath: join(process.env.EXECUTION_WORKSPACE_DIR || '/tmp/workspace', config.projectId, 'model-runtime'),
+    workspacePath: resolveRuntimeWorkspacePath(config.projectId),
   });
 
   // Step 2: Sync workspace datasets (best-effort)
@@ -170,7 +179,7 @@ export async function copyArtifactsToPermanentStorage(
   container: { workspacePath: string },
   artifacts: ArtifactCopyConfig[],
 ): Promise<void> {
-  const storageDir = join(process.env.MODEL_STORAGE_DIR || '/tmp/models', modelId);
+  const storageDir = resolveModelStoragePath(modelId);
   await mkdir(storageDir, { recursive: true });
 
   for (const artifact of artifacts) {
@@ -179,7 +188,7 @@ export async function copyArtifactsToPermanentStorage(
 
     try {
       // Ensure parent directory exists
-      const storageParentDir = join(storagePath, '..');
+      const storageParentDir = dirname(storagePath);
       await mkdir(storageParentDir, { recursive: true });
       await copyFile(workspacePath, storagePath);
     } catch (err) {
@@ -198,7 +207,7 @@ export async function loadArtifactFromStorage(
   modelId: string,
   filename: string,
 ): Promise<unknown> {
-  const storagePath = join(process.env.MODEL_STORAGE_DIR || '/tmp/models', modelId, filename);
+  const storagePath = join(resolveModelStoragePath(modelId), filename);
   const raw = await readFile(storagePath, 'utf8');
   return JSON.parse(raw);
 }

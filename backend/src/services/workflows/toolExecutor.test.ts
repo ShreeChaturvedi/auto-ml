@@ -28,7 +28,8 @@ vi.mock('../../repositories/datasetRepository.js', () => ({
   })
 }));
 
-function createPhaseConfig(): PhaseConfig {
+function createPhaseConfig(toolNames: string[] = ['commit_transformation_step']): PhaseConfig {
+  const phaseTools = new Set(toolNames);
   return {
     phase: 'preprocessing',
     lifecycle: [],
@@ -48,7 +49,7 @@ function createPhaseConfig(): PhaseConfig {
     buildSystemPrompt: vi.fn(() => ''),
     buildUserContext: vi.fn(() => []),
     resolveNextStage: vi.fn(() => null),
-    isPhaseSpecificTool: vi.fn((toolName: string) => toolName === 'commit_transformation_step'),
+    isPhaseSpecificTool: vi.fn((toolName: string) => phaseTools.has(toolName)),
     executePhaseSpecificTool: executePhaseSpecificToolMock
   };
 }
@@ -253,33 +254,22 @@ describe('executeToolsNode', () => {
     );
   });
 
-  it('overrides hallucinated preprocessing runIds with controllerSummary.runId', async () => {
-    const phaseConfig = createPhaseConfig();
-    phaseConfig.isPhaseSpecificTool = vi.fn((toolName: string) => toolName === 'profile_active_dataset');
+  it('binds preprocessing lifecycle tools to the current preprocessing run when runId is omitted', async () => {
+    const phaseConfig = createPhaseConfig(['propose_transformation_step']);
     const state = createState();
-    state.run.status = 'running';
-    state.run.currentNode = 'plan_step';
-    state.pendingInputKind = null;
-    state.pauseReason = null;
     state.pendingToolCalls = [{
-      id: 'wf-call-prep-profile',
-      tool: 'profile_active_dataset',
+      id: 'wf-call-prep-1',
+      tool: 'propose_transformation_step',
       args: {
-        runId: 'run-short-preprocess'
+        title: 'Split malformed single-column CSV',
+        intentType: 'schema_repair'
       },
-      rationale: 'Profile the active preprocessing dataset.'
+      rationale: 'Continue editing the current processed dataset.'
     }];
     state.controllerSummary = {
-      runId: 'prep-real-1',
-      currentNode: 'plan_step',
-      pendingApproval: false
+      runId: 'prep-62fdbc75-ba54-4ada-949c-9cc58afe1703',
+      currentNode: 'plan_step'
     };
-    executePhaseSpecificToolMock.mockResolvedValue({
-      output: {
-        runId: 'prep-real-1',
-        datasetId: 'dataset-1'
-      }
-    });
 
     await executeToolsNode(state, {
       configurable: {
@@ -288,15 +278,48 @@ describe('executeToolsNode', () => {
     } as never);
 
     expect(executePhaseSpecificToolMock).toHaveBeenCalledWith(
-      'profile_active_dataset',
+      'propose_transformation_step',
       expect.objectContaining({
-        runId: 'prep-real-1',
+        runId: 'prep-62fdbc75-ba54-4ada-949c-9cc58afe1703',
         datasetId: 'dataset-1'
       }),
       expect.objectContaining({
         projectId: 'project-1',
-        toolCallId: 'wf-call-prep-profile'
+        toolCallId: 'wf-call-prep-1'
       })
+    );
+  });
+
+  it('replaces leaked workflow thread ids with the controller preprocessing run', async () => {
+    const phaseConfig = createPhaseConfig(['propose_transformation_step']);
+    const state = createState();
+    state.pendingToolCalls = [{
+      id: 'wf-call-prep-2',
+      tool: 'propose_transformation_step',
+      args: {
+        runId: 'thread-db788f18-bf57-4966-b310-cd0e538132b9',
+        title: 'Repair semicolon parsing',
+        intentType: 'schema_repair'
+      },
+      rationale: 'Continue the preprocessing lineage.'
+    }];
+    state.controllerSummary = {
+      runId: 'prep-62fdbc75-ba54-4ada-949c-9cc58afe1703',
+      currentNode: 'plan_step'
+    };
+
+    await executeToolsNode(state, {
+      configurable: {
+        phaseConfig
+      }
+    } as never);
+
+    expect(executePhaseSpecificToolMock).toHaveBeenCalledWith(
+      'propose_transformation_step',
+      expect.objectContaining({
+        runId: 'prep-62fdbc75-ba54-4ada-949c-9cc58afe1703'
+      }),
+      expect.anything()
     );
   });
 

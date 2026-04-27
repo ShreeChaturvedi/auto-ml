@@ -4,7 +4,7 @@
  * States:
  * - No token: Error with link to resend
  * - Loading: Spinner while verifying
- * - Success: Checkmark + auto-redirect to dashboard
+ * - Success: Checkmark + auto-redirect to login
  * - Error: Expired/used token with link to pending page
  */
 
@@ -23,6 +23,7 @@ export function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const setEmailVerified = useAuthStore((state) => state.setEmailVerified);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
 
   const [state, setState] = useState<VerifyState>('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -36,7 +37,10 @@ export function VerifyEmailPage() {
         if (cancelled) return;
         setEmailVerified(true);
         setState('success');
-        setTimeout(() => navigate('/', { replace: true }), 2000);
+        setTimeout(() => {
+          clearAuth();
+          navigate('/login?verified=1', { replace: true });
+        }, 2000);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -50,7 +54,7 @@ export function VerifyEmailPage() {
       });
 
     return () => { cancelled = true; };
-  }, [token, navigate, setEmailVerified]);
+  }, [token, navigate, setEmailVerified, clearAuth]);
 
   // No token in URL
   if (!token) {
@@ -94,7 +98,7 @@ export function VerifyEmailPage() {
             <div className="space-y-2">
               <h1 className="text-2xl font-semibold tracking-tight text-white font-display">Email verified!</h1>
               <p className="text-sm text-neutral-400">
-                Your email has been verified. Redirecting to dashboard...
+                Your email has been verified. Redirecting to login...
               </p>
             </div>
           </div>

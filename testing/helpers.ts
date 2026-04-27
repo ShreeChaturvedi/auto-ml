@@ -6,7 +6,10 @@ interface CreateProjectResponse {
   };
 }
 
-const API_BASE_URL = process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000';
+const benchmarkApiBase = process.env.BENCHMARK_API_BASE;
+const API_BASE_URL = benchmarkApiBase?.endsWith('/api')
+  ? benchmarkApiBase.slice(0, -4)
+  : (process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000');
 
 export async function resetBackendData(request: APIRequestContext) {
   await request.delete(`${API_BASE_URL}/api/projects/reset`);

@@ -743,6 +743,31 @@ describe('restartKernel', () => {
         expect(initSend).toBeDefined();
     });
 
+    it('20c. ships delimiter-aware preprocessing helpers in KERNEL_INIT_CODE', async () => {
+        const ctr = track(makeContainer());
+        await connectDefault(ctr);
+
+        mockFetch.mockResolvedValueOnce(okResponse({})); // restart response
+        await restartKernel(ctr);
+
+        const newWs = lastWs();
+        const initSend = newWs.send.mock.calls.find((call: unknown[]) => {
+            try {
+                const parsed = JSON.parse(call[0] as string) as {
+                    header?: { msg_type?: string };
+                    content?: { code?: string };
+                };
+                const code = parsed.content?.code ?? '';
+                return parsed.header?.msg_type === 'execute_request'
+                    && code.includes('def _detect_csv_delimiter')
+                    && code.includes('def _maybe_expand_collapsed_csv')
+                    && code.includes('frame = _read_csv_robust(path, sep=None)');
+            } catch { return false; }
+        });
+
+        expect(initSend).toBeDefined();
+    });
+
     it('21. throws when no kernel connection exists', async () => {
         const ctr = makeContainer({ id: 'no-conn' });
         await expect(restartKernel(ctr)).rejects.toThrow(/No kernel connection/);

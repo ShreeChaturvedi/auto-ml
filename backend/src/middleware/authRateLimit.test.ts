@@ -62,6 +62,23 @@ describe('authAttemptLimiter (issue #345)', () => {
     expect(freshOnB.status).toBe(401);
   });
 
+  it('normalizes IPv6 callers within the same subnet into the same bucket', async () => {
+    const email = 'ipv6@x.com';
+    const ipA = '2001:db8:abcd:1200::1';
+    const ipB = '2001:db8:abcd:12aa::2';
+
+    for (let i = 0; i < 10; i++) {
+      await request(app).post('/probe').set('X-Forwarded-For', ipA).send({ email, password: 'w' });
+    }
+
+    const blockedOnSiblingIp = await request(app)
+      .post('/probe')
+      .set('X-Forwarded-For', ipB)
+      .send({ email, password: 'w' });
+
+    expect(blockedOnSiblingIp.status).toBe(429);
+  });
+
   it('returns a structured 429 body with RATE_LIMITED error_code', async () => {
     const ip = '10.0.0.3';
     for (let i = 0; i < 10; i++) {

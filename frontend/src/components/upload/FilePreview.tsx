@@ -22,7 +22,7 @@ import Papa from 'papaparse';
 import { Badge } from '@/components/ui/badge';
 import { Eye, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getDatasetSample } from '@/lib/api/datasets';
+import { downloadDataset, getDatasetSample } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
 import { Markdown } from '@/components/ui/Markdown';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -40,6 +40,142 @@ interface RowInfo {
   total: number;
 }
 
+function buildDatasetTable(columns: string[], rows: Record<string, unknown>[]) {
+  return (
+    <ScrollArea className="min-h-0 flex-1 rounded-lg border">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted sticky top-0 z-10">
+            <tr>
+              {columns.map((header, i) => (
+                <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-t">
+                {columns.map((header, j) => (
+                  <td key={j} className="px-3 py-2 font-mono text-xs">
+                    {String(row[header] ?? '')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ScrollArea>
+  );
+}
+
+function isTabularDatasetFile(file: UploadedFile): boolean {
+  return file.type === 'csv' || file.type === 'json' || file.type === 'excel';
+}
+
+function isTsvFilename(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.tsv');
+}
+
+function isNdjsonFilename(filename: string): boolean {
+  const normalized = filename.toLowerCase();
+  return normalized.endsWith('.jsonl') || normalized.endsWith('.ndjson');
+}
+
+function normalizePreviewRows(values: unknown[]): Record<string, unknown>[] {
+  return values.map((value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+
+    return { value };
+  });
+}
+
+function collectPreviewColumns(rows: Record<string, unknown>[]): string[] {
+  return [...new Set(rows.flatMap((row) => Object.keys(row)))];
+}
+
+function readBlobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === 'function') {
+    return blob.text();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsText(blob);
+  });
+}
+
+function parseDelimitedDatasetPreview(file: File, filename: string): Promise<{ rows: Record<string, unknown>[]; columns: string[] }> {
+  return new Promise((resolve, reject) => {
+    Papa.parse<Record<string, unknown>>(file, {
+      header: true,
+      preview: 10,
+      delimiter: isTsvFilename(filename) ? '\t' : ',',
+      complete: (results) => {
+        const rows = (results.data as Record<string, unknown>[]).filter((row) =>
+          Object.values(row).some((value) => String(value ?? '').trim().length > 0)
+        );
+        resolve({
+          rows,
+          columns: results.meta.fields ?? collectPreviewColumns(rows),
+        });
+      },
+      error: (error) => reject(error),
+    });
+  });
+}
+
+async function parseJsonDatasetPreview(file: File, filename: string): Promise<{ rows: Record<string, unknown>[]; columns: string[] }> {
+  const text = await readBlobText(file);
+  let rows: Record<string, unknown>[];
+
+  if (isNdjsonFilename(filename)) {
+    const parsedRows = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .slice(0, 10)
+      .map((line) => JSON.parse(line));
+    rows = normalizePreviewRows(parsedRows);
+  } else {
+    const parsed = JSON.parse(text);
+    const parsedRows = Array.isArray(parsed) ? parsed.slice(0, 10) : [parsed];
+    rows = normalizePreviewRows(parsedRows);
+  }
+
+  return {
+    rows,
+    columns: collectPreviewColumns(rows),
+  };
+}
+
+async function parseDownloadedDatasetPreview(file: UploadedFile): Promise<{ rows: Record<string, unknown>[]; columns: string[] } | null> {
+  if (!file.metadata?.datasetId || file.type === 'excel') {
+    return null;
+  }
+
+  const arrayBuffer = await downloadDataset(file.metadata.datasetId);
+  const downloadedFile = new File([arrayBuffer], file.name, {
+    type: file.type === 'json' ? 'application/json' : 'text/csv',
+  });
+
+  if (file.type === 'csv') {
+    return parseDelimitedDatasetPreview(downloadedFile, file.name);
+  }
+
+  if (file.type === 'json') {
+    return parseJsonDatasetPreview(downloadedFile, file.name);
+  }
+
+  return null;
+}
+
 export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
   const [previewContent, setPreviewContent] = useState<React.ReactNode>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,44 +187,30 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
     if (!open) return;
 
     // For hydrated files from backend (no file object), fetch sample from API
-    if (!file.file && file.metadata?.datasetId && (file.type === 'csv' || file.type === 'json' || file.type === 'excel')) {
+    if (!file.file && file.metadata?.datasetId && isTabularDatasetFile(file)) {
       setIsLoading(true);
       setRowInfo(null);
       void getDatasetSample(file.metadata.datasetId)
         .then((data) => {
           setRowInfo({ shown: data.sample.length, total: data.rowCount });
-          setPreviewContent(
-            <ScrollArea className="min-h-0 flex-1 rounded-lg border">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted sticky top-0 z-10">
-                    <tr>
-                      {data.columns.map((header, i) => (
-                        <th key={i} className="px-3 py-2 text-left font-medium text-muted-foreground">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.sample.map((row, i) => (
-                      <tr key={i} className="border-t">
-                        {data.columns.map((header, j) => (
-                          <td key={j} className="px-3 py-2 font-mono text-xs">
-                            {String(row[header] ?? '')}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </ScrollArea>
-          );
+          setPreviewContent(buildDatasetTable(data.columns, data.sample));
           setIsLoading(false);
         })
-        .catch((error) => {
+        .catch(async (error) => {
           console.error('Failed to fetch dataset sample:', error);
+
+          try {
+            const fallbackPreview = await parseDownloadedDatasetPreview(file);
+            if (fallbackPreview) {
+              setRowInfo({ shown: fallbackPreview.rows.length, total: fallbackPreview.rows.length });
+              setPreviewContent(buildDatasetTable(fallbackPreview.columns, fallbackPreview.rows));
+              setIsLoading(false);
+              return;
+            }
+          } catch (fallbackError) {
+            console.error('Failed to parse downloaded dataset preview:', fallbackError);
+          }
+
           setPreviewContent(
             <div className="p-6 text-center space-y-2">
               <p className="text-sm text-destructive">Failed to load dataset preview</p>
@@ -200,77 +322,37 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
 
       case 'csv':
         setRowInfo(null);
-        Papa.parse(file.file, {
-          header: true,
-          preview: 10, // Only show first 10 rows
-          complete: (results) => {
-            const headers = results.meta.fields || [];
-            const rows = results.data as Record<string, unknown>[];
-
-            // For fresh uploads, we only know the sample size (no total count available)
+        void parseDelimitedDatasetPreview(file.file, file.name)
+          .then(({ rows, columns }) => {
             setRowInfo({ shown: rows.length, total: rows.length });
-
-            setPreviewContent(
-              <ScrollArea className="min-h-0 flex-1 rounded-lg border">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted sticky top-0 z-10">
-                      <tr>
-                        {headers.map((header, i) => (
-                          <th key={i} className="px-4 py-2 text-left font-medium">
-                            {header}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row, i) => (
-                        <tr key={i} className="border-t">
-                          {headers.map((header, j) => (
-                            <td key={j} className="px-4 py-2">
-                              {String(row[header] || '')}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </ScrollArea>
-            );
+            setPreviewContent(buildDatasetTable(columns, rows));
             setIsLoading(false);
-          },
-          error: () => {
+          })
+          .catch(() => {
             setPreviewContent(
               <p className="text-sm text-destructive">Error loading CSV preview</p>
             );
             setIsLoading(false);
-          }
-        });
+          });
         break;
 
       case 'json':
-        file.file.text().then((text) => {
-          try {
-            const json = JSON.parse(text);
-            setPreviewContent(
-              <ScrollArea className="max-h-[70vh] rounded-lg bg-muted">
-                <pre className="text-xs p-4">
-                  {JSON.stringify(json, null, 2)}
-                </pre>
-              </ScrollArea>
-            );
-          } catch {
+        void parseJsonDatasetPreview(file.file, file.name)
+          .then(({ rows, columns }) => {
+            setRowInfo({ shown: rows.length, total: rows.length });
+            setPreviewContent(buildDatasetTable(columns, rows));
+            setIsLoading(false);
+          })
+          .catch(() => {
             setPreviewContent(
               <p className="text-sm text-destructive">Error parsing JSON</p>
             );
-          }
-          setIsLoading(false);
-        });
+            setIsLoading(false);
+          });
         break;
 
       case 'markdown':
-        file.file.text().then((text) => {
+        readBlobText(file.file).then((text) => {
           setPreviewContent(
             <ScrollArea className="max-h-[70vh] rounded-lg border">
               <Markdown className="p-4 markdown-content">
@@ -288,7 +370,7 @@ export function FilePreview({ file, open, onOpenChange }: FilePreviewProps) {
         break;
 
       case 'text':
-        file.file.text().then((text) => {
+        readBlobText(file.file).then((text) => {
           setPreviewContent(
             <ScrollArea className="max-h-[70vh] rounded-lg bg-muted">
               <pre className="text-xs p-4 font-mono">

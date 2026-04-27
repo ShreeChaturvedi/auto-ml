@@ -16,7 +16,13 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import type { DeploymentRecord, DeploymentApiKeyInfo, DeploymentSchema } from '@/types/deployment';
-import { createApiKey, listApiKeys, revokeApiKey, getDeploymentSchema } from '@/lib/api/deployments';
+import {
+  createApiKey,
+  listApiKeys,
+  revokeApiKey,
+  getDeploymentSchema,
+  getDeploymentEndpointUrl
+} from '@/lib/api/deployments';
 import { cn } from '@/lib/utils';
 
 /* ------------------------------------------------------------------ */
@@ -103,7 +109,7 @@ function CodeBlock({ code }: { code: string }) {
 /* ------------------------------------------------------------------ */
 
 function SnippetsSection({ deployment, schema }: { deployment: DeploymentRecord; schema: DeploymentSchema | null }) {
-  const url = deployment.endpointUrl ?? `http://localhost:4000/api/deployments/${deployment.deploymentId}`;
+  const url = getDeploymentEndpointUrl(deployment.deploymentId, deployment.endpointUrl);
   const sample: Record<string, unknown> = schema?.sampleRequest ?? { feature1: 0, feature2: 0 };
 
   return (

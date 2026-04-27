@@ -140,6 +140,28 @@ describe('executeTraining', () => {
     ]);
   });
 
+  it('preserves the training target column from the completion payload while still normalizing numeric metrics', async () => {
+    const ctx = buildCtx({
+      experimentId: 'exp-1',
+      succeeded: true,
+      metrics: {
+        accuracy: 0.85,
+        target_column: 'churn_proxy'
+      }
+    });
+
+    const result = await executeTraining(ctx);
+
+    expect(result.error).toBeUndefined();
+    const output = result.output as Record<string, unknown>;
+    expect(output.metrics).toEqual({ accuracy: 0.85 });
+    expect(output.targetColumn).toBe('churn_proxy');
+
+    const experiments = ctx.run.metadata?.experiments as Record<string, Record<string, unknown>>;
+    expect(experiments['exp-1'].trainingMetrics).toEqual({ accuracy: 0.85 });
+    expect(experiments['exp-1'].targetColumn).toBe('churn_proxy');
+  });
+
   it('returns error for missing experimentId', async () => {
     const result = await executeTraining(buildCtx({
       succeeded: true

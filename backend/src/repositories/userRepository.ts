@@ -22,7 +22,8 @@ export class UserRepository {
    * Used for API responses to never expose password hashes
    */
   toSafeUser(user: User): SafeUser {
-    const { ...safe } = user;
+    const safe = { ...(user as User & { password_hash?: string }) };
+    delete safe.password_hash;
     return safe as SafeUser;
   }
 

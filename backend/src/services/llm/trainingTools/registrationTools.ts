@@ -14,18 +14,71 @@ import {
   inferRuntimeDependenciesFromModelType,
   normalizeRuntimeDependencies,
 } from '../../runtimeDependencies.js';
-import { deriveServingSchema } from '../../servingSchema.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
 import {
   extractWorkflowPrepSegmentsFromToolCalls,
+  extractWorkflowTargetColumnFromToolResults,
+  normalizeTrainingCellIds,
   normalizeWorkflowPrepSegments,
 } from './workflowPrepSegments.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
-const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
+const datasetRepositoryForSampleRequest = createDatasetRepository(env.datasetMetadataPath);
+
+/**
+ * Build a `sampleRequest` payload AND `featureTypes` map for the deployment
+ * playground from the trained dataset's first sample row + column profile.
+ *
+ * Returns:
+ *   - sampleRequest: { featureName: sample_value_from_first_row }
+ *   - featureTypes: { featureName: 'number' | 'boolean' | 'string' }
+ *     (used by the inference server's Pydantic model so the /predict
+ *     endpoint accepts strings for categorical fields instead of
+ *     rejecting everything as non-float).
+ *
+ * Missing sample values fall back to 0 (numeric-looking names) or ''.
+ */
+async function buildSampleRequestFromDataset(
+  datasetId: string | undefined,
+  featureColumns: string[]
+): Promise<{ sampleRequest: Record<string, unknown>; featureTypes: Record<string, 'float' | 'int' | 'str'> }> {
+  if (!datasetId || featureColumns.length === 0) return { sampleRequest: {}, featureTypes: {} };
+  try {
+    const dataset = await datasetRepositoryForSampleRequest.getById(datasetId);
+    const firstRow = dataset?.sample?.[0] as Record<string, unknown> | undefined;
+    const columnProfiles = dataset?.columns ?? [];
+    const dtypeByName = new Map<string, string>(
+      columnProfiles.map((col) => [col.name, (col.dtype ?? 'string').toLowerCase()])
+    );
+    // Inference server Pydantic schema uses the Python-like type names
+    // 'float' / 'int' / 'str'. Map dataset dtypes accordingly. Booleans
+    // go to 'int' (0/1) so FastAPI accepts the JSON payload cleanly
+    // without special-casing.
+    const toInferenceType = (dtype: string): 'float' | 'int' | 'str' => {
+      if (dtype === 'float' || dtype === 'number') return 'float';
+      if (dtype === 'integer' || dtype === 'int' || dtype === 'boolean' || dtype === 'bool') return 'int';
+      return 'str';
+    };
+    const sampleRequest: Record<string, unknown> = {};
+    const featureTypes: Record<string, 'float' | 'int' | 'str'> = {};
+    for (const col of featureColumns) {
+      const dtype = dtypeByName.get(col) ?? 'string';
+      const infType = toInferenceType(dtype);
+      featureTypes[col] = infType;
+      if (firstRow && col in firstRow && firstRow[col] != null) {
+        sampleRequest[col] = firstRow[col];
+      } else {
+        sampleRequest[col] = infType === 'str' ? '' : 0;
+      }
+    }
+    return { sampleRequest, featureTypes };
+  } catch {
+    return { sampleRequest: {}, featureTypes: {} };
+  }
+}
 
 /**
  * Resolve an LLM-supplied artifactPath against the project's execution
@@ -140,6 +193,14 @@ function normalizeMetricsRecord(metrics: unknown): Record<string, number> {
     }
   }
   return normalized;
+}
+
+function normalizeTargetColumn(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function resolveRegistrationMetrics(
@@ -348,25 +409,46 @@ export const registerModel: TrainingToolHandler = async (
   const featureColumns = Array.isArray(experiment.featureColumns)
     ? experiment.featureColumns.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     : undefined;
-  const workflowPrepSegments = (() => {
-    const stored = normalizeWorkflowPrepSegments(experiment.workflowPrepSegments);
-    if (stored.length > 0) {
-      return stored;
+  const trainingCellIds = normalizeTrainingCellIds(experiment.trainingCellIds);
+  const history = (run.metadata as { history?: unknown } | undefined)?.history as {
+    toolCalls?: unknown[];
+    toolResults?: unknown[];
+  } | undefined;
+  const storedWorkflowPrepSegments = normalizeWorkflowPrepSegments(experiment.workflowPrepSegments);
+  const historyWorkflowPrepSegments = extractWorkflowPrepSegmentsFromToolCalls(
+    history?.toolCalls,
+    String(experiment.experimentId ?? ''),
+    trainingCellIds,
+    history?.toolResults,
+  );
+  const workflowPrepSegments = historyWorkflowPrepSegments.length > 0
+    ? historyWorkflowPrepSegments
+    : storedWorkflowPrepSegments;
+  const historyTargetColumn = extractWorkflowTargetColumnFromToolResults(
+    history?.toolResults,
+    trainingCellIds,
+  );
+  const targetColumn = (() => {
+    const explicitTargetColumn = normalizeTargetColumn(experiment.targetColumn);
+    if (historyTargetColumn && explicitTargetColumn && historyTargetColumn !== explicitTargetColumn) {
+      appLogger.warn('[registerModel] Training completion target differs from experiment target; using workflow history value', {
+        experimentId: experiment.experimentId,
+        explicitTargetColumn,
+        historyTargetColumn,
+      });
     }
-    const cellIds = Array.isArray(experiment.trainingCellIds)
-      ? experiment.trainingCellIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      : null;
-    const history = (run.metadata as { history?: unknown } | undefined)?.history as { toolCalls?: unknown[] } | undefined;
-    return extractWorkflowPrepSegmentsFromToolCalls(history?.toolCalls, String(experiment.experimentId ?? ''), cellIds);
+    return historyTargetColumn ?? explicitTargetColumn;
   })();
+  if (historyWorkflowPrepSegments.length > 0) {
+    experiment.workflowPrepSegments = historyWorkflowPrepSegments;
+  }
+  if (targetColumn) {
+    experiment.targetColumn = targetColumn;
+  }
   const modelName = typeof args.modelName === 'string' ? args.modelName : 'Untitled Model';
   const modelType = typeof args.modelType === 'string' ? args.modelType : 'unknown';
   const runtimeDependencies = (() => {
     const stored = normalizeRuntimeDependencies(experiment.runtimeDependencies);
-    const history = (run.metadata as { history?: unknown } | undefined)?.history as {
-      toolCalls?: unknown[];
-      toolResults?: unknown[];
-    } | undefined;
     const installed = extractSuccessfulRuntimeDependenciesFromHistory(
       history?.toolCalls,
       history?.toolResults,
@@ -411,25 +493,10 @@ export const registerModel: TrainingToolHandler = async (
   // the deployment schema endpoint returns `{}` and the /predict
   // playground has nothing to demo. Issue surfaced during the Phase 9
   // deployment probe.
-  const trainedDataset = trainedDatasetId
-    ? await datasetRepository.getById(trainedDatasetId)
-    : undefined;
-  if (!trainedDataset) {
-    return {
-      error: `register_model could not load trained dataset "${trainedDatasetId ?? ''}" to derive the deployment schema.`
-    };
-  }
-  const servingSchema = deriveServingSchema(
-    trainedDataset,
-    typeof experiment.targetColumn === 'string' ? experiment.targetColumn : undefined,
-    featureColumns,
+  const { sampleRequest, featureTypes } = await buildSampleRequestFromDataset(
+    trainedDatasetId,
+    featureColumns ?? []
   );
-  if (!servingSchema.ok) {
-    return {
-      error: `register_model could not derive the deployment schema: ${servingSchema.error}`
-    };
-  }
-  const { featureColumns: servingFeatureColumns, sampleRequest, featureTypes } = servingSchema;
 
   let artifact: ModelArtifact | undefined;
   try {
@@ -448,12 +515,10 @@ export const registerModel: TrainingToolHandler = async (
       trainingMs: typeof experiment.trainingDurationMs === 'number'
         ? experiment.trainingDurationMs
         : undefined,
-      targetColumn: typeof experiment.targetColumn === 'string'
-        ? experiment.targetColumn
-        : undefined,
-      featureColumns: servingFeatureColumns,
-      sampleRequest,
-      featureTypes,
+      targetColumn,
+      featureColumns,
+      ...(Object.keys(sampleRequest).length > 0 ? { sampleRequest } : {}),
+      ...(Object.keys(featureTypes).length > 0 ? { featureTypes } : {}),
       // Artifact is populated after the permanent copy succeeds below.
       evaluationStatus: 'pending',
       metadata: {

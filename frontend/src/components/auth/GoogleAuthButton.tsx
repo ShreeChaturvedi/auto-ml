@@ -41,6 +41,7 @@ interface GoogleAuthButtonProps {
   onClick?: () => void;
   isLoading?: boolean;
   disabled?: boolean;
+  comingSoon?: boolean;
   mode?: 'login' | 'signup';
   className?: string;
 }
@@ -49,13 +50,14 @@ export function GoogleAuthButton({
   onClick,
   isLoading = false,
   disabled = false,
+  comingSoon = false,
   mode = 'login',
   className
 }: GoogleAuthButtonProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const handleClick = () => {
-    if (!isLoading && !disabled && onClick) {
+    if (!isLoading && !disabled && !comingSoon && onClick) {
       onClick();
     }
   };
@@ -65,14 +67,14 @@ export function GoogleAuthButton({
       type="button"
       variant="outline"
       onClick={handleClick}
-      disabled={disabled || isLoading}
+      disabled={disabled || isLoading || comingSoon}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
         'w-full h-11 text-sm font-medium transition-[color,background-color,border-color,box-shadow] duration-200 gap-3',
         'border-border/60 hover:border-border',
         'hover:bg-muted/50',
-        isHovered && !disabled && 'shadow-md',
+        isHovered && !disabled && !comingSoon && 'shadow-md',
         className
       )}
     >
@@ -81,12 +83,19 @@ export function GoogleAuthButton({
       ) : (
         <GoogleLogo />
       )}
-      <span>
-        {isLoading
-          ? 'Connecting...'
-          : mode === 'login'
-          ? 'Continue with Google'
-          : 'Sign up with Google'}
+      <span className="flex items-center gap-2">
+        <span>
+          {isLoading
+            ? 'Connecting...'
+            : mode === 'login'
+              ? 'Continue with Google'
+              : 'Sign up with Google'}
+        </span>
+        {comingSoon && (
+          <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+            Coming soon
+          </span>
+        )}
       </span>
     </Button>
   );

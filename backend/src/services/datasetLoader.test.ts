@@ -83,6 +83,23 @@ describe('datasetLoader', () => {
       expect(rows[0].name).toBe('\uFFFD');
     });
 
+    it('repairs legacy quoted semicolon-collapsed workbook csv rows', async () => {
+      const rows = await parseDatasetRows(
+        Buffer.from(
+          '"age;job;marital;balance"\n'
+          + '"58;""management"";""married"";2143"\n'
+          + '"44;""technician"";""single"";29"\n'
+        ),
+        'csv',
+        'bank-full_processed_workbook_1.csv'
+      );
+
+      expect(rows).toEqual([
+        { age: '58', job: 'management', marital: 'married', balance: '2143' },
+        { age: '44', job: 'technician', marital: 'single', balance: '29' }
+      ]);
+    });
+
     it('parses XLSX rows', async () => {
       const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.Workbook();

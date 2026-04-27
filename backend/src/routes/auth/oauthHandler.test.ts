@@ -5,12 +5,17 @@ import type { User } from '../../types/user.js';
 
 // --- Mocks ---------------------------------------------------------------
 
-vi.mock('../../config.js', () => ({
+const configState = vi.hoisted(() => ({
   env: {
+    googleAuthEnabled: true,
     googleClientId: 'test-client-id',
     googleClientSecret: 'test-client-secret',
     googleCallbackUrl: 'http://localhost:5173/auth/google/callback'
   }
+}));
+
+vi.mock('../../config.js', () => ({
+  env: configState.env
 }));
 
 vi.mock('../../logging/logger.js', () => ({
@@ -137,11 +142,32 @@ function mockGoogleFetch(opts: { verifiedEmail: boolean; email: string; name?: s
 
 describe('handleGoogleCallback — issue #344 guards', () => {
   let handleGoogleCallback: typeof import('./oauthHandler.js').handleGoogleCallback;
+  let handleGoogleAuth: typeof import('./oauthHandler.js').handleGoogleAuth;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
-    ({ handleGoogleCallback } = await import('./oauthHandler.js'));
+    configState.env.googleAuthEnabled = true;
+    ({ handleGoogleAuth, handleGoogleCallback } = await import('./oauthHandler.js'));
+  });
+
+  it('returns 503 when Google auth is disabled for the beta', async () => {
+    configState.env.googleAuthEnabled = false;
+
+    const res = makeRes();
+    await handleGoogleAuth(makeReq(), res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error_code: 'GOOGLE_AUTH_DISABLED' })
+    );
+
+    const callbackRes = makeRes();
+    const repo = makeUserRepo();
+    await handleGoogleCallback(makeReq(), callbackRes, repo as never);
+
+    expect(callbackRes.status).toHaveBeenCalledWith(503);
+    expect(repo.findByEmail).not.toHaveBeenCalled();
   });
 
   it('rejects with 400 when Google reports verified_email=false', async () => {

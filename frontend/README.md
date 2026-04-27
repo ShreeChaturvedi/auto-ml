@@ -41,4 +41,15 @@ npm run preview
 
 ## Notes
 
-The app expects the backend to be running at `http://localhost:4000/api`. Configure `VITE_API_BASE_URL` in `.env.local` if needed.
+The app defaults to `http://localhost:4000/api` for local development.
+
+For deployed builds, set both frontend API env vars to the same public backend origin:
+
+```bash
+VITE_API_BASE=https://your-backend.duckdns.org/api
+VITE_API_BASE_URL=https://your-backend.duckdns.org/api
+```
+
+`VITE_API_BASE` is the preferred key. `VITE_API_BASE_URL` remains supported for older codepaths and should be kept in sync during the beta.
+
+The repo now includes [frontend/vercel.json](/Users/ayush/Documents/Projects/ai-augmented-auto-ml-toolchain/frontend/vercel.json) so Vercel rewrites SPA deep links to `index.html` when this package is deployed as its own frontend project.

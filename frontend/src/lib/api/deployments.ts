@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiRequest, getApiBaseUrl } from './client';
 import type {
   DeploymentRecord,
   DeploymentApiKeyInfo,
@@ -12,6 +12,10 @@ import type {
 
 export async function listDeployments(projectId: string) {
   return apiRequest<{ deployments: DeploymentRecord[] }>(`/deployments?projectId=${projectId}`, { method: 'GET' });
+}
+
+export function getDeploymentEndpointUrl(deploymentId: string, endpointUrl?: string) {
+  return endpointUrl ?? `${getApiBaseUrl()}/deployments/${deploymentId}`;
 }
 
 export async function createDeployment(modelId: string, projectId: string, name: string) {

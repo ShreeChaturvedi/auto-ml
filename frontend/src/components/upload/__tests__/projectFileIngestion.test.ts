@@ -125,6 +125,50 @@ describe('projectFileIngestion', () => {
     );
   });
 
+  it.each([
+    ['orders.tsv', 'text/tab-separated-values'],
+    ['events.jsonl', 'application/x-ndjson'],
+    ['events.ndjson', 'application/x-ndjson'],
+  ])('routes %s through dataset upload instead of document upload', async (filename, mimeType) => {
+    vi.mocked(uploadDatasetFile).mockResolvedValue({
+      dataset: {
+        datasetId: 'dataset-alias',
+        filename,
+        fileType: filename.endsWith('.tsv') ? 'csv' : 'json',
+        size: 10,
+        n_rows: 2,
+        n_cols: 2,
+        columns: ['id', 'value'],
+        dtypes: { id: 'integer', value: 'string' },
+        null_counts: { id: 0, value: 0 },
+        sample: [{ id: 1, value: 'alpha' }],
+        createdAt: '2026-03-31T00:00:00.000Z',
+        tableName: 'alias_table',
+        eda: { numericColumns: [], categoricalColumns: [], dataQuality: [] },
+      },
+    });
+
+    const file = new File(['payload'], filename, { type: mimeType });
+    const result = await ingestProjectFile({
+      projectId: 'project-1',
+      file,
+      addFileWhen: 'after-upload',
+      addFile,
+      addPreview,
+      setFileMetadata,
+      hydrateFromBackend,
+      refreshProjectSuggestions,
+    });
+
+    expect(uploadDatasetFile).toHaveBeenCalledWith(file, 'project-1');
+    expect(uploadDocument).not.toHaveBeenCalled();
+    expect(result.summary).toEqual(
+      expect.objectContaining({
+        kind: 'dataset',
+      }),
+    );
+  });
+
   it('uses shared file readiness rules', () => {
     expect(isProjectFileReady({ type: 'csv', metadata: { datasetId: 'dataset-1' } })).toBe(true);
     expect(isProjectFileReady({ type: 'csv', metadata: {} })).toBe(false);

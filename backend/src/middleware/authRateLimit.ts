@@ -14,7 +14,7 @@
  */
 
 import type { Request } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 import { env } from '../config.js';
 
@@ -29,10 +29,9 @@ const MAX_ATTEMPTS = env.nodeEnv === 'production' ? 10 : 100;
 
 function keyFromReq(req: Request): string {
   const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : '';
-  // Fall back to the raw IP; express-rate-limit also handles ipv6 normalisation
-  // internally, but we include an explicit empty-string fallback so the key
-  // never ends up being the literal string "undefined:undefined".
-  const ip = req.ip ?? 'unknown';
+  // Normalize IPv6 callers to the same subnet shape express-rate-limit uses
+  // internally so clients cannot bypass the bucket with IPv6 address churn.
+  const ip = req.ip ? ipKeyGenerator(req.ip) : 'unknown';
   return `${ip}:${email}`;
 }
 

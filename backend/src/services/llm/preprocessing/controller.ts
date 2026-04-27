@@ -57,6 +57,7 @@ export interface ResolvePreprocessingControllerTurnParams {
   dataset: DatasetProfile;
   prompt?: string;
   continuation?: boolean;
+  persistedRunId?: string;
   projectPlan?: string;
   ragSnippets?: Array<{ filename: string; snippet: string }>;
   toolResults?: ToolResult[];
@@ -217,7 +218,8 @@ export async function resolvePreprocessingControllerTurn(
 ): Promise<PreprocessingControllerDecision> {
   const threadId = params.threadId?.trim() || `prep-thread-${randomUUID()}`;
   const pendingApproval = inferPendingApproval(params.toolResults);
-  const latestRunId = getLatestRunId(params.toolResults);
+  const persistedRunId = params.persistedRunId?.trim() || undefined;
+  const latestRunId = getLatestRunId(params.toolResults) ?? persistedRunId;
   const latestStepId = params.continuation ? getLatestStepId(params.toolResults) : undefined;
   const latestToolOutcome = params.continuation
     ? getLatestToolOutcome(params.toolResults)

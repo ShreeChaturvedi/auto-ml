@@ -1,5 +1,6 @@
 import type { ToolResult } from '../../../../types/llm.js';
 import { asRecord } from '../../../../utils/typeCoercion.js';
+import { classifyRunCellOutcome } from '../../../llm/preprocessing/runCellOutcome.js';
 import { getToolResultPauseReason } from '../../turnState.js';
 
 interface LatestToolOutcome {
@@ -27,9 +28,27 @@ function getLatestToolOutcome(toolResults: ToolResult[]): LatestToolOutcome {
     };
   }
 
+  const output = asRecord(latest.output);
+  const step = asRecord(output?.step);
+  const outputStatus = typeof output?.status === 'string'
+    ? output.status
+    : typeof step?.status === 'string'
+      ? step.status
+      : undefined;
+  const runCellOutcome = latest.tool === 'run_cell'
+    ? classifyRunCellOutcome({
+        status: outputStatus,
+        error: typeof output?.error === 'string' ? output.error : latest.error
+      })
+    : null;
+  const executionFailed = latest.tool === 'execute_transformation_step' && outputStatus === 'failed';
+  const validationFailed = latest.tool === 'validate_step_result' && outputStatus === 'failed';
+
   return {
     latestToolName: latest.tool,
-    latestToolSucceeded: !latest.error,
+    latestToolSucceeded: latest.tool === 'run_cell'
+      ? runCellOutcome === 'success'
+      : !latest.error && !executionFailed && !validationFailed,
     requiresApproval: inferRequiresApproval(latest)
   };
 }
@@ -58,9 +77,9 @@ export function inferPreprocessingActionNode(toolResults: ToolResult[]): string 
     case 'edit_cell':
       return latestToolSucceeded ? 'write_code' : 'generate_code';
     case 'run_cell':
-      return latestToolSucceeded ? 'record_execution' : 'write_code';
+      return 'record_execution';
     case 'execute_transformation_step':
-      return 'validate';
+      return latestToolSucceeded ? 'validate' : 'generate_code';
     case 'validate_step_result':
       return requiresApproval ? 'await_approval' : 'commit';
     case 'commit_transformation_step':

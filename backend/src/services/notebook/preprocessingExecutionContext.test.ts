@@ -162,22 +162,21 @@ describe('preprocessingExecutionContext', () => {
       userCode: 'df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())'
     });
 
-    expect(content).toContain('import pandas as pd');
-    expect(content).toContain('import numpy as np');
     expect(content).toContain('load_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
     expect(content).toContain('df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
     expect(content).toContain('save_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
   });
 
-  it('does not contain invisible Python wrapping or hidden file I/O logic', () => {
+  it('does not contain invisible Python wrapping or string-concatenated logic', () => {
     const content = buildPreprocessingCellContent({
       filename: 'data.json', datasetId: 'ds-1', fileType: 'json', dataframeName: 'df',
       userCode: 'df = df.dropna()'
     });
 
-    // No invisible globals and no raw file I/O. Visible standard imports are intentional.
+    // No invisible globals, no inline pandas import, no raw file I/O
     expect(content).not.toContain('_automl_preprocessing_df');
     expect(content).not.toContain('_automl_preprocessing');
+    expect(content).not.toContain('import pandas');
     expect(content).not.toContain('pd.read_');
     expect(content).not.toContain('.to_json(');
     expect(content).not.toContain('.to_csv(');
@@ -202,9 +201,7 @@ describe('preprocessingExecutionContext', () => {
 
     // The content IS the execution code — verify its structure
     const lines = content.split('\n');
-    expect(lines[0]).toBe('import numpy as np');
-    expect(lines[1]).toBe('import pandas as pd');
-    expect(lines[3]).toBe('df = load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
+    expect(lines[0]).toBe('df = load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(lines[lines.length - 1]).toBe('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(content).toContain('df["age"] = df["age"].fillna(0)');
   });
@@ -226,26 +223,11 @@ describe('preprocessingExecutionContext', () => {
     });
 
     expect(cells).toHaveLength(2);
-    expect(cells[0]).toContain('import pandas as pd');
     expect(cells[0]).toContain('load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(cells[0]).toContain('missing_before = df.isna().sum()');
     expect(cells[0]).not.toContain('save_preprocessing_dataset(');
-    expect(cells[1]).toContain('import pandas as pd');
     expect(cells[1]).toContain('df = df.fillna(0)');
     expect(cells[1]).toContain('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(cells[1]).not.toContain('load_preprocessing_dataset(');
-  });
-
-  it('guarantees pandas imports for transformations that call pd.get_dummies()', () => {
-    const content = buildPreprocessingCellContent({
-      filename: 'data.csv',
-      datasetId: 'ds-1',
-      fileType: 'csv',
-      dataframeName: 'df',
-      userCode: 'df = pd.get_dummies(df, columns=["segment"], dtype="uint8")'
-    });
-
-    expect(content).toContain('import pandas as pd');
-    expect(content).toContain('df = pd.get_dummies(df, columns=["segment"], dtype="uint8")');
   });
 });

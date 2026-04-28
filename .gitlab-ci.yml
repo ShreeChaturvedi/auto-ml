@@ -47,6 +47,8 @@ stages:
 noop:
   stage: noop
   image: alpine:3.20
+  variables:
+    GIT_STRATEGY: none
   script:
     - echo "noop — satisfies 'pipelines must succeed' when the heavy jobs are rule-skipped"
   rules:
@@ -60,16 +62,83 @@ install:
   script:
     - npm run install:all
   cache:
-    key:
-      files:
-        - backend/package-lock.json
-        - frontend/package-lock.json
-    paths:
-      - backend/node_modules/
-      - frontend/node_modules/
-      - testing/node_modules/
-      - video/node_modules/
-    policy: pull-push
+    - key:
+        files:
+          - package-lock.json
+          - backend/package-lock.json
+      paths:
+        - backend/node_modules/
+      policy: pull-push
+    - key:
+        files:
+          - frontend/package-lock.json
+          - testing/package-lock.json
+      paths:
+        - frontend/node_modules/
+        - testing/node_modules/
+      policy: pull-push
+    - key:
+        files:
+          - landing/package-lock.json
+          - video/package-lock.json
+      paths:
+        - landing/node_modules/
+        - video/node_modules/
+      policy: pull-push
+    - key:
+        files:
+          - poster/package-lock.json
+          - booklet/package-lock.json
+      paths:
+        - poster/node_modules/
+        - booklet/node_modules/
+      policy: pull-push
+
+assets:check:
+  stage: check
+  script:
+    - npm run install:all
+    - npm run assets:check
+  cache:
+    - key:
+        files:
+          - package-lock.json
+          - backend/package-lock.json
+      paths:
+        - backend/node_modules/
+      policy: pull
+    - key:
+        files:
+          - frontend/package-lock.json
+          - testing/package-lock.json
+      paths:
+        - frontend/node_modules/
+        - testing/node_modules/
+      policy: pull
+    - key:
+        files:
+          - landing/package-lock.json
+          - video/package-lock.json
+      paths:
+        - landing/node_modules/
+        - video/node_modules/
+      policy: pull
+    - key:
+        files:
+          - poster/package-lock.json
+          - booklet/package-lock.json
+      paths:
+        - poster/node_modules/
+        - booklet/node_modules/
+      policy: pull
+  rules:
+    - changes:
+        - .gitlab-ci.yml
+        - package.json
+        - package-lock.json
+        - video/**/*
+        - poster/**/*
+        - booklet/**/*
 
 lint:
   extends: .run_on_branch_or_mr

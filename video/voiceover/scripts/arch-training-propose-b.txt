@@ -1,0 +1,3 @@
+{{RESUME}} The user picks a model and the graph **unpauses**.
+
+{{HANDOFF}} From here on, the interesting part is writing code the agent has to actually **run**.

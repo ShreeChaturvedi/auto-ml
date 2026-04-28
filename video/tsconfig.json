@@ -21,6 +21,6 @@
     "noUnusedLocals": true,
     "types": ["node"]
   },
-  "include": ["remotion", "config", "scripts"],
+  "include": ["remotion", "config", "scripts", "presentation"],
   "exclude": ["remotion.config.ts", "node_modules", "out"]
 }

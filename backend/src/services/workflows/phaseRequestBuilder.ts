@@ -9,7 +9,6 @@ import type { DatasetProfile } from '../../types/dataset.js';
 import { asRecord, asString } from '../../utils/typeCoercion.js';
 import { FEATURE_METHODS } from '../featureEngineering.js';
 import type { FeatureSpec } from '../featureEngineering.js';
-import { createLlmClient } from '../llm/llmClient.js';
 import { resolvePreprocessingControllerTurn } from '../llm/preprocessing/controller.js';
 import {
   buildFeatureEngineeringRequest,
@@ -17,6 +16,7 @@ import {
   buildTrainingRequest
 } from '../llm/prompts/index.js';
 import { LLM_FEATURE_CONTINUE_TOOLS, LLM_FEATURE_PROPOSAL_TOOLS, LLM_ONBOARDING_TOOLS, LLM_TRAINING_LIFECYCLE_TOOLS } from '../llm/toolRegistry.js';
+import { createWorkflowLlmClient } from '../llm/workflowLlmClient.js';
 
 import type { WorkflowGraphState } from './graphState.js';
 import { hasWorkflowHistory } from './history.js';
@@ -727,7 +727,10 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
   const projectPlan = typeof project?.metadata?.projectPlan === 'string'
     ? project.metadata.projectPlan
     : undefined;
-  const ragSnippets = await loadRagSnippets(turn.projectId, turn.prompt ?? dataset?.filename ?? turn.phase);
+  const skipRagSnippets = env.llmProvider === 'mock' && turn.phase === 'preprocessing';
+  const ragSnippets = skipRagSnippets
+    ? []
+    : await loadRagSnippets(turn.projectId, turn.prompt ?? dataset?.filename ?? turn.phase);
   const modelOverride = turn.model && turn.model !== 'auto' ? turn.model : undefined;
 
   const toolCallHistory = state.toolCallHistory.map((call) => ({
@@ -751,16 +754,18 @@ export async function buildPhaseRequest(state: WorkflowGraphState): Promise<Part
 
     // Only preprocessing uses the controller client directly; other phases
     // construct their LLM client in modelTurnCollector.invokeModelNode.
-    const client = createLlmClient(
+    const client = createWorkflowLlmClient({
+      phase: turn.phase,
       modelOverride,
-      turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
-    );
+      timeoutMsOverride: turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
+    });
 
     const controllerDecision = await resolvePreprocessingControllerTurn({
       client,
       dataset,
       prompt: turn.prompt,
       continuation: shouldContinuePreprocessingTurn(state),
+      persistedRunId: asString(asRecord(state.run.metadata?.controller)?.runId),
       projectPlan,
       ragSnippets,
       toolResults: state.toolResultHistory,

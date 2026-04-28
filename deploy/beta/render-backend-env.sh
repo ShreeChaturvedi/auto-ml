@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+OUTPUT_PATH="${OUTPUT_PATH:-/tmp/backend.beta.env}"
+
+DB_NAME="${DB_NAME:-automl}"
+DB_USER="${DB_USER:-automl}"
+DB_PASSWORD="${DB_PASSWORD:-}"
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-5432}"
+
+FRONTEND_URL="${FRONTEND_URL:-https://agentic-automl-platform.vercel.app}"
+ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-${FRONTEND_URL}}"
+JWT_SECRET="${JWT_SECRET:-}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-__SET_OPENAI_API_KEY__}"
+
+SMTP_HOST="${SMTP_HOST:-smtp.gmail.com}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_SECURE="${SMTP_SECURE:-false}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASSWORD="${SMTP_PASSWORD:-}"
+SMTP_FROM="${SMTP_FROM:-Agentic AutoML Platform <${SMTP_USER}>}"
+
+DOCKER_ENABLED="${DOCKER_ENABLED:-true}"
+EXECUTION_NETWORK="${EXECUTION_NETWORK:-bridge}"
+GOOGLE_AUTH_ENABLED="${GOOGLE_AUTH_ENABLED:-false}"
+PGSSLMODE="${PGSSLMODE:-disable}"
+
+if [[ -z "${DB_PASSWORD}" ]]; then
+  echo "Set DB_PASSWORD before rendering the backend env file." >&2
+  exit 1
+fi
+
+if [[ -z "${JWT_SECRET}" ]]; then
+  echo "Set JWT_SECRET before rendering the backend env file." >&2
+  exit 1
+fi
+
+if [[ -z "${SMTP_USER}" || -z "${SMTP_PASSWORD}" ]]; then
+  echo "Set SMTP_USER and SMTP_PASSWORD before rendering the backend env file." >&2
+  exit 1
+fi
+
+DATABASE_URL="${DATABASE_URL:-postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}}"
+
+cat > "${OUTPUT_PATH}" <<EOF
+NODE_ENV=production
+PORT=4000
+
+DATABASE_URL=${DATABASE_URL}
+PGSSLMODE=${PGSSLMODE}
+
+JWT_SECRET=${JWT_SECRET}
+OPENAI_API_KEY=${OPENAI_API_KEY}
+
+FRONTEND_URL=${FRONTEND_URL}
+ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+
+DOCKER_ENABLED=${DOCKER_ENABLED}
+EXECUTION_NETWORK=${EXECUTION_NETWORK}
+
+SMTP_HOST=${SMTP_HOST}
+SMTP_PORT=${SMTP_PORT}
+SMTP_SECURE=${SMTP_SECURE}
+SMTP_USER=${SMTP_USER}
+SMTP_PASSWORD=${SMTP_PASSWORD}
+SMTP_FROM=${SMTP_FROM}
+
+GOOGLE_AUTH_ENABLED=${GOOGLE_AUTH_ENABLED}
+EOF
+
+chmod 600 "${OUTPUT_PATH}"
+echo "Backend env file rendered at ${OUTPUT_PATH}"

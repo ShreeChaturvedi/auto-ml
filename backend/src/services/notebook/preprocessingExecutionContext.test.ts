@@ -162,22 +162,22 @@ describe('preprocessingExecutionContext', () => {
       userCode: 'df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())'
     });
 
-    expect(content).toContain('import pandas as pd');
-    expect(content).toContain('import numpy as np');
     expect(content).toContain('load_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
     expect(content).toContain('df["subscriptions"] = df["subscriptions"].fillna(df["subscriptions"].median())');
     expect(content).toContain('save_preprocessing_dataset("subscriptions.csv", "ds-1", "csv", "df")');
   });
 
-  it('does not contain invisible Python wrapping or hidden file I/O logic', () => {
+  it('does not contain invisible Python wrapping or string-concatenated logic', () => {
     const content = buildPreprocessingCellContent({
       filename: 'data.json', datasetId: 'ds-1', fileType: 'json', dataframeName: 'df',
       userCode: 'df = df.dropna()'
     });
 
-    // No invisible globals and no raw file I/O. Visible standard imports are intentional.
+    // No invisible globals and no raw file I/O in the generated notebook cell.
     expect(content).not.toContain('_automl_preprocessing_df');
     expect(content).not.toContain('_automl_preprocessing');
+    expect(content).toContain('import pandas as pd');
+    expect(content).toContain('import numpy as np');
     expect(content).not.toContain('pd.read_');
     expect(content).not.toContain('.to_json(');
     expect(content).not.toContain('.to_csv(');
@@ -202,11 +202,29 @@ describe('preprocessingExecutionContext', () => {
 
     // The content IS the execution code — verify its structure
     const lines = content.split('\n');
-    expect(lines[0]).toBe('import numpy as np');
-    expect(lines[1]).toBe('import pandas as pd');
+    expect(lines[0]).toBe('import pandas as pd');
+    expect(lines[1]).toBe('import numpy as np');
     expect(lines[3]).toBe('df = load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(lines[lines.length - 1]).toBe('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(content).toContain('df["age"] = df["age"].fillna(0)');
+  });
+
+  it('deduplicates canonical preprocessing imports supplied by generated code', () => {
+    const content = buildPreprocessingCellContent({
+      filename: 'data.csv',
+      datasetId: 'ds-1',
+      fileType: 'csv',
+      dataframeName: 'df',
+      userCode: [
+        'import pandas as pd',
+        'import numpy as np',
+        'df["age"] = df["age"].fillna(np.nan)'
+      ].join('\n')
+    });
+
+    expect(content.match(/^import pandas as pd$/gm)).toHaveLength(1);
+    expect(content.match(/^import numpy as np$/gm)).toHaveLength(1);
+    expect(content).toContain('df["age"] = df["age"].fillna(np.nan)');
   });
 
   it('splits code with explicit cell markers into separate visible notebook cells', () => {
@@ -227,25 +245,14 @@ describe('preprocessingExecutionContext', () => {
 
     expect(cells).toHaveLength(2);
     expect(cells[0]).toContain('import pandas as pd');
+    expect(cells[0]).toContain('import numpy as np');
     expect(cells[0]).toContain('load_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(cells[0]).toContain('missing_before = df.isna().sum()');
     expect(cells[0]).not.toContain('save_preprocessing_dataset(');
-    expect(cells[1]).toContain('import pandas as pd');
     expect(cells[1]).toContain('df = df.fillna(0)');
     expect(cells[1]).toContain('save_preprocessing_dataset("data.csv", "ds-1", "csv", "df")');
     expect(cells[1]).not.toContain('load_preprocessing_dataset(');
-  });
-
-  it('guarantees pandas imports for transformations that call pd.get_dummies()', () => {
-    const content = buildPreprocessingCellContent({
-      filename: 'data.csv',
-      datasetId: 'ds-1',
-      fileType: 'csv',
-      dataframeName: 'df',
-      userCode: 'df = pd.get_dummies(df, columns=["segment"], dtype="uint8")'
-    });
-
-    expect(content).toContain('import pandas as pd');
-    expect(content).toContain('df = pd.get_dummies(df, columns=["segment"], dtype="uint8")');
+    expect(cells[1]).not.toContain('import pandas as pd');
+    expect(cells[1]).not.toContain('import numpy as np');
   });
 });

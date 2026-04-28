@@ -7,8 +7,14 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import type { ReasoningEffort } from '@/components/llm/modelOptions';
-import { streamOnboardingPlan, type LlmStreamEvent } from '@/lib/api/llm';
+import {
+  interruptWorkflowRun,
+  listWorkflowRuns,
+  streamOnboardingPlan,
+  type LlmStreamEvent
+} from '@/lib/api/llm';
 import type { AskUserQuestion, ChatMessage } from '@/types/llmUi';
+import type { WorkflowState } from '@/types/workflow';
 import { addAssistantTextMessage } from '@/lib/llm/streamMessageUtils';
 import { normalizePlanFileName } from '../planningUtils';
 
@@ -44,11 +50,74 @@ export function usePlanningStream({
   onStreamComplete,
 }: UsePlanningStreamProps) {
   const controllerRef = useRef<AbortController | null>(null);
+  const activeRequestIdRef = useRef(0);
+  const requestRunIdsRef = useRef<Map<number, string>>(new Map());
+  const interruptingRequestIdsRef = useRef<Set<number>>(new Set());
+  const abortReasonsRef = useRef<Map<number, string>>(new Map());
+
+  const trackRequestState = useCallback((requestId: number, state?: WorkflowState) => {
+    if (!state?.runId) {
+      return;
+    }
+
+    if (state.status === 'running') {
+      requestRunIdsRef.current.set(requestId, state.runId);
+      return;
+    }
+
+    requestRunIdsRef.current.delete(requestId);
+  }, []);
+
+  const interruptRequest = useCallback(async (requestId: number, reason: string) => {
+    if (requestId <= 0 || interruptingRequestIdsRef.current.has(requestId)) {
+      return;
+    }
+
+    interruptingRequestIdsRef.current.add(requestId);
+    const knownRunId = requestRunIdsRef.current.get(requestId);
+    requestRunIdsRef.current.delete(requestId);
+
+    try {
+      if (knownRunId) {
+        await interruptWorkflowRun(knownRunId, reason);
+        return;
+      }
+
+      const { runs } = await listWorkflowRuns(projectId, 'onboarding');
+      const activeRun = runs.find((run) => run.status === 'running');
+      if (activeRun?.runId) {
+        await interruptWorkflowRun(activeRun.runId, reason);
+      }
+    } catch (error) {
+      console.warn('[usePlanningStream] Failed to interrupt onboarding workflow run', {
+        projectId,
+        requestId,
+        error
+      });
+    } finally {
+      abortReasonsRef.current.delete(requestId);
+      interruptingRequestIdsRef.current.delete(requestId);
+    }
+  }, [projectId]);
 
   const requestStream = useCallback(
     async (userIntent?: string, round?: number) => {
-      controllerRef.current?.abort();
+      const previousController = controllerRef.current;
+      const previousRequestId = activeRequestIdRef.current;
+
+      if (previousController) {
+        abortReasonsRef.current.set(previousRequestId, 'Onboarding plan request replaced by a new turn.');
+        previousController.abort();
+        await interruptRequest(previousRequestId, 'Onboarding plan request replaced by a new turn.');
+      }
+
+      const requestId = previousRequestId + 1;
+      activeRequestIdRef.current = requestId;
       const controller = new AbortController();
+      controller.signal.addEventListener('abort', () => {
+        const reason = abortReasonsRef.current.get(requestId) ?? 'Onboarding plan stream aborted by client.';
+        void interruptRequest(requestId, reason);
+      }, { once: true });
       controllerRef.current = controller;
 
       const effectiveRound = round ?? currentRound;
@@ -71,6 +140,19 @@ export function usePlanningStream({
             model: selectedModel,
           },
           (event) => {
+            if (event.type === 'workflow_state') {
+              trackRequestState(requestId, event.state);
+              return;
+            }
+
+            if ('state' in event) {
+              trackRequestState(requestId, event.state);
+            }
+
+            if (activeRequestIdRef.current !== requestId) {
+              return;
+            }
+
             if (event.type === 'token') {
               handleStreamEvent(event);
               return;
@@ -228,25 +310,57 @@ export function usePlanningStream({
           controller.signal
         );
       } catch (err) {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && activeRequestIdRef.current === requestId) {
           const msg = err instanceof Error ? err.message : 'Stream failed';
           setMessages((prev) => [...prev, { id: `error-${Date.now()}`, type: 'error', message: msg }]);
         }
       } finally {
-        completeThinking();
-        closeTextStream();
-        setIsStreaming(false);
-        onStreamComplete?.();
+        requestRunIdsRef.current.delete(requestId);
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+        }
+        if (activeRequestIdRef.current === requestId) {
+          completeThinking();
+          closeTextStream();
+          setIsStreaming(false);
+          onStreamComplete?.();
+        }
       }
     },
-    [projectId, currentRound, selectedModel, reasoningEffort, handleStreamEvent, completeThinking, closeTextStream, setIsStreaming, setMessages, currentTextIdRef, setCurrentRound, getAnswerHistory, onStreamComplete]
+    [
+      projectId,
+      currentRound,
+      selectedModel,
+      reasoningEffort,
+      handleStreamEvent,
+      completeThinking,
+      closeTextStream,
+      setIsStreaming,
+      setMessages,
+      currentTextIdRef,
+      setCurrentRound,
+      getAnswerHistory,
+      onStreamComplete,
+      interruptRequest,
+      trackRequestState
+    ]
   );
 
   useEffect(() => {
+    const abortReasons = abortReasonsRef.current;
+
     return () => {
-      controllerRef.current?.abort();
+      const activeController = controllerRef.current;
+      if (!activeController) {
+        return;
+      }
+
+      const activeRequestId = activeRequestIdRef.current;
+      abortReasons.set(activeRequestId, 'Onboarding plan stream closed by client.');
+      activeController.abort();
+      void interruptRequest(activeRequestId, 'Onboarding plan stream closed by client.');
     };
-  }, []);
+  }, [interruptRequest]);
 
   return {
     controllerRef,

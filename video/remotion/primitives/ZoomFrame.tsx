@@ -7,12 +7,10 @@ export type ZoomFrameProps = {
   at: number;
   /** Frame the zoom begins releasing. */
   release: number;
-  /** Region to zoom to, in the wrapped child's own coordinate space. */
+  /** Region to zoom to, in child's own coordinate space (1920×1080). */
   region: { x: number; y: number; w: number; h: number };
   /** Target scale. Computed from region if omitted. */
   scale?: number;
-  /** Active viewport size for centering math. Defaults to 1920×1080. */
-  frameSize?: { width: number; height: number };
   /** Engage/release duration. Default 24 frames (400 ms @ 60 fps). */
   durationFrames?: number;
   children: React.ReactNode;
@@ -33,18 +31,15 @@ export const ZoomFrame: React.FC<ZoomFrameProps> = ({
   release,
   region,
   scale,
-  frameSize,
   durationFrames = 24,
   children,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const frameWidth = frameSize?.width ?? COMP_WIDTH;
-  const frameHeight = frameSize?.height ?? COMP_HEIGHT;
 
   const targetScale =
     scale ??
-    Math.min(frameWidth / region.w, frameHeight / region.h) * PADDING_FACTOR;
+    Math.min(COMP_WIDTH / region.w, COMP_HEIGHT / region.h) * PADDING_FACTOR;
 
   const engage = spring({
     fps,
@@ -64,8 +59,8 @@ export const ZoomFrame: React.FC<ZoomFrameProps> = ({
 
   const cx = region.x + region.w / 2;
   const cy = region.y + region.h / 2;
-  const tx = (frameWidth / 2 - cx) * netProgress;
-  const ty = (frameHeight / 2 - cy) * netProgress;
+  const tx = (COMP_WIDTH / 2 - cx) * netProgress;
+  const ty = (COMP_HEIGHT / 2 - cy) * netProgress;
 
   return (
     <div

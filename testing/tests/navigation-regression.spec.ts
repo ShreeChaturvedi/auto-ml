@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-import { resetBackendData } from '../helpers';
+import { getApiBase, resetBackendData } from '../helpers';
 
-const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
+const API_BASE = getApiBase();
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DATASET_PATH = path.resolve(testDir, '../fixtures/sample_customers.csv');
 

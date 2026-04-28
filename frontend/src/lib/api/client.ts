@@ -1,7 +1,5 @@
 import { useAuthStore } from '@/stores/authStore';
 
-const BASE_URL = (import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api').replace(/\/$/, '');
-
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export class ApiError extends Error {
@@ -34,9 +32,40 @@ const REFRESH_EXCLUDED_PATHS = new Set([
 ]);
 
 let refreshPromise: Promise<string | null> | null = null;
+let hasWarnedAboutApiBaseMismatch = false;
 
 function normalizePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
+}
+
+function normalizeApiBaseUrl(value: string) {
+  return value.trim().replace(/\/$/, '');
+}
+
+export function getApiBaseUrl(explicitBaseUrl?: string) {
+  const preferred = import.meta.env.VITE_API_BASE?.trim();
+  const legacy = import.meta.env.VITE_API_BASE_URL?.trim();
+
+  if (
+    !explicitBaseUrl
+    && preferred
+    && legacy
+    && normalizeApiBaseUrl(preferred) !== normalizeApiBaseUrl(legacy)
+    && !hasWarnedAboutApiBaseMismatch
+  ) {
+    console.warn('[frontend api] VITE_API_BASE and VITE_API_BASE_URL differ; using VITE_API_BASE');
+    hasWarnedAboutApiBaseMismatch = true;
+  }
+
+  return normalizeApiBaseUrl(explicitBaseUrl ?? preferred ?? legacy ?? 'http://localhost:4000/api');
+}
+
+export function getWebSocketUrl(path: string, explicitBaseUrl?: string) {
+  return getApiBaseUrl(explicitBaseUrl)
+    .replace(/^http:/, 'ws:')
+    .replace(/^https:/, 'wss:')
+    .replace(/\/api$/, '')
+    + path;
 }
 
 export async function refreshAccessToken(refreshToken: string | null): Promise<string | null> {
@@ -45,7 +74,7 @@ export async function refreshAccessToken(refreshToken: string | null): Promise<s
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const response = await fetch(`${BASE_URL}/auth/refresh`, {
+        const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refreshToken })
@@ -202,7 +231,8 @@ async function applyAuthSideEffects(response: Response): Promise<void> {
 
 export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {
   const method = options.method ?? 'GET';
-  const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);
   const normalizedPath = normalizePath(path).split('?')[0];
 
@@ -260,12 +290,8 @@ export async function apiFetch(path: string, options: RequestOptions = {}): Prom
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? 'GET';
-  const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const url = `${getApiBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
   const response = await apiFetch(path, options);
 
   return parseResponse<T>(response, options, method, url);
-}
-
-export function getApiBaseUrl() {
-  return BASE_URL;
 }

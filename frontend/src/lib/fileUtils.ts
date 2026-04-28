@@ -4,6 +4,7 @@ import { CsvIcon, XlsIcon, PdfIcon, DocIcon, MarkdownIcon, JsnIcon, TxtIcon } fr
 import type { FileType, UploadedFile } from '@/types/file';
 import { downloadDataset } from '@/lib/api/datasets';
 import { downloadDocument } from '@/lib/api/documents';
+import { datasetFileTypeFromExtension } from '@/lib/projectFileUpload';
 
 /** Icon component for each file type. */
 export const fileIconByType: Record<FileType, ComponentType<{ className?: string }>> = {
@@ -112,9 +113,8 @@ const TEXT_EXTENSIONS = new Set([
 export function fileTypeFromFilename(filename: string | undefined | null): FileType {
   if (!filename) return 'other';
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'csv') return 'csv';
-  if (ext === 'json') return 'json';
-  if (ext === 'xlsx' || ext === 'xls') return 'excel';
+  const datasetFileType = datasetFileTypeFromExtension(ext);
+  if (datasetFileType) return datasetFileType;
   if (ext === 'pdf') return 'pdf';
   if (ext === 'md' || ext === 'markdown') return 'markdown';
   if (ext === 'docx' || ext === 'doc') return 'word';

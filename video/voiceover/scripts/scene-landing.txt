@@ -1,20 +1,9 @@
-{{HERO}} Machine learning doesn't start with a notebook. It starts
-with a question you want answered. We built Agentic AutoML for
-everything in between: the setup, the cleanup, the tuning you
-didn't want to babysit. You describe the goal; the system does the
-rest, {{AGENTICALLY}}agentically.
+{{HERO}} **The fastest way to build production ML models**, agentically. You upload the data, describe the goal, and walk away.
 
-{{PREVIEW}} It runs as a workspace you already recognize — your
-data, your chat, a notebook watching every decision.
+{{PHASES}} The landing page is the product in miniature. Seven phases — **ingest, explore, preprocess, engineer, train, experiments, deploy** — and the agent works each one in order.
 
-{{PHASES}} Seven phases, each a real agent with a real plan.
+{{NOTEBOOK}} What you get back is a real notebook. **Pandas, sklearn, Plotly** — every cell editable, every decision on the record.
 
-{{CHAT}} You steer it the way you'd steer a teammate. "Drop the
-outliers." "Try XGBoost." It answers in code, runs the code,
-writes down why.
+{{PILLARS}} Underneath, three things carry the weight. A **Docker sandbox** that isolates execution. **Optuna** that finds the winning model. **LangGraph** that keeps the sub-agents in lockstep.
 
-{{META}} All of it sandboxed in Docker, tuned with Optuna,
-orchestrated by a LangGraph state machine you can inspect.
-
-{{CLOSER}} A model in production. A notebook that explains itself.
-{{HANDOFF}} Here's what it looks like when a new user shows up.
+{{CLOSER}} Stop babysitting your notebooks.

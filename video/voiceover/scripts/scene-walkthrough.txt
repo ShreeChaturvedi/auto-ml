@@ -1,0 +1,43 @@
+{{UPLOAD}} I sign in, name the project **NovaCraft Churn Intelligence**, and pick the seven files Ayush left on the desktop — five CSVs and a **business context PDF** that spells out what churn means for this company.
+
+{{PLAN}} I paste the goal. Predict whether an account stays active, optimize for recall on churned accounts. The agent explores the workspace, reads each dataset profile, searches the PDF for the churn definition, and drafts a plan before it writes a single line of code.
+
+{{PLAN_DETAIL}} Target variable — `is_active`. Thirty-day forecast horizon. Time-based train-validation-test splits. Primary metric **PR-AUC**, with F1 and precision-at-top-k as ranking checks. Every risk and assumption written down before the first model runs.
+
+{{EXPLORE}} **Exploration** is next. The data viewer loads the full workspace — customers, subscriptions, marketing campaigns, support tickets, usage metrics. I ask a question in English — segment customers by industry and company size, compare their engagement — and the agent writes the SQL, shows me the query, runs it, and paints the answer into the grid. I approve or reject each generation.
+
+{{PREPROCESS}} **Preprocessing** opens as a workbook. I pick `usage_metrics.csv` and type the instruction — clean missing `annual_revenue_usd` values before modeling churn. The agent proposes the fix, impute missing values gets accepted, and the cell lands in the notebook, ready to execute.
+
+{{PREPROCESS_RUN}} Generate, run, validate, commit. Each step is a receipt. Row counts stay stable. If a run fails, the executor parses the traceback, installs the missing package out-of-band, and retries the same cell — the identical-call guard exempts re-runs of the same cell, because that's recovery, not a stuck loop.
+
+{{FEATURES}} **Feature engineering** opens a fresh draft pipeline. I ask for five candidate features. The agent proposes them with source columns, cyclical encoders for time-of-year signals, and a rationale for each. I switch on the ones that matter — `support_ticket_velocity`, `logins_per_active_user`, expansion ratios — and the notebook steps build themselves underneath.
+
+{{FEATURES_RUN}} Execution succeeds. Validation passes. The feature is **registered** and the pipeline checkpointed. Then I apply the pipeline and it writes out `feature_v1.csv` — a clean, versioned dataset ready for training, reproducible from the raw CSVs any time I need to rebuild it.
+
+{{TRAINING}} **Training**. I point the workbook at `feature_v1.csv`, name the target column, and ask for gradient boosting and random forest. The agent configures the experiment, sets up cross-validation, and then proposes three candidate models — each with a paragraph explaining why this data, this horizon, this split strategy.
+
+{{RUNTIME}} The runtime manager confirms the sandbox already has the packages it needs — pandas, sklearn, optuna, the full scientific stack — and surfaces any missing dependency before the model turn ever starts.
+
+{{APPROVAL}} A random forest comes up first, tuned for the time-ordered signal. I mark it **selected**. The graph pauses on a human approval gate until I confirm — radio buttons, not prompt engineering — then unpauses and writes the real training code into the notebook.
+
+{{EXECUTE}} The cell runs inside the **Docker sandbox**. Cross-validation splits, calibration curves, feature importance, a saved model artifact. F1 at nine nine eight six. ROC AUC at nine nine nine oh. Model registered as `feature_v1_random_forest` and available to every downstream phase.
+
+{{RECOVERY}} One cell trips on a missing module. The executor catches the traceback, installs the package out-of-band, and re-runs the exact same cell — the graph handles the recovery and the next cell picks up where the last one left off.
+
+{{EXPERIMENTS}} **Experiments** is the leaderboard. Every run ranked, every metric reported, every decision explained in prose the agent wrote while the code was still warm. The dashboard opens on the top-line card — best accuracy, models trained, overfit risk, algorithm diversity, metric spread — and an executive summary that names the leader and explains what the margin actually means.
+
+{{SUMMARY}} The agent's write-up does the reasoning out loud. Why `feature_v1_random_forest` leads on ROC AUC, where the evidence is thin because only one model has reported, and what the missing train-side metrics mean for the overfitting assessment. The recommendations section tells me to run a broader benchmark — logistic regression, gradient boosting, XGBoost — before I trust the ranking.
+
+{{SECOND_MODEL}} So I do exactly that. I kick off a **LightGBM** proposal in a parallel workbook, and the leaderboard redraws itself with two algorithms instead of one. Overfit risk reads **low** with a one-point-three-percent gap between train and test. A radar chart lays the two models on top of each other — recall, ROC AUC, accuracy, precision, F1-weighted — and the shape tells the story before I read a single number.
+
+{{LIGHTGBM_PAGE}} I open the LightGBM page. The **confusion matrix** is the first red flag — every test point predicted as one, zero true negatives, five hundred and sixteen true positives, two hundred and ninety false positives. The ROC curve hugs the diagonal at AUC zero-point-five-one. The calibration curve drifts below the perfect line. Cross-validation sits tight at nine-twenty across five folds — the training is stable, only stable at the wrong answer.
+
+{{ERROR_TREE}} The **error tree** underneath makes the failure legible. A decision tree trained on the prediction errors splits first on `total_logins`, then on `feature_adoption_pct`, and the misclassifications concentrate in a handful of leaves. I can see which customer segments the LightGBM proposal is confused by, ranked by confidence, before I write a single diagnostic line of code.
+
+{{FOREST_PAGE}} Then I open the **random forest** page and the plots flip. The confusion matrix is clean — zero false positives on the held-out slice. The ROC curve snaps to the top-left corner at AUC equal to one. The calibration curve tracks the diagonal. Same dataset, same target, same split — the shapes of the plots are the decision.
+
+{{RECOMMENDATIONS}} The agent's recommendations now read differently. Deploy `feature_v1_random_forest` as the current candidate. Add training diagnostics — train-set metrics, cross-validation curves, fit-time — to validate generalization. And run probability calibration and threshold analysis before production, because churn interventions ride on the scores, not only the class labels.
+
+{{DEPLOY}} From here, one click ships the winning model to a monitored endpoint. The ledger keeps everything straight — runs, events, artifacts, approvals, handoffs. Three phases can run in parallel and the state never tangles. Every decision anchored to a row in the ledger, every cell re-executable from a fresh kernel, every artifact traceable back to the CSV that produced it.
+
+{{CLOSER}} One project, one graph, **one notebook that explains itself** — built by the agent while I watched, auditable from the first dataset profile to the last calibration plot.

@@ -28,6 +28,7 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { walkScript } from "./resolveMarks";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VIDEO_ROOT = resolve(HERE, "..");
@@ -35,7 +36,7 @@ const SCRIPTS_DIR = join(VIDEO_ROOT, "voiceover", "scripts");
 const OUTPUT_DIR = join(VIDEO_ROOT, "public", "voiceover", "main");
 
 const API_KEY = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM"; // Rachel
+const VOICE_ID = process.env.ELEVENLABS_VOICE_ID ?? "nPczCjzI2devNBz1zQrb"; // Brian
 const MODEL_ID = process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2";
 
 type CliFlags = { force: boolean; only: Set<string> | null };
@@ -111,13 +112,13 @@ const listScripts = async (): Promise<string[]> => {
 };
 
 /**
- * Strip `{{MARK_NAME}}` tokens from the script. The stripped text is what
- * actually gets sent to ElevenLabs; marks are character-position references
- * only. Kept regex-based (cheap, marks don't nest) — resolveMarks() does the
- * character-by-character walk needed for alignment.
+ * Strip `{{MARK_NAME}}` tokens AND markdown emphasis (`**bold**`, `*em*`,
+ * `__bold__`, `_em_`) from the script. Delegates to `walkScript` from
+ * `resolveMarks` so the TTS payload is byte-identical to what the
+ * runtime alignment walker produces. Drift between the two would cause
+ * `resolveMarks: stripped text length does not match...` at render time.
  */
-const stripMarks = (text: string): string =>
-  text.replace(/\{\{[^}]*\}\}/g, "");
+const stripMarks = (text: string): string => walkScript(text).strippedText;
 
 /**
  * True when `target` is missing or older than `source`. Used to decide
@@ -148,9 +149,13 @@ const synthesize = async (text: string): Promise<SynthesisResult> => {
       text,
       model_id: MODEL_ID,
       voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.7,
-        style: 0.15,
+        // Tuned for a confident, non-AI-sounding technical-launch narrator.
+        // - stability ↑ 0.55 evens out phrasing and kills bullet-point staccato.
+        // - similarity_boost ↑ 0.85 locks to the voice's natural timbre.
+        // - style 0 removes dramatic reading — pure declarative delivery.
+        stability: 0.55,
+        similarity_boost: 0.85,
+        style: 0,
         use_speaker_boost: true,
       },
     }),

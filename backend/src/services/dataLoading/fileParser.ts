@@ -62,6 +62,78 @@ function stringifySpreadsheetCell(value: ExcelJS.CellValue | undefined): string 
   return normalized === null || normalized === undefined ? '' : String(normalized);
 }
 
+function splitCollapsedCsvRecord(record: string, delimiter: string): string[] | undefined {
+  try {
+    const parsed = parseCsv(record, {
+      columns: false,
+      delimiter,
+      skip_empty_lines: false,
+      trim: true,
+      relax_column_count: true,
+      relax_quotes: true
+    }) as string[][];
+
+    return Array.isArray(parsed[0]) ? parsed[0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function repairCollapsedDelimitedCsvRows(
+  rows: Record<string, unknown>[],
+  delimiter: string
+): Record<string, unknown>[] {
+  if (!rows.length || ![',', '\t', ';', '|'].includes(delimiter)) {
+    return rows;
+  }
+
+  const collapsedHeaders = Object.keys(rows[0]);
+  if (collapsedHeaders.length !== 1) {
+    return rows;
+  }
+
+  const collapsedHeader = collapsedHeaders[0];
+  const collapsedKey = collapsedHeader.trim();
+  const sampleValues = rows.slice(0, 25).map((row) => row[collapsedHeader]);
+  const looksCollapsed =
+    collapsedKey.includes(delimiter)
+    || sampleValues.some((value) => typeof value === 'string' && value.includes(delimiter));
+
+  if (!looksCollapsed) {
+    return rows;
+  }
+
+  const repairedHeaders = splitCollapsedCsvRecord(collapsedKey, delimiter);
+  if (!repairedHeaders || repairedHeaders.length <= 1) {
+    return rows;
+  }
+
+  const normalizedHeaders = repairedHeaders.map((header, index) => {
+    const value = String(header ?? '').trim();
+    return value || `column_${index + 1}`;
+  });
+
+  const repairedRows: Record<string, unknown>[] = [];
+
+  for (const row of rows) {
+    const raw = row[collapsedHeader];
+    const rawText = raw === null || raw === undefined ? '' : String(raw);
+    const repairedValues = splitCollapsedCsvRecord(rawText, delimiter);
+
+    if (!repairedValues || repairedValues.length !== normalizedHeaders.length) {
+      return rows;
+    }
+
+    const repairedRow: Record<string, unknown> = {};
+    normalizedHeaders.forEach((header, index) => {
+      repairedRow[header] = repairedValues[index] ?? '';
+    });
+    repairedRows.push(repairedRow);
+  }
+
+  return sanitizeDatasetRows(repairedRows);
+}
+
 function toExcelWorkbookBuffer(buffer: Buffer): ArrayBuffer {
   const slicedBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   return slicedBuffer instanceof ArrayBuffer
@@ -434,7 +506,7 @@ export async function parseDatasetRows(
       try {
         const rows = parseCsv(text, baseOpts) as Record<string, unknown>[];
         if (rows.length > 0) {
-          return sanitizeDatasetRows(rows);
+          return repairCollapsedDelimitedCsvRows(sanitizeDatasetRows(rows), delimiter);
         }
       } catch {
         // fall through to relax_quotes retry
@@ -444,7 +516,7 @@ export async function parseDatasetRows(
           ...baseOpts,
           relax_quotes: true,
         }) as Record<string, unknown>[];
-        return sanitizeDatasetRows(rows);
+        return repairCollapsedDelimitedCsvRows(sanitizeDatasetRows(rows), delimiter);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new Error(

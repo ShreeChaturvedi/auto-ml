@@ -1,10 +1,25 @@
 import { appLogger } from '../../../logging/logger.js';
 import { executeMcpTool } from '../../mcp/mcpAdapter.js';
 import { nowIso } from '../preprocessingTools/helpers.js';
-import { normalizeWorkflowPrepSegments } from './workflowPrepSegments.js';
 
 import { resolveExperiment } from './types.js';
 import type { TrainingToolContext, TrainingToolHandler, TrainingToolResult } from './types.js';
+import { normalizeWorkflowPrepSegments } from './workflowPrepSegments.js';
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function normalizeTargetColumn(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
 
 function normalizeMetricsRecord(metrics: unknown): Record<string, number> {
   if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) {
@@ -99,13 +114,23 @@ export const executeTraining: TrainingToolHandler = async (
   const durationMs = typeof args.trainingDurationMs === 'number'
     ? args.trainingDurationMs
     : Date.now() - startMs;
+  const metricPayload = asRecord(args.metrics);
   const metrics = normalizeMetricsRecord(args.metrics);
   const workflowPrepSegments = normalizeWorkflowPrepSegments(args.prepSegments);
+  const targetColumn = normalizeTargetColumn(
+    args.targetColumn
+    ?? metricPayload?.targetColumn
+    ?? metricPayload?.target_column
+    ?? experiment.targetColumn
+  );
 
   experiment.status = succeeded ? 'training' : 'failed';
   experiment.trainingCellIds = cellIds;
   experiment.trainingMetrics = metrics;
   experiment.trainingDurationMs = durationMs;
+  if (targetColumn) {
+    experiment.targetColumn = targetColumn;
+  }
   if (workflowPrepSegments.length > 0) {
     experiment.workflowPrepSegments = workflowPrepSegments;
   }
@@ -128,6 +153,7 @@ export const executeTraining: TrainingToolHandler = async (
       experimentId: experiment.experimentId,
       status: 'training',
       metrics,
+      ...(targetColumn ? { targetColumn } : {}),
       trainingDurationMs: durationMs,
       cellIds,
       message: `Training completed for experiment "${experiment.experimentName as string}". Proceed to evaluate_results.`

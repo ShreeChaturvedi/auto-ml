@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { env } from '../config.js';
@@ -6,6 +6,9 @@ import { createDatasetRepository } from '../repositories/datasetRepository.js';
 import { createModelRepository } from '../repositories/modelRepository.js';
 import type { ModelRecord } from '../types/model.js';
 import { inferTargetColumn } from '../utils/modelUtils.js';
+
+import { ensureRuntimeImage } from './container/imageManager.js';
+import { execDockerWithStdin } from './dockerUtils.js';
 
 const modelRepository = createModelRepository(env.modelMetadataPath);
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
@@ -28,6 +31,24 @@ const SAMPLE_REQUEST: Record<string, unknown> = {
   years_employed: 8,
   debt_ratio: 0.32,
 };
+
+const SEED_DATA_ROWS = [
+  { age: 24, income: 32000, credit_score: 610, years_employed: 2, debt_ratio: 0.58 },
+  { age: 27, income: 41000, credit_score: 640, years_employed: 3, debt_ratio: 0.41 },
+  { age: 31, income: 47000, credit_score: 665, years_employed: 5, debt_ratio: 0.37 },
+  { age: 35, income: 54000, credit_score: 700, years_employed: 7, debt_ratio: 0.31 },
+  { age: 39, income: 61000, credit_score: 725, years_employed: 9, debt_ratio: 0.27 },
+  { age: 43, income: 68000, credit_score: 748, years_employed: 11, debt_ratio: 0.24 },
+  { age: 47, income: 76000, credit_score: 772, years_employed: 14, debt_ratio: 0.2 },
+  { age: 52, income: 84500, credit_score: 795, years_employed: 17, debt_ratio: 0.16 },
+  { age: 29, income: 39000, credit_score: 625, years_employed: 4, debt_ratio: 0.49 },
+  { age: 33, income: 52000, credit_score: 690, years_employed: 6, debt_ratio: 0.34 },
+  { age: 37, income: 59000, credit_score: 715, years_employed: 8, debt_ratio: 0.29 },
+  { age: 45, income: 72000, credit_score: 760, years_employed: 13, debt_ratio: 0.21 },
+];
+
+const SEED_CLASSIFICATION_TARGET = [0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1];
+const SEED_REGRESSION_TARGET = [210, 245, 268, 305, 334, 366, 398, 435, 255, 296, 328, 389];
 
 /** Resolve the project's actual dataset so seeded models reference real data. */
 async function resolveDataset(projectId: string) {
@@ -54,6 +75,108 @@ const SEED_SPECS: SeedSpec[] = [
   { name: 'Gradient Boost', taskType: 'classification', templateId: 'gradient_boosting_classifier', algorithm: 'GradientBoostingClassifier', metrics: { accuracy: 0.96, f1: 0.94, precision: 0.95, recall: 0.93 } },
   { name: 'Linear Regression', taskType: 'regression', templateId: 'linear_regression', algorithm: 'LinearRegression', metrics: { r2: 0.85, mse: 0.12, mae: 0.28, rmse: 0.35 } },
 ];
+
+function resolveSeedEstimator(taskType: TaskType, algorithm: string): string {
+  if (taskType === 'classification') {
+    switch (algorithm) {
+      case 'GradientBoostingClassifier':
+        return 'GradientBoostingClassifier(random_state=42)';
+      case 'KNeighborsClassifier':
+        return 'KNeighborsClassifier(n_neighbors=3)';
+      case 'LogisticRegression':
+        return 'LogisticRegression(max_iter=500, random_state=42)';
+      default:
+        return 'RandomForestClassifier(n_estimators=24, random_state=42)';
+    }
+  }
+
+  if (taskType === 'regression') {
+    switch (algorithm) {
+      case 'RandomForestRegressor':
+        return 'RandomForestRegressor(n_estimators=24, random_state=42)';
+      case 'Ridge':
+        return 'Ridge(alpha=1.0)';
+      default:
+        return 'LinearRegression()';
+    }
+  }
+
+  return 'KMeans(n_clusters=2, n_init=10, random_state=42)';
+}
+
+function buildSeedArtifactScript(taskType: TaskType, algorithm: string): string {
+  const estimator = resolveSeedEstimator(taskType, algorithm);
+  const rowsJson = JSON.stringify(SEED_DATA_ROWS);
+  const classificationTargetJson = JSON.stringify(SEED_CLASSIFICATION_TARGET);
+  const regressionTargetJson = JSON.stringify(SEED_REGRESSION_TARGET);
+  const featuresJson = JSON.stringify(FEATURES);
+
+  return [
+    'import json',
+    'from pathlib import Path',
+    '',
+    'import joblib',
+    'import pandas as pd',
+    'from sklearn.cluster import KMeans',
+    'from sklearn.compose import ColumnTransformer',
+    'from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier, RandomForestRegressor',
+    'from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge',
+    'from sklearn.neighbors import KNeighborsClassifier',
+    'from sklearn.pipeline import Pipeline',
+    '',
+    `FEATURES = json.loads(${JSON.stringify(featuresJson)})`,
+    `ROWS = json.loads(${JSON.stringify(rowsJson)})`,
+    `CLASS_TARGET = json.loads(${JSON.stringify(classificationTargetJson)})`,
+    `REG_TARGET = json.loads(${JSON.stringify(regressionTargetJson)})`,
+    '',
+    'df = pd.DataFrame(ROWS)',
+    "preprocessor = ColumnTransformer([('numeric', 'passthrough', FEATURES)], remainder='drop')",
+    `estimator = ${estimator}`,
+    "pipeline = Pipeline([('preprocessor', preprocessor), ('model', estimator)])",
+    '',
+    taskType === 'classification'
+      ? 'pipeline.fit(df, CLASS_TARGET)'
+      : taskType === 'regression'
+        ? 'pipeline.fit(df, REG_TARGET)'
+        : 'pipeline.fit(df)',
+    '',
+    'artifact_path = Path("/output/model.joblib")',
+    'joblib.dump(pipeline, artifact_path)',
+    'print(artifact_path.stat().st_size)',
+    '',
+  ].join('\n');
+}
+
+async function persistSeedArtifact(record: ModelRecord, taskType: TaskType, algorithm: string): Promise<ModelRecord> {
+  const artifactDir = join(env.modelStorageDir, record.modelId);
+
+  const imageName = await ensureRuntimeImage('3.11');
+  await execDockerWithStdin([
+    'run',
+    '--rm',
+    '-i',
+    '-v',
+    `${artifactDir}:/output`,
+    imageName,
+    'python',
+    '-',
+  ], buildSeedArtifactScript(taskType, algorithm), { timeout: 60_000 });
+
+  const artifactPath = join(artifactDir, 'model.joblib');
+  const artifactStats = await stat(artifactPath);
+  const artifact = {
+    filename: 'model.joblib',
+    path: artifactPath,
+    size: artifactStats.size,
+  };
+
+  const updated = await modelRepository.update(record.modelId, (current) => ({
+    ...current,
+    artifact,
+  }));
+
+  return updated ?? { ...record, artifact };
+}
 
 // -- evaluation.json builders --
 
@@ -280,7 +403,7 @@ export async function seedOneModel(projectId: string, options: {
     writeFile(join(artifactDir, 'baseline.json'), JSON.stringify(buildBaselineJson(), null, 2), 'utf8'),
   ]);
 
-  return record;
+  return persistSeedArtifact(record, options.taskType, options.algorithm);
 }
 
 export async function seedModels(projectId: string): Promise<ModelRecord[]> {
@@ -325,7 +448,7 @@ export async function seedModels(projectId: string): Promise<ModelRecord[]> {
       writeFile(join(artifactDir, 'baseline.json'), JSON.stringify(buildBaselineJson(), null, 2), 'utf8'),
     ]);
 
-    created.push(record);
+    created.push(await persistSeedArtifact(record, spec.taskType, spec.algorithm));
   }
 
   return created;

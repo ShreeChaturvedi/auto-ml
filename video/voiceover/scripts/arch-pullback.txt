@@ -1,0 +1,13 @@
+{{TITLE}} Everything the agent does is **written down twice**.
+
+{{EVENTS}} The backend streams **JSON events** to the browser across nine types, covering state updates, tool executions, artifacts, pauses, errors, tokens, thinking, usage, and done.
+
+{{DB}} Every one of those events is also written to **Postgres**, across six tables for runs, events, artifacts, approvals, handoffs, and notebook bindings.
+
+{{PARALLEL}} Three phases can run **in parallel** inside a single project, with one paused for approval, one actively running, and one already finished, and the ledger keeps all three straight.
+
+{{SERIF1}} A probabilistic core,
+
+{{SERIF2}} inside a deterministic shell.
+
+{{CLOSE}} That is how an agent becomes **production software**.

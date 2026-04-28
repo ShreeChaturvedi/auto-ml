@@ -1,0 +1,7 @@
+{{TITLE}} Where the outputs actually **land** on the public Kaggle leaderboards.
+
+{{GAUGE}} Same pipeline, no per-dataset tuning, five submissions across five datasets.
+
+{{TITANIC}} **Top eight percent** on Titanic, which is the ninety-second percentile overall.
+
+{{STRIP}} And **top fifteen percent or better** on every other dataset we submitted.

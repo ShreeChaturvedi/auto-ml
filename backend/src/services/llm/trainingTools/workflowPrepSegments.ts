@@ -9,6 +9,21 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+function normalizeTargetColumn(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 const STOP_SEGMENT_PATTERNS = [
   /\.fit\(/,
   /fit_predict\(/,
@@ -16,6 +31,7 @@ const STOP_SEGMENT_PATTERNS = [
   /joblib\.dump\(/,
   /__TRAIN_COMPLETE__/,
 ];
+const TRAIN_COMPLETE_MARKER = '__TRAIN_COMPLETE__|';
 
 function normalizePrepSegmentCode(segment: string): string {
   return segment
@@ -75,10 +91,12 @@ export function extractWorkflowPrepSegmentsFromToolCalls(
   toolCalls: unknown,
   experimentId: string,
   cellIds?: Iterable<string> | null,
+  toolResults?: unknown,
 ): string[] {
   const calls = Array.isArray(toolCalls) ? toolCalls : [];
+  const results = Array.isArray(toolResults) ? toolResults : [];
   const allowedCellIds = cellIds ? new Set(cellIds) : null;
-  const resultOutputRecord = (toolCall: unknown): Record<string, unknown> | undefined => {
+  const resultOutputRecord = (toolCall: unknown, index: number): Record<string, unknown> | undefined => {
     const rec = asRecord(toolCall);
     if (!rec) return undefined;
     // Canonical ToolResult shape: toolCall.result.output.cellId
@@ -95,6 +113,17 @@ export function extractWorkflowPrepSegmentsFromToolCalls(
       if (nested) return nested;
       return topOutput;
     }
+    const pairedResult = asRecord(results[index]);
+    if (pairedResult) {
+      const pairedOutput = asRecord(pairedResult.output);
+      if (pairedOutput) {
+        return pairedOutput;
+      }
+      const nested = asRecord(asRecord(pairedResult.result)?.output);
+      if (nested) {
+        return nested;
+      }
+    }
     return undefined;
   };
 
@@ -108,7 +137,8 @@ export function extractWorkflowPrepSegmentsFromToolCalls(
   // silently drop them.
   let anonymousCounter = 0;
 
-  for (const toolCall of calls) {
+  for (let index = 0; index < calls.length; index += 1) {
+    const toolCall = calls[index];
     const rec = asRecord(toolCall);
     if (!rec) continue;
     const tool = asString(rec.tool);
@@ -123,7 +153,7 @@ export function extractWorkflowPrepSegmentsFromToolCalls(
     }
 
     const argCellId = asString(args?.cellId);
-    const output = resultOutputRecord(toolCall);
+    const output = resultOutputRecord(toolCall, index);
     const outputCellId = asString(output?.cellId) ?? asString(asRecord(output?.cell)?.cellId);
     const resolvedCellId = argCellId ?? outputCellId ?? null;
 
@@ -188,4 +218,98 @@ export function extractWorkflowPrepSegmentsFromToolCalls(
     prepSegments.push(normalizePrepSegmentCode(content));
   }
   return prepSegments;
+}
+
+function parseTrainCompletePayload(stdout: string): Record<string, unknown> | null {
+  const index = stdout.lastIndexOf(TRAIN_COMPLETE_MARKER);
+  if (index === -1) {
+    return null;
+  }
+  const candidate = stdout.slice(index + TRAIN_COMPLETE_MARKER.length).split(/\r?\n/, 1)[0]?.trim();
+  if (!candidate) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    return asRecord(parsed) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function extractToolResultOutput(toolResult: unknown): Record<string, unknown> | undefined {
+  const rec = asRecord(toolResult);
+  if (!rec) {
+    return undefined;
+  }
+  const output = asRecord(rec.output);
+  if (output) {
+    return output;
+  }
+  return asRecord(asRecord(rec.result)?.output);
+}
+
+export function extractWorkflowTrainingCompletionPayloadFromToolResults(
+  toolResults: unknown,
+  cellIds?: Iterable<string> | null,
+): Record<string, unknown> | null {
+  const results = Array.isArray(toolResults) ? toolResults : [];
+  const allowedCellIds = cellIds ? new Set(cellIds) : null;
+
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const output = extractToolResultOutput(results[index]);
+    if (!output) {
+      continue;
+    }
+
+    const outputCellId = asString(output.cellId) ?? asString(asRecord(output.cell)?.cellId);
+    if (allowedCellIds && outputCellId && !allowedCellIds.has(outputCellId)) {
+      continue;
+    }
+
+    const directMetrics = asRecord(output.metrics);
+    const directTargetColumn = normalizeTargetColumn(
+      output.targetColumn
+      ?? output.target_column
+      ?? directMetrics?.targetColumn
+      ?? directMetrics?.target_column
+    );
+    if (directTargetColumn) {
+      return {
+        ...directMetrics,
+        target_column: directTargetColumn
+      };
+    }
+
+    const stdout = asString(output.stdout);
+    if (!stdout || !stdout.includes(TRAIN_COMPLETE_MARKER)) {
+      continue;
+    }
+
+    const parsed = parseTrainCompletePayload(stdout);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+export function extractWorkflowTargetColumnFromToolResults(
+  toolResults: unknown,
+  cellIds?: Iterable<string> | null,
+): string | undefined {
+  const completion = extractWorkflowTrainingCompletionPayloadFromToolResults(toolResults, cellIds);
+  if (!completion) {
+    return undefined;
+  }
+  return normalizeTargetColumn(
+    completion.target_column
+    ?? completion.targetColumn
+    ?? completion.target
+  );
+}
+
+export function normalizeTrainingCellIds(value: unknown): string[] {
+  return asStringArray(value);
 }

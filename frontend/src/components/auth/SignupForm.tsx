@@ -6,7 +6,7 @@
  * - Spotlight effect background
  * - Password strength indicator (no label)
  * - Password match indicator
- * - Google OAuth at the bottom
+ * - Google sign-up CTA placeholder at the bottom
  */
 
 import { useEffect, useState } from 'react';
@@ -18,7 +18,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/stores/authStore';
-import { registerUser, googleAuth } from '@/lib/api/auth';
+import { registerUser } from '@/lib/api/auth';
 import { AuthCard, AuthPageWrapper } from './AuthCard';
 import { AuthSubmitButton, type AuthButtonState } from './AuthSubmitButton';
 import { GoogleAuthButton } from './GoogleAuthButton';
@@ -44,7 +44,6 @@ export function SignupForm() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [formError, setFormError] = useState<string | null>(null);
   const [buttonState, setButtonState] = useState<AuthButtonState>('idle');
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -85,20 +84,6 @@ export function SignupForm() {
         setFormError('Registration failed. Please try again.');
       }
       setButtonState('idle');
-    }
-  };
-
-  const handleGoogleAuth = async () => {
-    setGoogleLoading(true);
-    setFormError(null);
-    try {
-      const response = await googleAuth();
-      if (response.authUrl) {
-        window.location.href = response.authUrl;
-      }
-    } catch {
-      setFormError('Google authentication failed. Please try again.');
-      setGoogleLoading(false);
     }
   };
 
@@ -212,10 +197,12 @@ export function SignupForm() {
 
           {/* Google OAuth - at bottom */}
           <GoogleAuthButton
-            onClick={handleGoogleAuth}
-            isLoading={googleLoading}
+            comingSoon
             mode="signup"
           />
+          <p className="text-center text-xs text-neutral-500">
+            Google sign-up is disabled for the beta. Create an email/password account instead.
+          </p>
 
           {/* Footer */}
           <p className="text-center text-sm text-neutral-400">

@@ -58,6 +58,10 @@ function extractTrainingTargetColumn(content: string): string | undefined {
   return undefined;
 }
 
+function isWorkflowThreadReference(value: unknown): boolean {
+  return typeof value === 'string' && /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
+}
+
 function truncateToolResult(result: ToolResult): ToolResult {
   if (result.output === undefined || result.output === null) return result;
   const json = JSON.stringify(result.output);
@@ -252,9 +256,23 @@ async function executeWorkflowToolCall(
     enrichedArgs.runId = state.run.runId;
   }
 
-  if (phaseConfig?.phase === 'preprocessing' && phaseConfig.isPhaseSpecificTool(call.tool)) {
-    const controllerRunId = getPreprocessingControllerRunId(state.controllerSummary);
-    if (controllerRunId) {
+  // Preprocessing continuity is scoped to the latest preprocessing lifecycle
+  // run, not the workflow run. Bind omitted/invalid runIds back to the
+  // controller-selected preprocessing run so fresh prompts keep editing the
+  // same logical processed dataset instead of silently forking a new lineage.
+  if (phaseConfig?.phase === 'preprocessing') {
+    const controllerRunId = typeof state.controllerSummary?.runId === 'string'
+      && !isWorkflowThreadReference(state.controllerSummary.runId)
+      ? state.controllerSummary.runId.trim()
+      : undefined;
+    const explicitRunId = typeof enrichedArgs.runId === 'string'
+      ? enrichedArgs.runId.trim()
+      : undefined;
+
+    if (
+      controllerRunId
+      && (!explicitRunId || isWorkflowThreadReference(explicitRunId))
+    ) {
       enrichedArgs.runId = controllerRunId;
     }
   }
@@ -319,20 +337,6 @@ function resolveApprovalSource(
   return state.run.pendingInputKind === 'approval' || state.controllerSummary?.pendingApproval === true
     ? 'user'
     : 'agent';
-}
-
-function getPreprocessingControllerRunId(controllerSummary: WorkflowGraphState['controllerSummary']): string | undefined {
-  if (!controllerSummary || typeof controllerSummary !== 'object' || Array.isArray(controllerSummary)) {
-    return undefined;
-  }
-
-  const runId = (controllerSummary as Record<string, unknown>).runId;
-  if (typeof runId !== 'string' || !runId.trim()) {
-    return undefined;
-  }
-
-  const trimmed = runId.trim();
-  return /^(?:[a-z]+-)*thread[-:]/i.test(trimmed) ? undefined : trimmed;
 }
 
 function extractLatestCellId(results: ToolResult[]): string | undefined {

@@ -10,8 +10,8 @@ import { normalizeUiPayload } from '../../routes/llm/uiNormalization.js';
 import { AskUserPayloadSchema, PlanExitPayloadSchema, ToolCallSchema } from '../../types/llm.js';
 import { UiSchema } from '../../types/llmUi.js';
 import type { LlmClient, LlmToolCall } from '../llm/llmClient.js';
-import { createLlmClient } from '../llm/llmClient.js';
 import { LLM_RENDER_UI_TOOL } from '../llm/toolRegistry.js';
+import { createWorkflowLlmClient } from '../llm/workflowLlmClient.js';
 
 import { resolveWorkflowNodeContract } from './contracts.js';
 import type { WorkflowEventSink } from './eventSink.js';
@@ -604,10 +604,11 @@ export async function invokeModelNode(
     : state.request;
   const scopedState = scopedRequest ? { ...state, request: scopedRequest } : state;
   const modelOverride = state.turn.model && state.turn.model !== 'auto' ? state.turn.model : undefined;
-  const client = createLlmClient(
+  const client = createWorkflowLlmClient({
+    phase: state.turn.phase,
     modelOverride,
-    state.turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
-  );
+    timeoutMsOverride: state.turn.reasoningEffort ? env.preprocessingThinkingLlmTimeoutMs : undefined
+  });
 
   // PhaseConfig deterministic/delegated modes bypass the generic planner
   const stageConfig = resolveCurrentStageConfig(state, config);

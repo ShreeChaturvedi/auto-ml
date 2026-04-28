@@ -19,6 +19,10 @@ import { cn } from '@/lib/utils';
 import { useDataStore } from '@/stores/dataStore';
 import type { UploadedFile } from '@/types/file';
 import { DATA_FILE_TYPES, downloadFile } from '@/lib/fileUtils';
+import {
+  PROJECT_FILE_UPLOAD_ACCEPTED_TYPES,
+  PROJECT_FILE_UPLOAD_EMPTY_STATE_COPY,
+} from '@/lib/projectFileUpload';
 import { deleteDataset } from '@/lib/api/datasets';
 import { deleteDocument } from '@/lib/api/documents';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
@@ -36,25 +40,6 @@ const SHIMMER_RESTING_STYLE: React.CSSProperties = {
   transform: 'translateX(-120%) skewX(-15deg)',
   background:
     'linear-gradient(90deg, transparent 0%, hsl(var(--muted-foreground) / 0.06) 20%, hsl(var(--muted-foreground) / 0.14) 50%, hsl(var(--muted-foreground) / 0.06) 80%, transparent 100%)',
-};
-
-// Accepted file types (data files and context documents only - NO images)
-const acceptedFileTypes = {
-  // Data files
-  'text/csv': ['.csv'],
-  'application/json': ['.json'],
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  // Context/documentation files (for RAG and business context)
-  'application/pdf': ['.pdf'],
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'text/markdown': ['.md'],
-  'text/plain': ['.txt', '.log'],
-  'text/html': ['.html', '.htm'],
-  'application/xml': ['.xml'],
-  'text/xml': ['.xml'],
-  'application/yaml': ['.yml', '.yaml'],
-  'text/yaml': ['.yml', '.yaml'],
-  'application/rtf': ['.rtf']
 };
 
 interface DataUploadPanelProps {
@@ -170,7 +155,7 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: acceptedFileTypes,
+    accept: PROJECT_FILE_UPLOAD_ACCEPTED_TYPES,
     multiple: true
   });
 
@@ -326,7 +311,7 @@ export function DataUploadPanel({ projectId, onFirstUpload }: DataUploadPanelPro
           <p className="text-xs text-muted-foreground text-center max-w-sm px-4">
             {hasFiles
               ? 'Drop more files or click to browse'
-              : 'Drag and drop files here, or click anywhere. Supports CSV, JSON, and XLSX for data and PDF/Markdown/TXT for context.'}
+              : PROJECT_FILE_UPLOAD_EMPTY_STATE_COPY}
           </p>
         </div>
 

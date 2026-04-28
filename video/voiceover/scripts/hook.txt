@@ -1,0 +1,5 @@
+{{LEDE}} Data scientists spend **eighty percent** of their time on everything except {{TRAINING}}**training models**.
+
+{{LEDGER}} They cleanse, prepare, visualize, and deploy, and {{HERO_ROW}} the actual modeling is **one slice** of the day.
+
+{{CITE}} That number comes from Anaconda's twenty-twenty-two survey of three thousand practitioners.

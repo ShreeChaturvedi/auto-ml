@@ -1,0 +1,9 @@
+{{TITLE}} Ten well-known flaws seeded into the data, and we measured which ones the platform catches.
+
+{{ROWS}} Target leakage, hidden missing values, datetime columns typed as numeric, and seven more defects drawn from the standard playbook, all seeded into the same test set.
+
+{{OURS}} Our agent catches **eight** out of the ten cleanly.
+
+{{BASELINE}} Sklearn defaults catch roughly **one and a half**.
+
+{{HERO}} Across the full twenty-check rubric, sixteen for us versus **three** for the baseline.

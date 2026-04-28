@@ -1,0 +1,11 @@
+[Unit]
+Description=DuckDNS updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=automl
+Group=automl
+EnvironmentFile=/opt/automl/duckdns.env
+ExecStart=/opt/automl/duckdns/duckdns-update.sh

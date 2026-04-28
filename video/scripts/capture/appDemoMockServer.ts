@@ -140,6 +140,17 @@ const FEATURE_IMPORTANCE = [
   { name: "latest_nps_response", importance: 0.089, std: 0.007 },
 ] as const;
 
+function buildPlanMarkdown(): string {
+  return [
+    "# NovaCraft Growth Retention Plan",
+    "",
+    "1. Upload customer, subscription, support, usage, and campaign data.",
+    "2. Explore churn-risk drivers with natural-language SQL and EDA.",
+    "3. Build a joined retention matrix with support pressure, adoption, and campaign-fit signals.",
+    "4. Train and compare candidate churn models, then deploy the champion.",
+  ].join("\n");
+}
+
 const PLAN_MARKDOWN = buildPlanMarkdown();
 
 const HIGH_RISK_SQL = [
@@ -739,6 +750,10 @@ function createScenarioState(beat: AppDemoPreset, frontendOrigin: string): Scena
     deploymentStatsById: { [String(DEPLOYMENT.deploymentId)]: DEPLOYMENT_STATS },
     deploymentApiKeysById: { [String(DEPLOYMENT.deploymentId)]: DEPLOYMENT_API_KEYS },
   };
+}
+
+function isPhaseAtOrAfter(currentPhase: PhaseSlug, targetPhase: PhaseSlug): boolean {
+  return ALL_PHASES.indexOf(currentPhase) >= ALL_PHASES.indexOf(targetPhase);
 }
 
 async function handleRequest(
@@ -2006,6 +2021,16 @@ function visibleDatasets(state: ScenarioState): JsonRecord[] {
       rowsLoaded: dataset.rows,
     },
   }));
+}
+
+function resolveDatasetForState(state: ScenarioState, datasetId: string) {
+  if (state.availableDerivedDatasetIds.has(datasetId) && RETENTION_DATASET.datasetId === datasetId) {
+    return RETENTION_DATASET;
+  }
+  if (!state.uploadedDatasetIds.has(datasetId)) {
+    return null;
+  }
+  return DATASETS.find((dataset) => dataset.datasetId === datasetId) ?? null;
 }
 
 function visibleDocuments(state: ScenarioState): JsonRecord[] {

@@ -5,17 +5,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /* ------------------------------------------------------------------ */
 
 const hoisted = vi.hoisted(() => {
+  const createdModels = new Map<string, Record<string, unknown>>();
   const mockCreate = vi.fn();
+  const mockUpdate = vi.fn();
   const mockListByProject = vi.fn();
   const mockMkdir = vi.fn();
+  const mockStat = vi.fn();
   const mockWriteFile = vi.fn();
+  const mockEnsureRuntimeImage = vi.fn();
+  const mockExecDockerWithStdin = vi.fn();
 
-  return { mockCreate, mockListByProject, mockMkdir, mockWriteFile };
+  return {
+    createdModels,
+    mockCreate,
+    mockUpdate,
+    mockListByProject,
+    mockMkdir,
+    mockStat,
+    mockWriteFile,
+    mockEnsureRuntimeImage,
+    mockExecDockerWithStdin,
+  };
 });
 
 vi.mock('../../repositories/modelRepository.js', () => ({
   createModelRepository: () => ({
     create: hoisted.mockCreate,
+    update: hoisted.mockUpdate,
   }),
 }));
 
@@ -35,12 +51,31 @@ vi.mock('../../config.js', () => ({
 
 vi.mock('node:fs/promises', () => ({
   mkdir: hoisted.mockMkdir,
+  stat: hoisted.mockStat,
   writeFile: hoisted.mockWriteFile,
+}));
+
+vi.mock('../container/imageManager.js', () => ({
+  ensureRuntimeImage: hoisted.mockEnsureRuntimeImage,
+}));
+
+vi.mock('../dockerUtils.js', () => ({
+  execDockerWithStdin: hoisted.mockExecDockerWithStdin,
 }));
 
 import { seedModels, seedOneModel } from '../modelSeedService.js';
 
-const { mockCreate, mockListByProject, mockMkdir, mockWriteFile } = hoisted;
+const {
+  createdModels,
+  mockCreate,
+  mockUpdate,
+  mockListByProject,
+  mockMkdir,
+  mockStat,
+  mockWriteFile,
+  mockEnsureRuntimeImage,
+  mockExecDockerWithStdin,
+} = hoisted;
 
 /* ------------------------------------------------------------------ */
 /*  Setup / teardown                                                   */
@@ -48,17 +83,40 @@ const { mockCreate, mockListByProject, mockMkdir, mockWriteFile } = hoisted;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  createdModels.clear();
   mockMkdir.mockResolvedValue(undefined);
+  mockStat.mockResolvedValue({ size: 2048 });
   mockWriteFile.mockResolvedValue(undefined);
+  mockEnsureRuntimeImage.mockResolvedValue('automl-python-runtime:3.11');
+  mockExecDockerWithStdin.mockResolvedValue({ stdout: '2048\n', stderr: '' });
   mockListByProject.mockResolvedValue([
     { datasetId: 'ds-real-123' },
   ]);
-  mockCreate.mockImplementation(async (input: Record<string, unknown>) => ({
-    ...input,
-    modelId: `model-${Math.random().toString(36).slice(2, 8)}`,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }));
+  mockCreate.mockImplementation(async (input: Record<string, unknown>) => {
+    const model = {
+      ...input,
+      modelId: `model-${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    createdModels.set(model.modelId as string, model);
+    return model;
+  });
+  mockUpdate.mockImplementation(async (modelId: string, updater: (current: Record<string, unknown>) => Record<string, unknown>) => {
+    const current = createdModels.get(modelId) ?? {
+      modelId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const updated = {
+      ...updater(current),
+      modelId,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    createdModels.set(modelId, updated);
+    return updated;
+  });
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -136,6 +194,23 @@ describe('seedOneModel', () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(model.name).toBe('Test Model');
+  });
+
+  it('persists a deployable model.joblib artifact and records its metadata', async () => {
+    const model = await seedOneModel('proj-1', {
+      name: 'Deployable Seed',
+      taskType: 'classification',
+      algorithm: 'RandomForestClassifier',
+    });
+
+    expect(mockEnsureRuntimeImage).toHaveBeenCalledWith('3.11');
+    expect(mockExecDockerWithStdin).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(model.artifact).toEqual({
+      filename: 'model.joblib',
+      path: expect.stringContaining('/tmp/test-model-storage/model-'),
+      size: 2048,
+    });
   });
 
   it('writes evaluation, shap, and baseline artifacts', async () => {

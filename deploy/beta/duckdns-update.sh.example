@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+: "${DUCKDNS_DOMAIN:?Set DUCKDNS_DOMAIN in the DuckDNS env file}"
+: "${DUCKDNS_TOKEN:?Set DUCKDNS_TOKEN in the DuckDNS env file}"
+
+LOG_FILE="${LOG_FILE:-/opt/automl/duckdns/duckdns.log}"
+
+response="$(curl -fsS "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=")"
+
+if [[ "${response}" != "OK" ]]; then
+  echo "DuckDNS update failed: ${response}" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "${LOG_FILE}")"
+printf '%s OK\n' "$(date -Iseconds)" >> "${LOG_FILE}"

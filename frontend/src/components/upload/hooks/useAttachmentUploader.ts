@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { type AttachmentStatus, type ComposerAttachmentItem } from '@/components/llm/LlmChatComposer';
+import { PROJECT_FILE_ATTACHMENT_ACCEPT } from '@/lib/projectFileUpload';
 import { useDataStore } from '@/stores/dataStore';
 import { useNlSuggestionStore } from '@/stores/nlSuggestionStore';
 import { ingestProjectFile } from '../projectFileIngestion';
 
-export const CONTEXT_ATTACHMENT_ACCEPT =
-  '.pdf,.docx,.md,.markdown,.txt,.log,.json,.csv,.xlsx,.html,.htm,.xml,.yml,.yaml,.rtf';
+export const CONTEXT_ATTACHMENT_ACCEPT = PROJECT_FILE_ATTACHMENT_ACCEPT;
 
 type PendingAttachmentStatus = 'queued' | 'uploading' | 'success' | 'error';
 

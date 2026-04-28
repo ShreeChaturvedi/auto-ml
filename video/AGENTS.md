@@ -177,8 +177,10 @@ scope, but it's usually not worth it for a 3-slide burst.
   iteration sandbox. The whole video is one composition.
 - Don't hardcode `durationInFrames` on a scene that has a voiceover — the
   VO drives duration automatically.
-- Don't commit MP3/MP4 files — they're `.gitignored` for repo-size
-  reasons. Generate locally or pull from shared storage.
+- Don't remove Shree's committed release assets:
+  `public/voiceover/main/*.mp3`, paired `.alignment.json`, and
+  `public/main/*.mp4`. Generated music, SFX, captures, and render outputs
+  should stay local/ignored.
 - Don't use raw `<video>`; use `<OffthreadVideo>` so Remotion can render
   deterministically.
 - Don't break the `SelectableScene` discriminated union — if you add a

@@ -1,0 +1,5 @@
+{{HEADER}} The **agentic turn**, sprints five through eight.
+
+{{HERO}} The entire pipeline collapses onto a single **LangGraph** state machine.
+
+{{PILL}} Four hundred twelve commits, and the week issues finally started getting **labelled** properly.

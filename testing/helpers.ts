@@ -6,7 +6,27 @@ interface CreateProjectResponse {
   };
 }
 
-const API_BASE_URL = process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000';
+const benchmarkApiBase = process.env.BENCHMARK_API_BASE;
+
+function stripTrailingSlash(value: string) {
+  return value.replace(/\/$/, '');
+}
+
+export function getApiOrigin() {
+  const raw = benchmarkApiBase ?? process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000';
+  const normalized = stripTrailingSlash(raw);
+  return normalized.endsWith('/api') ? normalized.slice(0, -4) : normalized;
+}
+
+export function getApiBase() {
+  return `${getApiOrigin()}/api`;
+}
+
+export function getFrontendBase() {
+  return stripTrailingSlash(process.env.AUTOML_FRONTEND_BASE_URL ?? 'http://127.0.0.1:5173');
+}
+
+const API_BASE_URL = getApiOrigin();
 
 export async function resetBackendData(request: APIRequestContext) {
   await request.delete(`${API_BASE_URL}/api/projects/reset`);

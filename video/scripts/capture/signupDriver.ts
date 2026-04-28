@@ -33,7 +33,6 @@ export type DriverArgs = {
   rafScroll: RafScroll;
   waitForMark: MarkPacer["waitForMark"];
   hasAlignment: boolean;
-  landingOrigin: string;
   /**
    * Creates a fresh cursor recorder for an additional page (second tab).
    * Orchestrator provides this so per-page entries stay isolated.
@@ -51,7 +50,6 @@ export async function drive({
   cursor,
   waitForMark,
   hasAlignment,
-  landingOrigin,
   makeCursor,
   contextMs,
 }: DriverArgs): Promise<DriverResult> {
@@ -75,7 +73,7 @@ export async function drive({
   // the form fill reads as deliberate on playback rather than mechanical.
   await cursor.click(page, nameC.x, nameC.y);
   await page.waitForTimeout(105);
-  await page.keyboard.type("Ayush", { delay: 72 });
+  await page.keyboard.type("Ayush Yadav", { delay: 58 });
 
   if (hasAlignment) await waitForMark("TYPE_NAME");
   else await page.waitForTimeout(125);
@@ -83,13 +81,13 @@ export async function drive({
   // --- Email ---
   await cursor.click(page, emailC.x, emailC.y);
   await page.waitForTimeout(95);
-  await page.keyboard.type("yadava5@miamioh.edu", { delay: 48 });
+  await page.keyboard.type("yadava5@miamioh.edu", { delay: 37 });
   await page.waitForTimeout(115);
 
   // --- Password ---
   await cursor.click(page, passwordC.x, passwordC.y);
   await page.waitForTimeout(95);
-  await page.keyboard.type("SuperSecret123!", { delay: 52 });
+  await page.keyboard.type("SuperSecret123!", { delay: 42 });
 
   if (hasAlignment) await waitForMark("TYPE_PASSWORD");
   else await page.waitForTimeout(125);
@@ -97,7 +95,7 @@ export async function drive({
   // --- Confirm password ---
   await cursor.click(page, confirmC.x, confirmC.y);
   await page.waitForTimeout(95);
-  await page.keyboard.type("SuperSecret123!", { delay: 52 });
+  await page.keyboard.type("SuperSecret123!", { delay: 42 });
   // "About-to-submit" beat — a short breath before the click lets the viewer
   // register that the form is complete. 750 ms > typical keystroke gap ⇒
   // reads as intentional rather than stall.
@@ -120,12 +118,7 @@ export async function drive({
   await page.waitForTimeout(1200);
 
   // --- Second tab: Gmail-lookalike verification flow ----------------------
-  const extraPage = await drivePostSignupVerify({
-    page,
-    landingOrigin,
-    makeCursor,
-    contextMs,
-  });
+  const extraPage = await drivePostSignupVerify({ page, makeCursor, contextMs });
 
   if (hasAlignment) await waitForMark("CTA");
 
@@ -139,14 +132,12 @@ export async function drive({
 
 type VerifyArgs = {
   page: Page;
-  landingOrigin: string;
   makeCursor: () => CursorRecorder;
   contextMs: () => number;
 };
 
 async function drivePostSignupVerify({
   page,
-  landingOrigin,
   makeCursor,
   contextMs,
 }: VerifyArgs): Promise<{
@@ -160,7 +151,7 @@ async function drivePostSignupVerify({
   const openedAtMs = Math.round(contextMs());
   const gmailCursor = makeCursor();
 
-  await gmailPage.goto(`${landingOrigin}/newtab?shortcuts=1`, {
+  await gmailPage.goto("http://localhost:4321/newtab?shortcuts=1", {
     waitUntil: "domcontentloaded",
     timeout: 15_000,
   });
@@ -206,11 +197,21 @@ async function drivePostSignupVerify({
   await gmailPage.waitForTimeout(350);
   await gmailCursor.click(gmailPage, verifyCta.x, verifyCta.y);
 
-  // Real VerifyEmailPage mounts, POSTs /api/auth/verify-email, and shows the
-  // success state. Stop here so the dedicated `home` beat remains the first
-  // clean arrival on the mocked core-app home page.
+  // Real VerifyEmailPage mounts, POSTs /api/auth/verify-email, shows the
+  // success state, then a 2s internal timer navigates to `/`.
   await gmailPage.waitForURL("**/verify-email**", { timeout: 10_000 });
-  await gmailPage.waitForTimeout(1500);
+  // 2s for VerifyEmailPage's internal navigate timer + buffer for the
+  // HomePage staggered entry animations.
+  await gmailPage.waitForTimeout(2300);
+  await gmailPage
+    .waitForURL("http://localhost:5173/", { timeout: 5_000 })
+    .catch(() => {
+      /* fall through — if the timer missed, at least we have the success
+         frame in the webm. */
+    });
+  // HomePage stagger (100/200/300/400/500 ms) — hold for the last-staggered
+  // panel to land before we stop the capture.
+  await gmailPage.waitForTimeout(700);
 
   return {
     page: gmailPage,

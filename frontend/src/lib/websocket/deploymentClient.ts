@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/authStore';
+import { getWebSocketUrl } from '@/lib/api/client';
 import type { DeploymentWSEvent } from '@/types/deployment';
 
 type EventCallback = (data: DeploymentWSEvent) => void;
@@ -18,12 +19,7 @@ export class DeploymentWSClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(baseUrl?: string) {
-    const apiBase = baseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
-    this.baseUrl = apiBase
-      .replace(/^http:/, 'ws:')
-      .replace(/^https:/, 'wss:')
-      .replace(/\/api$/, '')
-      + '/ws/deployment';
+    this.baseUrl = getWebSocketUrl('/ws/deployment', baseUrl);
   }
 
   connect(): Promise<void> {

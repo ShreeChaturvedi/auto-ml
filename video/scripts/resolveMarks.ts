@@ -12,11 +12,18 @@ export type AlignmentBlock = {
 export type ResolvedMarks = Record<string, number>;
 
 /**
- * Walk the raw script with an index, skipping `{{MARK}}` tokens. When a
- * mark is entered, snapshot the current `strippedPos` — the index of the
- * next char in the stripped text. Return `[strippedText, marks]` where
+ * Walk the raw script with an index, skipping `{{MARK}}` tokens AND
+ * markdown emphasis delimiters (`**`, `__`, `*`, `_`). When a mark is
+ * entered, snapshot the current `strippedPos` — the index of the next
+ * char in the stripped text. Return `[strippedText, marks]` where
  * `marks[name] = strippedPos` (in USV/code-point count, matching the
  * alignment.characters array).
+ *
+ * Markdown delimiters are writer-facing annotations only (visual cues
+ * for which words to bold on screen) — the TTS would otherwise read
+ * the asterisks aloud. We strip them here AND in `voiceover.mts`'s
+ * `stripForTTS()` so the API payload and the alignment-walk stay in
+ * lockstep. Both call `walkScript` (export below) for that reason.
  *
  * Uses Array.from for code-point iteration so multi-byte UTF-8 chars
  * increment stripped position by exactly 1 each — matching ElevenLabs'
@@ -24,21 +31,21 @@ export type ResolvedMarks = Record<string, number>;
  * single USVs here but a single "character" in the alignment array, so
  * this stays in lockstep.
  */
-const walkScript = (
+export const walkScript = (
   rawScript: string,
 ): { strippedText: string; marks: Record<string, number> } => {
   const codepoints = Array.from(rawScript);
   const stripped: string[] = [];
   const marks: Record<string, number> = {};
+  const isWordChar = (c: string | undefined): boolean =>
+    !!c && /[\p{L}\p{N}]/u.test(c);
   let i = 0;
   while (i < codepoints.length) {
-    // Detect `{{` — both chars are ASCII so safe to compare as code points.
-    if (
-      codepoints[i] === "{" &&
-      i + 1 < codepoints.length &&
-      codepoints[i + 1] === "{"
-    ) {
-      // Find closing `}}`.
+    const c = codepoints[i] as string;
+    const next = codepoints[i + 1];
+
+    // {{MARK}} token
+    if (c === "{" && next === "{") {
       let j = i + 2;
       while (j + 1 < codepoints.length) {
         if (codepoints[j] === "}" && codepoints[j + 1] === "}") break;
@@ -52,10 +59,36 @@ const walkScript = (
       }
       const name = codepoints.slice(i + 2, j).join("");
       marks[name] = stripped.length;
-      i = j + 2; // skip past `}}`
+      i = j + 2;
       continue;
     }
-    stripped.push(codepoints[i] as string);
+
+    // ** or __ — paired bold delimiter; skip both chars.
+    if ((c === "*" || c === "_") && next === c) {
+      i += 2;
+      continue;
+    }
+
+    // Single * or _ as italic delimiter — only skip when it's flanking a
+    // word character (avoids stripping legitimate asterisks/underscores
+    // inside identifiers like `snake_case_name` or `*foo` not used as
+    // emphasis). Heuristic: skip when previous non-emitted char is
+    // whitespace/start AND next is a word char, OR previous emitted is
+    // word char AND next is non-word/end.
+    if (c === "*" || c === "_") {
+      const prevEmitted = stripped[stripped.length - 1];
+      const prevIsBoundary = !prevEmitted || /\s|[([]/.test(prevEmitted);
+      const nextIsBoundary = !next || /\s|[).,;:!?\]]/.test(next);
+      if (
+        (prevIsBoundary && isWordChar(next)) ||
+        (isWordChar(prevEmitted) && nextIsBoundary)
+      ) {
+        i += 1;
+        continue;
+      }
+    }
+
+    stripped.push(c);
     i += 1;
   }
   return { strippedText: stripped.join(""), marks };

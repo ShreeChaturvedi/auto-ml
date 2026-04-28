@@ -27,25 +27,12 @@ import { fileURLToPath } from "node:url";
 
 import { chromium, type BrowserContext, type Page, type Route } from "playwright";
 
-import {
-  APP_DEMO_PHASES,
-  type AppDemoPreset,
-} from "../config/appDemo";
 import { FPS } from "../config/fps";
-import {
-  expandBeatSelection,
-  formatBeatSelectionUsage,
-  isBeatSelection,
-  type BeatName,
-  type BeatSelection,
-} from "./capture/beatCatalog";
-import { drive as driveAppDemo } from "./capture/appDemoDriver";
-import { startAppDemoMockServer } from "./capture/appDemoMockServer";
-import { drive as driveHome } from "./capture/homeDriver";
 import { resolveMarks, type AlignmentBlock } from "./resolveMarks";
 import { ScreencastRecorder } from "./capture/screencastRecorder";
 import { drive as driveLanding } from "./capture/landingDriver";
 import { drive as driveSignup } from "./capture/signupDriver";
+import { drive as driveHome } from "./capture/homeDriver";
 import type {
   CaptureMeta,
   CursorEntry,
@@ -97,12 +84,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 // Beat config
 // ---------------------------------------------------------------------------
 
-type BeatDriver = "landing" | "signup" | "home" | "appDemo";
-
-type ResolvedServerEndpoint = {
-  baseUrl: string;
-  port: number;
-};
+type BeatName = "landing" | "signup" | "home";
 
 type ServerConfig = {
   url: string;
@@ -112,15 +94,10 @@ type ServerConfig = {
   script: string;
   /** Label used in log output — e.g. "frontend" / "landing". */
   label: string;
-  /** Extra env vars required by the spawned server. */
-  env?: Record<string, string>;
-  /** Launch strategy override when npm scripts pin their own port. */
-  launcher?: "npm" | "astro";
 };
 
 type BeatConfig = {
   name: BeatName;
-  driver: BeatDriver;
   url: string;
   port: number;
   serverCwd: string;
@@ -131,17 +108,12 @@ type BeatConfig = {
    * before it hits a real backend, so the backend is dead weight here).
    */
   serverScript: string;
-  launcher?: "npm" | "astro";
   viewport: { width: number; height: number };
   /** When true, mocks `/api/**` calls; enable for signup/home, off for landing. */
   mockApi: boolean;
   /** When true, seeds auth tokens into localStorage before goto. */
   seedAuth: boolean;
-  /** Extra env vars for the primary frontend server. */
-  serverEnv?: Record<string, string>;
-  /** App-demo beat metadata used to boot the dedicated mock server. */
-  appDemoPreset?: AppDemoPreset;
-  alignmentFile?: string;
+  alignmentFile: string;
   /**
    * Additional dev servers the beat needs running. signup needs both the
    * frontend (primary) AND the landing server so the multi-tab verification
@@ -150,102 +122,13 @@ type BeatConfig = {
   companionServers?: ReadonlyArray<ServerConfig>;
 };
 
-function resolveServerEndpoint({
-  label,
-  fallbackUrl,
-  fallbackPort,
-  urlEnvName,
-  portEnvName,
-}: {
-  label: string;
-  fallbackUrl: string;
-  fallbackPort: number;
-  urlEnvName: string;
-  portEnvName: string;
-}): ResolvedServerEndpoint {
-  const envUrl = process.env[urlEnvName]?.trim();
-  const envPort = process.env[portEnvName]?.trim();
-  const url = new URL(envUrl || fallbackUrl);
-
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error(`[capture] ${urlEnvName} must use http:// or https:// for ${label}.`);
-  }
-  if (url.pathname !== "/" || url.search || url.hash) {
-    throw new Error(`[capture] ${urlEnvName} must be an origin-only URL for ${label}.`);
-  }
-
-  let port = url.port ? Number.parseInt(url.port, 10) : fallbackPort;
-  if (envPort) {
-    port = Number.parseInt(envPort, 10);
-  }
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`[capture] ${portEnvName} must be a valid TCP port for ${label}.`);
-  }
-
-  url.port = String(port);
-  return {
-    baseUrl: url.toString().replace(/\/$/, ""),
-    port,
-  };
-}
-
-function withPath(baseUrl: string, pathname: string): string {
-  return new URL(pathname, `${baseUrl}/`).toString();
-}
-
-function serverSpawnArgs(script: string, port: number): string[] {
-  return ["run", script, "--", "--host", "0.0.0.0", "--port", String(port)];
-}
-
-function resolveServerSpawn(spec: ServerConfig): {
-  command: string;
-  args: string[];
-} {
-  if (spec.launcher === "astro") {
-    return {
-      command: "npx",
-      args: ["astro", "dev", "--host", "0.0.0.0", "--port", String(spec.port)],
-    };
-  }
-  return {
-    command: "npm",
-    args: serverSpawnArgs(spec.script, spec.port),
-  };
-}
-
-const FRONTEND_SERVER = resolveServerEndpoint({
-  label: "frontend",
-  fallbackUrl: "http://localhost:5173",
-  fallbackPort: 5173,
-  urlEnvName: "CAPTURE_FRONTEND_URL",
-  portEnvName: "CAPTURE_FRONTEND_PORT",
-});
-
-const APP_DEMO_FRONTEND_SERVER = resolveServerEndpoint({
-  label: "app-demo-frontend",
-  fallbackUrl: "http://localhost:4173",
-  fallbackPort: 4173,
-  urlEnvName: "CAPTURE_APP_DEMO_FRONTEND_URL",
-  portEnvName: "CAPTURE_APP_DEMO_FRONTEND_PORT",
-});
-
-const LANDING_SERVER = resolveServerEndpoint({
-  label: "landing",
-  fallbackUrl: "http://localhost:4321",
-  fallbackPort: 4321,
-  urlEnvName: "CAPTURE_LANDING_URL",
-  portEnvName: "CAPTURE_LANDING_PORT",
-});
-
-const LEGACY_BEATS = {
+const BEATS: Record<BeatName, BeatConfig> = {
   landing: {
     name: "landing",
-    driver: "landing",
-    url: withPath(LANDING_SERVER.baseUrl, "/"),
-    port: LANDING_SERVER.port,
+    url: "http://localhost:4321/",
+    port: 4321,
     serverCwd: path.join(REPO_ROOT, "landing"),
     serverScript: "dev",
-    launcher: "astro",
     viewport: { width: 1920, height: 1080 },
     mockApi: false,
     seedAuth: false,
@@ -253,9 +136,8 @@ const LEGACY_BEATS = {
   },
   signup: {
     name: "signup",
-    driver: "signup",
-    url: withPath(FRONTEND_SERVER.baseUrl, "/signup"),
-    port: FRONTEND_SERVER.port,
+    url: "http://localhost:5173/signup",
+    port: 5173,
     serverCwd: path.join(REPO_ROOT, "frontend"),
     serverScript: "dev:ui",
     viewport: { width: 1728, height: 848 },
@@ -267,22 +149,17 @@ const LEGACY_BEATS = {
         // Landing serves `/newtab` + `/mock-gmail*` — the second Playwright
         // tab navigates there for the Gmail-lookalike verification flow.
         label: "landing",
-        url: withPath(LANDING_SERVER.baseUrl, "/"),
-        port: LANDING_SERVER.port,
+        url: "http://localhost:4321/",
+        port: 4321,
         cwd: path.join(REPO_ROOT, "landing"),
         script: "dev",
-        launcher: "astro",
-        env: {
-          PUBLIC_FRONTEND_ORIGIN: FRONTEND_SERVER.baseUrl,
-        },
       },
     ],
   },
   home: {
     name: "home",
-    driver: "home",
-    url: withPath(FRONTEND_SERVER.baseUrl, "/"),
-    port: FRONTEND_SERVER.port,
+    url: "http://localhost:5173/",
+    port: 5173,
     serverCwd: path.join(REPO_ROOT, "frontend"),
     serverScript: "dev:ui",
     viewport: { width: 1728, height: 848 },
@@ -290,39 +167,13 @@ const LEGACY_BEATS = {
     seedAuth: true,
     alignmentFile: "scene-home.alignment.json",
   },
-} as const satisfies Record<"landing" | "signup" | "home", BeatConfig>;
-
-const PHASE_BEAT_CONFIGS = Object.fromEntries(
-  APP_DEMO_PHASES.map((phase) => [
-    phase.preset,
-    {
-      name: phase.preset,
-      driver: "appDemo",
-      url: withPath(
-        APP_DEMO_FRONTEND_SERVER.baseUrl,
-        `/project/novacraft-growth/${phase.phaseSlug}`,
-      ),
-      port: APP_DEMO_FRONTEND_SERVER.port,
-      serverCwd: path.join(REPO_ROOT, "frontend"),
-      serverScript: "dev:ui",
-      viewport: { width: 1600, height: 1000 },
-      mockApi: false,
-      seedAuth: true,
-      appDemoPreset: phase.preset,
-    } satisfies BeatConfig,
-  ]),
-) as Record<Exclude<BeatName, "landing" | "signup" | "home">, BeatConfig>;
-
-const BEATS: Record<BeatName, BeatConfig> = {
-  ...LEGACY_BEATS,
-  ...PHASE_BEAT_CONFIGS,
 };
 
 // ---------------------------------------------------------------------------
 // CLI parsing — tiny, no extra dep
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: readonly string[]): { beat: BeatSelection } {
+function parseArgs(argv: readonly string[]): { beat: BeatName | "all" } {
   let beat: string | undefined;
   for (const arg of argv) {
     if (arg.startsWith("--beat=")) beat = arg.slice("--beat=".length);
@@ -335,14 +186,14 @@ function parseArgs(argv: readonly string[]): { beat: BeatSelection } {
     }
   }
   if (!beat) {
-    console.error(`Usage: capture-demo --beat=<${formatBeatSelectionUsage()}>`);
+    console.error("Usage: capture-demo --beat=<landing|signup|home|all>");
     process.exit(2);
   }
-  if (!isBeatSelection(beat)) {
+  if (!["landing", "signup", "home", "all"].includes(beat)) {
     console.error(`Unknown beat: ${beat}`);
     process.exit(2);
   }
-  return { beat };
+  return { beat: beat as BeatName | "all" };
 }
 
 // ---------------------------------------------------------------------------
@@ -392,10 +243,9 @@ async function ensureOneServer(
   console.log(`[capture] starting ${spec.label} (npm run ${spec.script}) in ${spec.cwd}...`);
   const logPath = `/tmp/capture-${beatName}-${spec.label}-server.log`;
   const logStream = createWriteStream(logPath, { flags: "a" });
-  const spawnSpec = resolveServerSpawn(spec);
-  const proc = spawn(spawnSpec.command, spawnSpec.args, {
+  const proc = spawn("npm", ["run", spec.script], {
     cwd: spec.cwd,
-    env: { ...process.env, FORCE_COLOR: "0", ...(spec.env ?? {}) },
+    env: { ...process.env, FORCE_COLOR: "0" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   proc.stdout?.pipe(logStream);
@@ -415,18 +265,13 @@ async function ensureOneServer(
   return { proc, startedByUs: true };
 }
 
-async function ensureServer(
-  cfg: BeatConfig,
-  primaryEnv?: Record<string, string>,
-): Promise<ServerHandle[]> {
+async function ensureServer(cfg: BeatConfig): Promise<ServerHandle[]> {
   const primary: ServerConfig = {
     label: cfg.name,
     url: cfg.url,
     port: cfg.port,
     cwd: cfg.serverCwd,
     script: cfg.serverScript,
-    launcher: cfg.launcher,
-    env: { ...(cfg.serverEnv ?? {}), ...(primaryEnv ?? {}) },
   };
   const specs: ReadonlyArray<ServerConfig> = [
     primary,
@@ -506,7 +351,7 @@ const FROZEN_ISO = "2026-04-15T19:30:00.000Z";
 const MOCK_USER_BASE = {
   user_id: "ayush-yadav-001",
   email: "yadava5@miamioh.edu",
-  name: "Ayush",
+  name: "Ayush Yadav",
   role: "user" as const,
   created_at: FROZEN_ISO,
   updated_at: FROZEN_ISO,
@@ -720,14 +565,6 @@ const rafScroll: RafScroll = async (page, targetY, durationMs) => {
 // ---------------------------------------------------------------------------
 
 async function makeMarkPacer(cfg: BeatConfig, page: Page): Promise<MarkPacer> {
-  if (!cfg.alignmentFile) {
-    return {
-      hasAlignment: false,
-      waitForMark: async () => {
-        /* no-op: driver should rely on its hardcoded waits */
-      },
-    };
-  }
   const alignmentPath = path.join(VOICEOVER_DIR, cfg.alignmentFile);
   if (!existsSync(alignmentPath)) {
     return {
@@ -781,34 +618,6 @@ async function makeMarkPacer(cfg: BeatConfig, page: Page): Promise<MarkPacer> {
   }
 }
 
-type WebmPolishProfile = "vp8-source" | "clean-ui-source";
-
-const shouldUseCustomRecorder = (cfg: BeatConfig): boolean =>
-  cfg.driver === "landing" || cfg.driver === "appDemo";
-
-const getCaptureDeviceScaleFactor = (cfg: BeatConfig): number =>
-  cfg.driver === "appDemo" ? 2 : 1;
-
-const getCustomRecorderOptions = (cfg: BeatConfig) => {
-  if (cfg.driver === "appDemo") {
-    return {
-      // App-demo clips are dense UI captures with thin strokes and small copy,
-      // so we bypass JPEG artifacts and downsample a 2x DPR render back into
-      // the authored 1600x1000 frame size.
-      format: "png" as const,
-      x264Preset: "slow" as const,
-      x264Crf: 8,
-      pixelFormat: "yuv444p" as const,
-      x264Tune: "animation" as const,
-    };
-  }
-
-  return {};
-};
-
-const getWebmPolishProfile = (cfg: BeatConfig): WebmPolishProfile =>
-  cfg.driver === "appDemo" ? "clean-ui-source" : "vp8-source";
-
 // ---------------------------------------------------------------------------
 // Capture one beat
 // ---------------------------------------------------------------------------
@@ -817,34 +626,15 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
   await mkdir(CAPTURES_DIR, { recursive: true });
   const videoTmpDir = path.join(CAPTURES_DIR, `.${cfg.name}-tmp`);
   await mkdir(videoTmpDir, { recursive: true });
-  const useCustomRecorder = shouldUseCustomRecorder(cfg);
-  const customRawCapturePath = path.join(videoTmpDir, `${cfg.name}.raw.mkv`);
-  const appDemoMockServer =
-    cfg.driver === "appDemo" && cfg.appDemoPreset
-      ? await startAppDemoMockServer({
-          beat: cfg.appDemoPreset,
-          port: 0,
-          frontendOrigin: APP_DEMO_FRONTEND_SERVER.baseUrl,
-        })
-      : null;
+  const useCustomLandingRecorder = cfg.name === "landing";
+  const landingRawCapturePath = path.join(videoTmpDir, `${cfg.name}.raw.mkv`);
 
   // Reset per-beat mock state so reruns start from a known baseline. Beats
   // with `seedAuth` short-circuit the verification flow by pretending the
   // user has already verified — everything else starts unverified.
   emailVerified = cfg.seedAuth;
-  if (appDemoMockServer) {
-    cleanupFns.push(() => appDemoMockServer.close().catch(() => {}));
-  }
 
-  const server = await ensureServer(
-    cfg,
-    appDemoMockServer
-      ? {
-          VITE_API_BASE: appDemoMockServer.apiBaseUrl,
-          VITE_API_BASE_URL: appDemoMockServer.apiBaseUrl,
-        }
-      : undefined,
-  );
+  const server = await ensureServer(cfg);
   const browser = await chromium.launch({ headless: true });
   // Register browser cleanup so Ctrl+C doesn't leave a headless Chromium alive.
   // Returning the Promise lets the signal-handler loop await it; Playwright's
@@ -856,24 +646,23 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
   try {
     // Anchor `__captureStart` to the moment the active recorder starts, not to
     // document init. The built-in Playwright recorder starts at `newContext`;
-    // the custom screencast path starts immediately after `newPage()` and
-    // before the first navigation. In both cases this keeps cursor `t_ms`
+    // the landing-only custom screencast starts immediately after `newPage()`
+    // and before the first navigation. In both cases this keeps cursor `t_ms`
     // values and video t=0 in lockstep across the pre-nav gap.
     const contextCreatedWall = performance.now();
     let captureStartWall = contextCreatedWall;
     context = await browser.newContext({
       viewport: cfg.viewport,
-      ...(useCustomRecorder ? {} : { recordVideo: { dir: videoTmpDir, size: cfg.viewport } }),
-      deviceScaleFactor: getCaptureDeviceScaleFactor(cfg),
+      ...(useCustomLandingRecorder ? {} : { recordVideo: { dir: videoTmpDir, size: cfg.viewport } }),
+      deviceScaleFactor: 1,
     });
     let page!: Page;
-    if (useCustomRecorder) {
+    if (useCustomLandingRecorder) {
       page = await context.newPage();
       screencastRecorder = await ScreencastRecorder.start({
         page,
-        outputPath: customRawCapturePath,
+        outputPath: landingRawCapturePath,
         size: cfg.viewport,
-        ...getCustomRecorderOptions(cfg),
       });
       captureStartWall = screencastRecorder.startedAtWallMs;
       cleanupFns.push(() =>
@@ -888,7 +677,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
     // Pre-navigate: disable Hero's 3.2 s auto-scroll BEFORE the page loads.
     // Driver also sets this post-load for belt-and-suspenders, but doing it
     // pre-navigate guarantees the flag exists when Hero's useEffect runs.
-    if (cfg.driver === "landing") {
+    if (cfg.name === "landing") {
       await context.addInitScript(() => {
         (
           window as Window & { __heroAutoScrollDisabled?: boolean }
@@ -912,7 +701,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       await context.route("http://localhost:4000/api/**", mockApi);
     }
 
-    if (!useCustomRecorder) {
+    if (!useCustomLandingRecorder) {
       page = await context.newPage();
     }
 
@@ -938,6 +727,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       });
       await sleep(500);
     }
+
     console.log(`[capture] driving ${cfg.name}...`);
     const driverArgs = {
       page,
@@ -945,37 +735,22 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       rafScroll,
       waitForMark: pacer.waitForMark,
       hasAlignment: pacer.hasAlignment,
-      frontendOrigin: FRONTEND_SERVER.baseUrl,
-      landingOrigin: LANDING_SERVER.baseUrl,
       // Multi-tab driver support. Lightweight enough to pass unconditionally
       // — single-tab drivers just ignore these fields.
       makeCursor: makeCursorRecorder,
       contextMs: () => performance.now() - captureStartWall,
     };
     let driverResult: DriverResult | void;
-    if (cfg.driver === "landing") {
+    if (cfg.name === "landing") {
       driverResult = await driveLanding(driverArgs);
-    } else if (cfg.driver === "signup") {
+    } else if (cfg.name === "signup") {
       driverResult = await driveSignup(driverArgs);
-    } else if (cfg.driver === "home") {
+    } else if (cfg.name === "home") {
       driverResult = await driveHome(driverArgs);
-    } else if (cfg.driver === "appDemo") {
-      if (!cfg.appDemoPreset || !appDemoMockServer) {
-        throw new Error(`[capture] missing app-demo runtime for beat ${cfg.name}`);
-      }
-      driverResult = await driveAppDemo({
-        page,
-        cursor,
-        rafScroll,
-        waitForMark: pacer.waitForMark,
-        hasAlignment: pacer.hasAlignment,
-        beat: cfg.appDemoPreset,
-        fixturePaths: appDemoMockServer.fixturePaths,
-      });
     } else {
-      // Exhaustiveness guard — `cfg.driver` is a BeatDriver union, so reaching
+      // Exhaustiveness guard — `cfg.name` is a BeatName union, so reaching
       // the default here means a new beat was added without a driver.
-      const _unreachable: never = cfg.driver;
+      const _unreachable: never = cfg.name;
       throw new Error(`[capture] no driver for beat: ${_unreachable}`);
     }
 
@@ -989,15 +764,13 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
 
     if (screencastRecorder) {
       if (extraPages.length > 0) {
-        throw new Error("[capture] custom recorder does not support extra pages");
+        throw new Error("[capture] landing custom recorder does not support extra pages");
       }
       const rawCapturePath = await screencastRecorder.stop();
       screencastRecorder = null;
       await context.close();
       context = null;
-      await polishWebm(rawCapturePath, finalWebm, {
-        profile: getWebmPolishProfile(cfg),
-      });
+      await polishWebm(rawCapturePath, finalWebm);
       await writePreviewMp4(finalWebm);
       await rm(rawCapturePath, { force: true }).catch(() => {});
     } else {
@@ -1018,9 +791,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
       // Claim each webm from the tmp dir. Playwright writes randomly-named
       // files; we match each page to its own file via `video().path()`.
       await claimWebm(videoHandle, videoTmpDir, finalWebm);
-      await polishWebm(finalWebm, finalWebm, {
-        profile: getWebmPolishProfile(cfg),
-      });
+      await polishWebm(finalWebm);
       await writePreviewMp4(finalWebm);
 
       for (const extra of extraVideos) {
@@ -1029,9 +800,7 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
           `${cfg.name}-${extra.labelSuffix}.webm`,
         );
         await claimWebm(extra.handle, videoTmpDir, suffixed);
-        await polishWebm(suffixed, suffixed, {
-          profile: getWebmPolishProfile(cfg),
-        });
+        await polishWebm(suffixed);
         await writePreviewMp4(suffixed);
         const cursorName = `${cfg.name}-${extra.labelSuffix}.cursor.json`;
         await writeFile(
@@ -1102,7 +871,6 @@ async function captureBeat(cfg: BeatConfig): Promise<void> {
   } finally {
     if (screencastRecorder) await screencastRecorder.stop().catch(() => {});
     if (context) await context.close().catch(() => {});
-    if (appDemoMockServer) await appDemoMockServer.close().catch(() => {});
     await browser.close().catch(() => {});
     // Ensure the tmp dir is gone even if we errored before cleanup above.
     await rm(videoTmpDir, { recursive: true, force: true }).catch(() => {});
@@ -1136,58 +904,44 @@ async function claimWebm(
   await rename(path.join(tmpDir, webm), dest);
 }
 
-const getPolishEncodeArgs = (profile: WebmPolishProfile): string[] => {
-  if (profile === "clean-ui-source") {
-    return [
-      "-c:v", "libvpx-vp9",
-      "-pix_fmt", "yuv420p",
-      "-crf", "16",
-      "-b:v", "0",
-      "-deadline", "good",
-      "-cpu-used", "0",
-      "-row-mt", "1",
-      "-tile-columns", "1",
-      "-auto-alt-ref", "1",
-      "-lag-in-frames", "25",
-    ];
-  }
-
-  return [
-    "-vf", "hqdn3d=1.5:1:2:1.5,unsharp=5:5:0.5:5:5:0.0",
-    "-c:v", "libvpx-vp9",
-    "-pix_fmt", "yuv420p",
-    "-crf", "22",
-    "-b:v", "0",
-    "-deadline", "good",
-    "-cpu-used", "2",
-    "-row-mt", "1",
-  ];
-};
-
 /**
- * Re-encode capture sources into the canonical VP9 `.webm` assets consumed by
- * Remotion. Low-bitrate Playwright VP8 recordings still need a light cleanup
- * pass, while the app-demo's high-fidelity screencasts should preserve crisp
- * UI edges and spend more bitrate on the final encode instead of denoising.
+ * Re-encode a Playwright VP8 webm with VP9 at dramatically higher quality.
+ * Playwright's VP8 encoder is hardcoded at ~1 Mbps — unusable for 1080p60
+ * (produces visible flicker, banding, mosquito noise). VP9 CRF 22 with
+ * a lightly-tuned denoise + unsharp chain produces clean output at ~8-9 Mbps.
  *
- * Falls back silently to the input asset if ffmpeg isn't available.
+ * Filter chain rationale (order matters — denoise BEFORE sharpen so we don't
+ * amplify compression noise):
+ *   1. `hqdn3d=1.5:1:2:1.5` — a gentler spatial/temporal denoise than the
+ *      previous `3:2:4:3`. The old values were aggressive enough to soften
+ *      1-2 px stroke details (e.g. the 1.5 px metallic-outline on the footer
+ *      "AGENT" watermark), creating a halo/blur at letter edges that read
+ *      visually as "clipping" of the letter tops. Lighter params still kill
+ *      VP8 mosquito noise without eating sub-pixel strokes.
+ *   2. `unsharp=5:5:0.5:5:5:0.0` — restores perceived stroke sharpness on
+ *      the thin details Playwright's VP8 encoder blurs. Luma-only (chroma
+ *      amount = 0.0) to avoid color ringing. Mild amount (0.5) avoids a
+ *      halo of its own — we want "as crisp as the DOM", not oversharpened.
+ *
+ * Falls back silently to the raw VP8 if ffmpeg isn't available.
  */
-async function polishWebm(
-  inputPath: string,
-  outputPath = inputPath,
-  options?: { profile?: WebmPolishProfile },
-): Promise<void> {
-  const profile = options?.profile ?? "vp8-source";
+async function polishWebm(inputPath: string, outputPath = inputPath): Promise<void> {
   const tmpOut = outputPath + ".tmp.webm";
   try {
     execFileSync("ffmpeg", [
       "-y",
       "-i", inputPath,
-      ...getPolishEncodeArgs(profile),
+      "-vf", "hqdn3d=1.5:1:2:1.5,unsharp=5:5:0.5:5:5:0.0",
+      "-c:v", "libvpx-vp9",
+      "-crf", "22",
+      "-b:v", "0",
+      "-deadline", "good",
+      "-cpu-used", "2",
+      "-row-mt", "1",
       tmpOut,
     ], { timeout: 180_000, stdio: "pipe" });
     await rename(tmpOut, outputPath);
-    console.log(`[capture] polished ${path.basename(outputPath)} → VP9 (${profile})`);
+    console.log(`[capture] polished ${path.basename(outputPath)} → VP9 + denoise + unsharp`);
   } catch {
     console.warn(`[capture] ffmpeg polish skipped for ${path.basename(outputPath)} (ffmpeg unavailable or failed)`);
     await rm(tmpOut, { force: true }).catch(() => {});
@@ -1225,9 +979,8 @@ async function writePreviewMp4(webmPath: string): Promise<void> {
       "-i", webmPath,
       "-an",
       "-c:v", "libx264",
-      "-preset", "slow",
-      "-tune", "animation",
-      "-crf", "16",
+      "-preset", "veryfast",
+      "-crf", "18",
       "-pix_fmt", "yuv420p",
       "-movflags", "+faststart",
       tmpOut,
@@ -1262,7 +1015,8 @@ async function probeDurationMs(webmPath: string, fallbackMs: number): Promise<nu
 
 async function main(): Promise<void> {
   const { beat } = parseArgs(process.argv.slice(2));
-  const beats = expandBeatSelection(beat).map((name) => BEATS[name]);
+  const beats: BeatConfig[] =
+    beat === "all" ? [BEATS.landing, BEATS.signup, BEATS.home] : [BEATS[beat]];
 
   let failed = 0;
   for (const cfg of beats) {

@@ -11,6 +11,7 @@ import { SAFE_AREA } from "../../../config/layout";
 import type { Theme } from "../../../config/themes";
 import { COLORS, INSTITUTIONAL } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
+import { CaptionPipe } from "../../primitives/CaptionPipe";
 import { CountUpNumber } from "../../primitives/CountUpNumber";
 import { FlourishUnderline } from "../../primitives/FlourishUnderline";
 import { MotionLine } from "../../primitives/MotionLine";
@@ -304,23 +305,6 @@ const Chunk: React.FC<{
   >
     {children}
   </span>
-);
-
-/** Thin vertical caption rule — ported from TitleSlide.tsx. A bare `|` at
- *  caption weight reads as a glyph; this 1.25-px bar at 0.85 em reads as a
- *  divider. */
-const CaptionPipe: React.FC = () => (
-  <span
-    aria-hidden
-    style={{
-      display: "inline-block",
-      width: 1.25,
-      height: "0.85em",
-      margin: "0 0.9em",
-      background: "currentColor",
-      opacity: 0.45,
-    }}
-  />
 );
 
 const CitationFootnote: React.FC<{

@@ -153,13 +153,99 @@ def _dataset_extension(filename):
     _, _, ext = str(filename).rpartition(".")
     return ext.lower() if ext else ""
 
-def _read_csv_robust(path, sep=","):
-    """Read CSV tolerating ragged rows and non-UTF-8 encodings.
+def _detect_csv_delimiter(path, encoding="utf-8"):
+    """Best-effort delimiter detection aligned with ingest-time parsing."""
+    import csv
+    from pathlib import Path
+
+    suffix = Path(str(path)).suffix.lower()
+    if suffix in (".tsv", ".tab"):
+        return "\t"
+
+    try:
+        with open(path, "r", encoding=encoding, errors="replace", newline="") as handle:
+            sample_lines = []
+            sample_chars = 0
+            for line in handle:
+                if not line.strip():
+                    continue
+                sample_lines.append(line)
+                sample_chars += len(line)
+                if len(sample_lines) >= 10 or sample_chars >= 4096:
+                    break
+    except Exception:
+        return ","
+
+    sample = "".join(sample_lines)
+    if not sample.strip():
+        return ","
+
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|")
+        if getattr(dialect, "delimiter", None):
+            return dialect.delimiter
+    except Exception:
+        pass
+
+    first_line = next((line for line in sample.splitlines() if line.strip()), "")
+    candidates = [
+        (",", len(first_line.split(","))),
+        ("\t", len(first_line.split("\t"))),
+        (";", len(first_line.split(";"))),
+        ("|", len(first_line.split("|"))),
+    ]
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    return candidates[0][0] if candidates and candidates[0][1] > 1 else ","
+
+def _maybe_expand_collapsed_csv(frame, sep):
+    """Recover single-column frames whose rows still contain delimited records."""
+    import csv
+    import pandas as pd
+
+    if sep not in (",", "\t", ";", "|"):
+        return frame
+    if not isinstance(frame, pd.DataFrame) or frame.shape[1] != 1:
+        return frame
+
+    header = str(frame.columns[0]) if len(frame.columns) == 1 else ""
+    values = frame.iloc[:, 0].tolist()
+    if sep not in header and not any(isinstance(value, str) and sep in value for value in values[:25]):
+        return frame
+
+    collapsed_rows = [header]
+    for value in values:
+        collapsed_rows.append("" if pd.isna(value) else str(value))
+
+    reparsed_rows = []
+    expected_len = None
+    for raw in collapsed_rows:
+        try:
+            parsed = next(csv.reader([raw], delimiter=sep, quotechar='"', doublequote=True))
+        except Exception:
+            return frame
+        if expected_len is None:
+            expected_len = len(parsed)
+        if expected_len is None or expected_len <= 1 or len(parsed) != expected_len:
+            return frame
+        reparsed_rows.append(parsed)
+
+    if len(reparsed_rows) < 2:
+        return frame
+
+    headers = [(cell or "").strip() or f"column_{index + 1}" for index, cell in enumerate(reparsed_rows[0])]
+    repaired = pd.DataFrame(reparsed_rows[1:], columns=headers)
+    return repaired if repaired.shape[1] > 1 else frame
+
+def _read_csv_robust(path, sep=None):
+    """Read CSV tolerating ragged rows, encodings, and non-comma delimiters.
 
     Ragged CSVs (extra/missing fields per row) crash the default C engine
     with ParserError; Windows-1252/Latin-1 files raise UnicodeDecodeError.
-    Mirrors the ingest-time leniency in fileParser.ts so the kernel never
-    sees a stricter parser than the upload layer accepted. Issue #341.
+    Mirrors the ingest-time leniency and delimiter autodetection in
+    fileParser.ts so the kernel never sees a stricter or different parser
+    than the upload layer accepted. Also repairs legacy one-column workbook
+    rows where a delimited record was previously collapsed into a single
+    quoted cell. Issues #341 + semicolon workbook regression.
     """
     import pandas as pd
     attempts = [
@@ -169,7 +255,9 @@ def _read_csv_robust(path, sep=","):
     last_err = None
     for kwargs in attempts:
         try:
-            return pd.read_csv(path, sep=sep, **kwargs)
+            chosen_sep = sep if sep is not None else _detect_csv_delimiter(path, encoding=kwargs["encoding"])
+            frame = pd.read_csv(path, sep=chosen_sep, **kwargs)
+            return _maybe_expand_collapsed_csv(frame, chosen_sep)
         except Exception as err:
             last_err = err
     raise last_err if last_err else RuntimeError(f"Failed to read CSV at {path}")
@@ -211,7 +299,7 @@ def load_preprocessing_dataset(filename, dataset_id, file_type, df_name):
     elif ext in ("tsv", "tab"):
         frame = _read_csv_robust(path, sep="\t")
     else:
-        frame = _read_csv_robust(path, sep=",")
+        frame = _read_csv_robust(path, sep=None)
     globals()[df_name] = frame
     globals()[cache_key] = frame.copy()
     globals()["dataset_path"] = path

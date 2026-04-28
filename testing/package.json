@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "benchmark:prepare": "npm --prefix ../backend run build && npm --prefix ../frontend run build && npx playwright install --with-deps chromium",
+    "benchmark:prepare": "npm --prefix ../backend run build && VITE_API_BASE=${VITE_API_BASE:-http://127.0.0.1:${BENCHMARK_PORT:-4100}/api} npm --prefix ../frontend run build && npx playwright install --with-deps chromium",
     "prebenchmark": "npm run benchmark:prepare",
     "benchmark": "playwright test",
     "prebenchmark:headed": "npm run benchmark:prepare",

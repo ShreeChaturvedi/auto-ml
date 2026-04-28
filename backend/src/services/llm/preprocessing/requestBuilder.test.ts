@@ -65,31 +65,30 @@ describe('buildPreprocessingActionRequest', () => {
     expect(request.messages[0]?.content).toContain(
       'Your next action should validate the executed step and decide whether approval is required.'
     );
-    expect(request.messages[0]?.content).toContain('Never invent, rename, shorten, or paraphrase a preprocessing runId.');
-    expect(request.messages[0]?.content).toContain('Reuse the exact Run ID shown in the prompt');
     expect(request.messages[1]?.content).toContain('RAG snippets:\n1. playbook.md: Mention row-count checks before committing.');
   });
 
-  it('tells the model to omit runId when no preprocessing run is available yet', () => {
+  it('tells code generation turns that the scaffold already imports pd and np', () => {
     const summary: PreprocessingControllerSummary = {
-      threadId: 'prep-thread:test:no-run',
-      runId: undefined,
+      threadId: 'prep-thread:test:generate-request',
+      runId: 'prep-run-1',
       turnMode: 'action_required',
-      currentNode: 'plan_step',
-      allowedTools: ['profile_active_dataset', 'propose_transformation_step'],
+      currentNode: 'generate_code',
+      allowedTools: ['materialize_step_code'],
       allowTextResponse: false,
       requireToolCall: true,
       pendingApproval: false,
-      activeStepId: undefined,
+      activeStepId: 'step-1',
       updatedAt: '2026-03-01T00:00:00.000Z'
     };
 
-    const request = buildPreprocessingActionRequest({
-      dataset,
-      prompt: 'Start preprocessing.'
-    }, summary);
+    const request = buildPreprocessingActionRequest({ dataset }, summary);
 
-    expect(request.messages[0]?.content).toContain('If the prompt shows "Run ID: (none)", omit runId from tool args');
-    expect(request.messages[1]?.content).toContain('Run ID: (none)');
+    expect(request.messages[0]?.content).toContain(
+      'already imports pandas as pd and numpy as np'
+    );
+    expect(request.messages[0]?.content).toContain(
+      'Generate only transformation or audit code'
+    );
   });
 });

@@ -1,0 +1,5 @@
+{{TITLE}} What went **well**.
+
+{{S1}} Playwright caught **three regressions** in CI before our QA pass ever saw them.
+
+{{S2}} Tool calling on top of LangGraph turned loose improvisation into a **structured workflow** we could actually reason about.

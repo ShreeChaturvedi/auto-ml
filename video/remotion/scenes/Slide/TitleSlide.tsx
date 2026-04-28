@@ -6,6 +6,7 @@ import { SAFE_AREA } from "../../../config/layout";
 import { COLORS, INSTITUTIONAL } from "../../../config/themes";
 import { useFadeIn } from "../../helpers/useFadeIn";
 import { AnimatedLogoMark } from "../../primitives/AnimatedLogoMark";
+import { CaptionPipe } from "../../primitives/CaptionPipe";
 import { MiamiRedStreaks } from "../../primitives/MiamiRedStreaks";
 import { SlideShell } from "../../primitives/SlideShell";
 import type { SlideBodyProps } from "./index";
@@ -53,23 +54,6 @@ const CAPTION_COLOR = "rgba(23, 23, 23, 0.62)";
  *  below the tagline. Sized for the 46-px tagline and 240-px CSE logo plus
  *  24-px caption — the lockup is ~320 px tall end-to-end. */
 const STACK_TRANSLATE_Y = -170;
-
-/** Thin vertical rule used as a phrase-separator inside the caption. A bare
- *  `|` at caption weight is too dense and too tall; a 1.25-px bar at 0.85 em
- *  tall with 45 % of the caption's alpha reads as a divider, not a glyph. */
-const CaptionPipe: React.FC = () => (
-  <span
-    aria-hidden
-    style={{
-      display: "inline-block",
-      width: 1.25,
-      height: "0.85em",
-      margin: "0 0.9em",
-      background: "currentColor",
-      opacity: 0.45,
-    }}
-  />
-);
 
 export const TitleSlide: React.FC<SlideBodyProps> = ({ theme }) => {
   const c = COLORS[theme];

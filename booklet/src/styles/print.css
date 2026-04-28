@@ -1,0 +1,94 @@
+/* Print sizing for saddle-stitched 8.5"×11" booklet.
+ *
+ * Every sheet in the exported PDF is 8.75×11.25in — the trim size (8.5×11)
+ * plus a 0.125in bleed on every edge. Puppeteer's single-call pdf() API
+ * requires one page size for the whole document, so we unify on the bleed
+ * box and let layout below do two different things:
+ *
+ *   • Non-bleed pages (`.page`) — element stays 8.5×11 with a 0.125in
+ *     margin of white on every side. Existing absolute positioning still
+ *     references the trim edges, so content-page layouts don't shift.
+ *
+ *   • Bleed pages (`.page[data-bleed="true"]`) — element expands to the
+ *     full 8.75×11.25 sheet with zero margin. Children with `inset: 0`
+ *     paint to the bleed edge; the press shop trims 0.125in off each
+ *     side to land at 8.5×11.
+ */
+
+@page {
+  size: 8.75in 11.25in;
+  margin: 0;
+}
+
+html,
+body {
+  background: #ffffff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  color-adjust: exact;
+}
+
+/* Default (non-bleed) page: 8.5×11in trim. `margin: 0.125in` surrounds it
+ * with white so every sheet in the PDF ends up at the bleed-box size of
+ * 8.75×11.25in. `box-sizing: border-box` means the declared 8.5×11 includes
+ * any padding applied by `primitives/Page.tsx` (0.75" outer + 0.875" top +
+ * 1" bottom). Without this, the element extent balloons to ~10×12.875in,
+ * overflows the 8.75×11.25 print sheet, and Chrome silently downscales the
+ * whole page — producing a white gutter on the right and bottom of every
+ * full-bleed page that follows. */
+.page {
+  position: relative;
+  width: 8.5in;
+  height: 11in;
+  margin: 0.125in;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #ffffff;
+  /* first page has no break; subsequent pages paginate cleanly */
+  break-before: page;
+  page-break-before: always;
+}
+.page:first-child {
+  break-before: auto;
+  page-break-before: auto;
+}
+
+/* Full-bleed pages (covers + dividers): the .page box expands to the full
+ * 8.75×11.25in sheet with zero margin so the background (and any art with
+ * `inset: 0`) paints to the bleed edge. The press shop trims 0.125in from
+ * every side to land at the 8.5×11 trim. */
+.page[data-bleed="true"] {
+  width: 8.75in;
+  height: 11.25in;
+  margin: 0;
+}
+
+/* Screen-preview only: stack pages vertically with 0.25" gaps so we can
+ * scroll through the whole booklet during dev. Puppeteer never sees this
+ * container because the PDF renderer paginates each .page individually. */
+@media screen {
+  .booklet-root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25in;
+    padding: 0.25in 0;
+    background: #e7e5e0;
+    min-height: 100vh;
+  }
+  .page {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  }
+}
+
+@media print {
+  .booklet-root {
+    display: block;
+    background: transparent;
+    padding: 0;
+    gap: 0;
+  }
+  .page {
+    box-shadow: none;
+  }
+}

@@ -147,11 +147,17 @@ docs/                 Branding assets, API contracts, design system
 | `npm run vercel:landing:build` | Build the landing app with Vercel's Build Output API |
 | `npm run vercel:landing:deploy:preview` | Deploy a preview-safe prebuilt landing artifact to Vercel |
 | `npm run vercel:landing:deploy:production` | Promote a prebuilt landing artifact to Vercel production |
+| `npm run vercel:frontend:pull:preview` | Pull preview settings for the frontend Vercel project (rooted at `frontend/`) |
+| `npm run vercel:frontend:pull:production` | Pull production settings for the frontend Vercel project |
+| `npm run vercel:frontend:build` | Build the frontend app with Vercel's Build Output API |
+| `npm run vercel:frontend:deploy:preview` | Deploy a preview-safe prebuilt frontend artifact to Vercel |
+| `npm run vercel:frontend:deploy:production` | Promote the prebuilt frontend artifact to Vercel production |
 
 ## Documentation
 
 - [`docs/api-contracts.md`](docs/api-contracts.md) - Request/response contracts
 - [`docs/design-system.md`](docs/design-system.md) - UI guidelines and component patterns
+- [`docs/beta-zero-paid-deploy.md`](docs/beta-zero-paid-deploy.md) - zero-paid beta deploy runbook (Vercel + DuckDNS + single-host backend)
 
 ## License
 

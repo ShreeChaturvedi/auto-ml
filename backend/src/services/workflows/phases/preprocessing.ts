@@ -6,12 +6,14 @@ import { createDatasetRepository } from '../../../repositories/datasetRepository
 import {
   createFilePreprocessingRunRepository
 } from '../../../repositories/preprocessingRunRepository.js';
+import type { DatasetFileType } from '../../../types/dataset.js';
 import { ToolCallSchema } from '../../../types/llm.js';
 import type { ToolResult } from '../../../types/llm.js';
 import { asRecord, asString } from '../../../utils/typeCoercion.js';
 import { createPreprocessingLangGraphRuntime } from '../../llm/langgraph/preprocessingRuntime.js';
 import type { LlmClient } from '../../llm/llmClient.js';
 import { createPreprocessingCellInspector, createPreprocessingCellMetadataStore } from '../../llm/preprocessing/cellBinding.js';
+import { classifyRunCellOutcome, type RunCellOutcome } from '../../llm/preprocessing/runCellOutcome.js';
 import {
   createPreprocessingLangGraphSynchronizer,
   PREPROCESSING_TOOL_NAMES,
@@ -20,7 +22,10 @@ import {
 import { fail } from '../../llm/preprocessingTools/helpers.js';
 import { TOOL_HANDLERS } from '../../llm/preprocessingTools/index.js';
 import * as notebookService from '../../notebook/notebookService.js';
-import { buildPreprocessingCellContents } from '../../notebook/preprocessingExecutionContext.js';
+import {
+  buildPreprocessingCellContent,
+  buildPreprocessingSegmentedCellContent
+} from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
   PhaseConfig,
@@ -61,6 +66,10 @@ interface NotebookExecutionSnapshot {
   stdout: string;
   stderr: string;
   cellId?: string;
+}
+
+interface ResolveNotebookExecutionOutcomeOptions {
+  fastFailOnIndeterminate?: boolean;
 }
 
 const PREPROCESSING_CELL_MARKER_RE = /^\s*#\s*(?:cell\b.*|%%.*)$/i;
@@ -106,10 +115,11 @@ export function buildPreprocessingCodeGenerationSystemPrompt(): string {
   return `You are a Python data preprocessing expert. Author executable Python code for the requested transformation.
 
 RULES:
-- Work on a DataFrame variable named \`df\` (already loaded in scope).
-- Standard imports are guaranteed in every preprocessing cell: \`import pandas as pd\` and \`import numpy as np\`.
+- Work on a DataFrame variable named \`df\`.
+- The visible notebook scaffold already imports \`pandas as pd\` and \`numpy as np\`, loads \`df\`, and saves \`df\` after execution.
 - Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
-- Use pandas/numpy idioms. Keep the code minimal and focused.
+- Use \`pd\` and \`np\` idioms. Keep the code minimal and focused.
+- Do NOT include imports, dataset load calls, or dataset save calls.
 - If the step has more than one logical notebook phase, you MUST separate it with explicit comment markers like \`# Cell 1\`, \`# Cell 2\`.
 - Treat audit/profile, transform, and post-transform validation as separate notebook phases whenever they are distinct.
 - Do NOT collapse audit + transform + validation into one monolithic cell.
@@ -165,10 +175,38 @@ function aggregateRunOutputs(runCells: RunCellResultContext[]): { stdout: string
 }
 
 function didRunCellsEncounterError(runCells: RunCellResultContext[]): boolean {
-  return runCells.some((entry) => {
-    const normalizedStatus = entry.status?.toLowerCase();
-    return normalizedStatus === 'error' || normalizedStatus === 'failed' || Boolean(entry.error);
-  });
+  return runCells.some((entry) => classifyRunCellOutcome(entry) === 'failure');
+}
+
+function summarizeRunCellOutcome(
+  outcome: RunCellOutcome,
+  latestRunCell: RunCellResultContext | null,
+  stderr: string
+): string {
+  if (stderr.trim()) {
+    return stderr;
+  }
+
+  if (latestRunCell?.error?.trim()) {
+    return latestRunCell.error.trim();
+  }
+
+  if (outcome === 'failure') {
+    const status = latestRunCell?.status?.trim();
+    return status
+      ? `Notebook execution reported terminal failure status "${status}".`
+      : 'Notebook execution reported a terminal failure.';
+  }
+
+  if (outcome === 'pending') {
+    return 'Notebook execution is still pending and did not reach a terminal success state.';
+  }
+
+  if (outcome === 'indeterminate') {
+    return 'Notebook execution did not produce terminal success markers for all bound cells.';
+  }
+
+  return '';
 }
 
 function summarizeNotebookCellOutputs(outputs: Array<{ type: string; content: string }>): { stdout: string; stderr: string } {
@@ -208,7 +246,7 @@ async function resolveNotebookExecutionSnapshot(cellIds: string[]): Promise<Note
         statuses.push(cell.executionStatus);
       } else if (hasErrorOutput) {
         statuses.push('error');
-      } else if (hasObservedExecution) {
+      } else if (hasObservedExecution && cell.isDirty === false) {
         statuses.push('success');
       }
       const { stdout, stderr } = summarizeNotebookCellOutputs(
@@ -234,16 +272,28 @@ async function resolveNotebookExecutionSnapshot(cellIds: string[]): Promise<Note
   const hasError = statuses.includes('error');
   const allSucceeded = statuses.length >= cellIds.length && statuses.every((status) => status === 'success');
   const hasPending = statuses.some((status) => status === 'running' || status === 'idle');
+  const hasIndeterminate = statuses.length < cellIds.length && !hasError && !hasPending && !allSucceeded;
 
   return {
     cellId: latestCellId,
-    status: hasError ? 'error' : allSucceeded ? 'success' : hasPending ? 'running' : undefined,
+    status: hasError
+      ? 'error'
+      : allSucceeded
+        ? 'success'
+        : hasPending
+          ? 'running'
+          : hasIndeterminate
+            ? 'indeterminate'
+            : undefined,
     stdout: stdoutParts.join('\n\n'),
     stderr: stderrParts.join('\n\n')
   };
 }
 
-async function resolveNotebookExecutionOutcome(cellIds: string[]): Promise<RunCellResultContext | null> {
+async function resolveNotebookExecutionOutcome(
+  cellIds: string[],
+  options: ResolveNotebookExecutionOutcomeOptions = {}
+): Promise<RunCellResultContext | null> {
   const attempts = 20;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -255,7 +305,18 @@ async function resolveNotebookExecutionOutcome(cellIds: string[]): Promise<RunCe
       continue;
     }
 
-    if (snapshot.status === 'success' || snapshot.status === 'error') {
+    const outcome = classifyRunCellOutcome(snapshot);
+    if (outcome === 'success' || outcome === 'failure') {
+      return {
+        tool: 'run_cell',
+        cellId: snapshot.cellId,
+        status: snapshot.status,
+        stdout: snapshot.stdout,
+        stderr: snapshot.stderr
+      };
+    }
+
+    if (outcome === 'indeterminate' && options.fastFailOnIndeterminate) {
       return {
         tool: 'run_cell',
         cellId: snapshot.cellId,
@@ -351,6 +412,46 @@ async function resolveLatestStepNotebookContext(
     cellIds: [...step.cellIds]
   };
 }
+
+
+
+export function buildSegmentedPreprocessingCellContent(params: {
+  segment: string;
+  segmentIndex: number;
+  segmentCount: number;
+  dataset?: {
+    filename: string;
+    datasetId: string;
+    fileType: DatasetFileType;
+  };
+}): string {
+  const trimmedSegment = params.segment.trim();
+  const dataset = params.dataset;
+  if (!dataset) {
+    return trimmedSegment;
+  }
+
+  if (params.segmentCount <= 1) {
+    return buildPreprocessingCellContent({
+      filename: dataset.filename,
+      datasetId: dataset.datasetId,
+      fileType: dataset.fileType,
+      dataframeName: 'df',
+      userCode: trimmedSegment
+    });
+  }
+
+  return buildPreprocessingSegmentedCellContent({
+    filename: dataset.filename,
+    datasetId: dataset.datasetId,
+    fileType: dataset.fileType,
+    dataframeName: 'df',
+    segment: trimmedSegment,
+    segmentIndex: params.segmentIndex,
+    segmentCount: params.segmentCount
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Preprocessing PhaseConfig — replaces Systems A (preprocessingRuntime) and
 // B (controller). The coordinator lives here, while stage configuration,
@@ -376,14 +477,6 @@ function isWorkflowThreadReference(value: string | null | undefined): boolean {
   return /^(?:[a-z]+-)*thread[-:]/i.test(value.trim());
 }
 
-function buildWorkflowOwnedPreprocessingRunId(workflowRunId: string | undefined): string | undefined {
-  const trimmed = workflowRunId?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  return `prep-${trimmed}`;
-}
-
 
 // -- Deterministic actions (ported from plannerNotebook, plannerExecution, plannerValidation)
 
@@ -400,7 +493,12 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   const currentTurnResults = state.toolResultHistory.slice(state.turnStartToolCallCount);
   const writtenCellIds = extractWrittenCellIds(currentTurnResults);
   const runCells = extractRunCellResults(currentTurnResults);
+  const hasBlockedExecutionOutcome = runCells.some((entry) => classifyRunCellOutcome(entry) !== 'success');
   const reusableStepCellIds = await resolveReusableStepCellIds(step.cellIds);
+
+  if (hasBlockedExecutionOutcome) {
+    return [];
+  }
 
   if (writtenCellIds.length > runCells.length) {
     const nextCellId = writtenCellIds[runCells.length];
@@ -429,14 +527,16 @@ async function buildWriteCodeAction(state: WorkflowGraphState): Promise<import('
   if (activeDatasetId) {
     const dataset = await datasetRepository.getById(activeDatasetId);
     if (dataset && dataset.projectId === state.run.projectId) {
-      const visibleCellContents = buildPreprocessingCellContents({
-        filename: dataset.filename,
-        datasetId: dataset.datasetId,
-        fileType: dataset.fileType,
-        dataframeName: 'df',
-        userCode: step.code
+      cellContent = buildSegmentedPreprocessingCellContent({
+        segment: nextSegment,
+        segmentIndex: nextSegmentIndex,
+        segmentCount: codeSegments.length,
+        dataset: {
+          filename: dataset.filename,
+          datasetId: dataset.datasetId,
+          fileType: dataset.fileType
+        }
       });
-      cellContent = visibleCellContents[nextSegmentIndex] ?? nextSegment;
     }
   }
 
@@ -478,11 +578,15 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
   const writtenCellIds = extractWrittenCellIds(currentTurnResults);
   let latestRunCell = runCells.at(-1) ?? null;
   let { stdout, stderr } = aggregateRunOutputs(runCells);
+  let latestOutcome = latestRunCell ? classifyRunCellOutcome(latestRunCell) : null;
 
-  if (writtenCellIds.length > 0 && (latestRunCell == null || latestRunCell.status !== 'success')) {
-    const notebookOutcome = await resolveNotebookExecutionOutcome(writtenCellIds);
+  if (writtenCellIds.length > 0 && (latestRunCell == null || latestOutcome === 'pending' || latestOutcome === 'indeterminate')) {
+    const notebookOutcome = await resolveNotebookExecutionOutcome(writtenCellIds, {
+      fastFailOnIndeterminate: latestRunCell != null && latestOutcome === 'indeterminate'
+    });
     if (notebookOutcome) {
       latestRunCell = notebookOutcome;
+      latestOutcome = classifyRunCellOutcome(notebookOutcome);
       if (!stdout) {
         stdout = notebookOutcome.stdout ?? '';
       }
@@ -492,15 +596,15 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
     }
   }
 
-  const latestStatus = latestRunCell?.status?.toLowerCase();
-  const latestSucceeded = latestStatus === 'success'
-    || (
-      latestRunCell != null
-      && latestStatus == null
-      && !latestRunCell.error
-      && !stderr.trim()
-    );
-  const succeeded = latestSucceeded && !didRunCellsEncounterError(runCells);
+  const failureDetected = didRunCellsEncounterError(runCells);
+  const succeeded = latestOutcome === 'success' && !failureDetected;
+  const normalizedStderr = succeeded
+    ? stderr
+    : summarizeRunCellOutcome(
+        failureDetected ? 'failure' : (latestOutcome ?? 'indeterminate'),
+        latestRunCell,
+        stderr
+      );
 
   const parsed = ToolCallSchema.safeParse({
     id: `wf-call-${randomUUID()}`,
@@ -512,7 +616,7 @@ async function buildRecordExecutionAction(state: WorkflowGraphState): Promise<im
       cellIds: writtenCellIds.length > 0 ? writtenCellIds : undefined,
       succeeded,
       stdout,
-      stderr
+      stderr: normalizedStderr
     },
     rationale: 'Record the latest preprocessing notebook execution outcome.'
   });
@@ -642,43 +746,31 @@ async function buildCodeGenerationAction(
 async function executePreprocessingToolCall(
   projectId: string,
   toolName: string,
-  args: Record<string, unknown>,
-  workflowRunId?: string
+  args: Record<string, unknown>
 ): Promise<{ output?: unknown; error?: string }> {
   const explicitRunId = asString(args.runId);
   const sanitizedRunId = explicitRunId && !isWorkflowThreadReference(explicitRunId)
     ? explicitRunId
     : undefined;
   const toolCallId = asString(args.toolCallId);
-  const workflowOwnedRunId = buildWorkflowOwnedPreprocessingRunId(workflowRunId);
 
   // Resolve run
   let run;
   if (sanitizedRunId) {
     const existing = await runRepository.getById(sanitizedRunId);
-    if (existing && existing.projectId !== projectId) {
+    if (!existing) {
+      return fail(sanitizedRunId, 'RUN_NOT_FOUND', `Run ${sanitizedRunId} not found.`);
+    }
+    if (existing.projectId !== projectId) {
       return fail(
         sanitizedRunId,
         'RUN_PROJECT_MISMATCH',
-        `Run ${sanitizedRunId} belongs to another project and cannot be used here.`
+        `Run ${sanitizedRunId} belongs to project ${existing.projectId}, not ${projectId}.`,
+        { projectId, runProjectId: existing.projectId }
       );
     }
     run = existing;
-  }
-
-  if (!run && workflowOwnedRunId) {
-    const existingWorkflowRun = await runRepository.getById(workflowOwnedRunId);
-    if (existingWorkflowRun && existingWorkflowRun.projectId !== projectId) {
-      return fail(
-        workflowOwnedRunId,
-        'RUN_PROJECT_MISMATCH',
-        `Run ${workflowOwnedRunId} belongs to another project and cannot be used here.`
-      );
-    }
-    run = await runRepository.getOrCreate(projectId, workflowOwnedRunId);
-  }
-
-  if (!run) {
+  } else {
     run = await runRepository.getOrCreate(projectId);
   }
 
@@ -770,8 +862,7 @@ export const preprocessingPhaseConfig: PhaseConfig = {
     const rawResult = await executePreprocessingToolCall(
       ctx.projectId,
       name,
-      toolArgs,
-      ctx.run.runId
+      toolArgs
     );
 
     // Sync LangGraph state (same as the old syncPreprocessingLangGraphState)

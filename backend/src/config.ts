@@ -60,6 +60,22 @@ function parseFloatValue(value: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function parseLlmProvider(value: string | undefined, nodeEnv: string): 'openai' | 'mock' {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === 'openai') {
+    return 'openai';
+  }
+
+  if (normalized === 'mock') {
+    if (nodeEnv === 'production') {
+      throw new Error('FATAL: LLM_PROVIDER=mock is not allowed in production');
+    }
+    return 'mock';
+  }
+
+  throw new Error(`FATAL: Unsupported LLM_PROVIDER "${value}"`);
+}
+
 export function resolveJwtSecret(
   jwtSecret: string | undefined,
   nodeEnv: string
@@ -69,6 +85,13 @@ export function resolveJwtSecret(
   }
 
   return jwtSecret ?? DEFAULT_DEV_JWT_SECRET;
+}
+
+export function resolveBenchmarkAuthBypass(
+  nodeEnv: string,
+  benchmarkAuthBypass: string | undefined
+): boolean {
+  return nodeEnv !== 'production' && benchmarkAuthBypass === 'true';
 }
 
 export const env = {
@@ -129,6 +152,11 @@ export const env = {
   devBypassEmailVerification:
     process.env.NODE_ENV !== 'production'
     && process.env.DEV_BYPASS_EMAIL_VERIFICATION === 'true',
+  benchmarkAuthBypass:
+    resolveBenchmarkAuthBypass(
+      process.env.NODE_ENV ?? 'development',
+      process.env.BENCHMARK_AUTH_BYPASS
+    ),
 
   // Email (SMTP)
   smtpHost: process.env.SMTP_HOST ?? '',
@@ -136,9 +164,10 @@ export const env = {
   smtpSecure: process.env.SMTP_SECURE === 'true',
   smtpUser: process.env.SMTP_USER ?? '',
   smtpPassword: process.env.SMTP_PASSWORD ?? '',
-  smtpFrom: process.env.SMTP_FROM ?? 'AutoML Toolchain <noreply@example.com>',
+  smtpFrom: process.env.SMTP_FROM ?? 'Agentic AutoML Platform <noreply@example.com>',
 
   // Google OAuth
+  googleAuthEnabled: process.env.GOOGLE_AUTH_ENABLED === 'true',
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
   googleCallbackUrl: process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:5173/auth/google/callback',
@@ -146,6 +175,7 @@ export const env = {
   // OpenAI LLM configuration
   openaiApiKey: process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY ?? '',
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? process.env.LLM_BASE_URL ?? '',
+  llmProvider: parseLlmProvider(process.env.LLM_PROVIDER, process.env.NODE_ENV ?? 'development'),
   llmModel: RESOLVED_LLM_MODEL,
   llmTimeoutMs: parseInteger(process.env.LLM_TIMEOUT_MS, 60000),
   preprocessingLlmTimeoutMs: parseInteger(process.env.PREPROCESSING_LLM_TIMEOUT_MS, 120000),

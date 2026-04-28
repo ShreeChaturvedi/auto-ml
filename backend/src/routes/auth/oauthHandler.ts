@@ -11,6 +11,13 @@ import type { SafeUser } from '../../types/user.js';
  * Initiate Google OAuth flow — returns URL to redirect user to Google consent screen.
  */
 export async function handleGoogleAuth(_req: Request, res: Response) {
+  if (!env.googleAuthEnabled) {
+    return res.status(503).json({
+      error: 'Google sign-in is coming soon for the public beta.',
+      error_code: 'GOOGLE_AUTH_DISABLED'
+    });
+  }
+
   if (!env.googleClientId || !env.googleClientSecret) {
     return res.status(503).json({
       error: 'Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.'
@@ -41,6 +48,13 @@ export async function handleGoogleCallback(
   res: Response,
   userRepository: UserRepository
 ) {
+  if (!env.googleAuthEnabled) {
+    return res.status(503).json({
+      error: 'Google sign-in is coming soon for the public beta.',
+      error_code: 'GOOGLE_AUTH_DISABLED'
+    });
+  }
+
   if (!env.googleClientId || !env.googleClientSecret) {
     return res.status(503).json({
       error: 'Google OAuth is not configured'

@@ -1,0 +1,18 @@
+[Unit]
+Description=Agentic AutoML backend
+After=network-online.target docker.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=automl
+Group=automl
+WorkingDirectory=/opt/automl/ai-augmented-auto-ml-toolchain
+EnvironmentFile=/opt/automl/backend.beta.env
+ExecStart=/usr/bin/npm --prefix backend run start
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

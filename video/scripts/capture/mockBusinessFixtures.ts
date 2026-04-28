@@ -980,7 +980,7 @@ function normalizeCell(value: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function normalizeIndustryKey(value: FixtureScalar): string {
+function normalizeIndustryKey(value: FixtureScalar | undefined): string {
   const normalized = String(value ?? "all").trim().toLowerCase();
   return normalized === "all" || normalized.length === 0 ? "all" : normalized;
 }
@@ -1004,7 +1004,7 @@ function estimateCsvByteSize(
   return Buffer.byteLength(headerLine + body, "utf8");
 }
 
-function escapeCsvCell(value: FixtureScalar): string {
+function escapeCsvCell(value: FixtureScalar | undefined): string {
   if (value === null) return "";
   const raw = String(value);
   if (!/[",\n\r]/.test(raw)) return raw;

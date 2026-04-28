@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 
-const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
+import { getApiBase } from '../helpers';
+
+const API_BASE = getApiBase();
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const DATASET_PATH = path.resolve(testDir, '../fixtures/mock_customer_churn_clean.csv');
 const ITERATIONS = Number(process.env.PREPROCESSING_STRESS_ITERATIONS ?? '5');
@@ -265,6 +267,11 @@ async function waitForStableDerivedDataset(params: {
 }
 
 test.describe.serial('preprocessing live continuity', () => {
+  test.skip(
+    process.env.LLM_PROVIDER === 'mock',
+    'requires a live provider because it validates prompt-specific preprocessing transforms'
+  );
+
   test('keeps one preprocessing run and one derived dataset across repeated prompts in the same workbook', async ({
     page,
     request

@@ -16,6 +16,7 @@ const benchmarkPort = Number(process.env.BENCHMARK_PORT ?? 4100);
 const previewPort = Number(process.env.BENCHMARK_PREVIEW_PORT ?? 4174);
 const benchmarkOrigin = `http://127.0.0.1:${benchmarkPort}`;
 const benchmarkApiBase = `${benchmarkOrigin}/api`;
+const previewOrigin = `http://127.0.0.1:${previewPort}`;
 
 process.env.AUTOML_STORAGE_PATH = storagePath;
 process.env.AUTOML_DATASET_METADATA_PATH = datasetMetadataPath;
@@ -23,6 +24,7 @@ process.env.AUTOML_DATASET_FILES_PATH = datasetFilesPath;
 // Keep all Playwright helpers/specs on the dedicated benchmark backend
 // instead of silently falling back to the live dev API on :4000.
 process.env.AUTOML_API_BASE_URL = benchmarkOrigin;
+process.env.AUTOML_FRONTEND_BASE_URL = previewOrigin;
 // Expose the benchmark api base to the spec via env so hard-coded
 // http://localhost:4000 lookups can migrate to the configurable port.
 process.env.BENCHMARK_API_BASE = benchmarkApiBase;
@@ -37,7 +39,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
-    baseURL: `http://127.0.0.1:${previewPort}`,
+    baseURL: previewOrigin,
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure'

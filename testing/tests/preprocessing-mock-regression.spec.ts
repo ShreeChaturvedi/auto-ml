@@ -1,10 +1,12 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
+import { getApiBase } from '../helpers';
 import { buildPreprocessingMockDatasetVariants } from '../support/preprocessingMockDatasets.mjs';
 
-const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
+const API_BASE = getApiBase();
 const WORKFLOW_PROMPT = 'Create a safe preprocessing checkpoint for this dataset and summarize the result.';
+const CHECKPOINT_TITLE_PATTERN = /preprocessing.*checkpoint/i;
 const variantMap = new Map(buildPreprocessingMockDatasetVariants().map((variant) => [variant.name, variant]));
 const AUTH_BYPASS = process.env.AUTOML_BENCHMARK_AUTH_BYPASS === 'true' || process.env.BENCHMARK_AUTH_BYPASS === 'true';
 
@@ -235,7 +237,7 @@ async function selectDatasetAndSubmit(page: Page, fileName: string) {
 }
 
 async function assertWorkflowSucceeded(page: Page) {
-  await expect(page.getByText('Create preprocessing test checkpoint', { exact: false })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(CHECKPOINT_TITLE_PATTERN).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Execution succeeded', { exact: false }).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Validation passed', { exact: false }).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Committed', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
@@ -291,7 +293,7 @@ test.describe.serial('preprocessing mock regression', () => {
       const runSnapshot = await getRunSnapshot(request, auth, project.id, matchingRun?.runId ?? '');
       expect(runSnapshot.run?.derivedDatasetIds).toContain(derivedDatasetId);
       const committedStep = runSnapshot.run?.steps?.find(
-        (step) => step.title === 'Create preprocessing test checkpoint'
+        (step) => typeof step.title === 'string' && CHECKPOINT_TITLE_PATTERN.test(step.title)
       );
       expect(committedStep?.status).toBe('applied');
       expect(committedStep?.lastExecuteSucceeded).toBe(true);

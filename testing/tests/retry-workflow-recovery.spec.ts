@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
-const FRONTEND_BASE = process.env.AUTOML_FRONTEND_BASE_URL ?? 'http://127.0.0.1:5173';
+import { getApiBase, getFrontendBase } from '../helpers';
+
+const API_BASE = getApiBase();
+const FRONTEND_BASE = getFrontendBase();
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const DATASET_PATH = path.resolve(testDir, '../fixtures', 'mock_customer_churn_clean.csv');
 const DATASET_BUFFER = readFileSync(DATASET_PATH);

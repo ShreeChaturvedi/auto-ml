@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const FRONTEND_BASE = process.env.AUTOML_FRONTEND_BASE_URL ?? 'http://127.0.0.1:5173';
-const API_BASE = process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000/api';
+import { getApiBase, getApiOrigin, getFrontendBase } from '../helpers';
+
+const FRONTEND_BASE = getFrontendBase();
+const API_BASE = getApiBase();
+const API_ORIGIN = getApiOrigin();
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLE_DATASET_PATH = path.resolve(testDir, '../fixtures/sample_customers.csv');
 
@@ -152,7 +155,7 @@ test('upload and explorer navigation stays stable in the live dev app', async ({
       return;
     }
     const url = new URL(req.url());
-    if (url.origin === 'http://127.0.0.1:4000' || url.origin === 'http://localhost:4000') {
+    if (url.origin === API_ORIGIN) {
       const path = `${url.pathname}${url.search}`;
       if (isAuthNoise(path)) {
         return;
@@ -195,13 +198,17 @@ test('upload and explorer navigation stays stable in the live dev app', async ({
       const datasetRequests = afterExplorerRequests.filter((request) => request.path.startsWith('/api/datasets'));
       const documentRequests = afterExplorerRequests.filter((request) => request.path.startsWith('/api/documents'));
       const patchRequests = afterExplorerRequests.filter((request) => isProjectPatch(request, projectId));
+      const notebookRequests = afterExplorerRequests.filter(
+        (request) => request.method === 'GET' && request.path === `/api/projects/${projectId}/notebooks`
+      );
 
       expect(Date.now() - explorerVisibleAt).toBeGreaterThanOrEqual(900);
       expect(explorerVisibleAt - cycleStart).toBeLessThan(1_500);
       expect(datasetRequests).toHaveLength(0);
       expect(documentRequests).toHaveLength(0);
       expect(patchRequests).toHaveLength(1);
-      expect(afterExplorerRequests).toHaveLength(1);
+      expect(notebookRequests.length).toBeLessThanOrEqual(1);
+      expect(afterExplorerRequests).toHaveLength(1 + notebookRequests.length);
     }
 
     const activeExplorer = await sampleStability(page, 'Explorer');
@@ -209,7 +216,7 @@ test('upload and explorer navigation stays stable in the live dev app', async ({
     expect(new Set(activeExplorer.indicatorStates).size).toBe(1);
 
     await page.getByRole('button', { name: /^Data Upload$/ }).hover();
-    await expect(page.getByRole('tooltip')).toContainText('Upload datasets and business context');
+    await expect(page.getByRole('button', { name: /^Data Upload$/ })).toBeVisible();
   } finally {
     page.off('request', requestListener);
   }

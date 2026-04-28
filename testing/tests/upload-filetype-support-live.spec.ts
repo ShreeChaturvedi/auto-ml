@@ -1,9 +1,9 @@
 import { expect, test, type APIRequestContext, type Page, type Request } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-const RAW_API_BASE = process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000';
-const API_ORIGIN = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE.slice(0, -4) : RAW_API_BASE;
-const API_BASE = `${API_ORIGIN}/api`;
+import { getApiBase } from '../helpers';
+
+const API_BASE = getApiBase();
 
 interface AuthResponse {
   accessToken: string;
@@ -161,8 +161,7 @@ test('upload page accepts TSV, JSONL, and NDJSON as dataset uploads on live dev'
     await page.goto(`/project/${project.id}/upload`);
     await expect(page.getByTestId('upload-area')).toBeVisible();
 
-    const fileInput = page.locator('#data-upload-input');
-    const accept = await fileInput.getAttribute('accept');
+    const accept = await page.locator('#data-upload-input').getAttribute('accept');
     expect(accept).toContain('.tsv');
     expect(accept).toContain('.jsonl');
     expect(accept).toContain('.ndjson');
@@ -186,6 +185,11 @@ test('upload page accepts TSV, JSONL, and NDJSON as dataset uploads on live dev'
     ];
 
     for (const fixture of fixtures) {
+      await expect(page.getByTestId('upload-area')).toBeVisible();
+      const fileInput = page.locator('#data-upload-input');
+      await expect(fileInput).toHaveCount(1);
+      await fileInput.setInputFiles([]);
+
       const datasetUploadCount = uploadRequests.filter((path) => path === '/api/upload/dataset').length;
       const documentUploadCount = uploadRequests.filter((path) => path === '/api/upload/doc').length;
 

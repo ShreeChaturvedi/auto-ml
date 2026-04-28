@@ -3,12 +3,12 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resetBackendData } from '../helpers';
+import { getApiBase, resetBackendData } from '../helpers';
 
 const datasetMetadataPath = process.env.AUTOML_DATASET_METADATA_PATH;
 const storagePath = process.env.AUTOML_STORAGE_PATH;
 const datasetFilesPath = process.env.AUTOML_DATASET_FILES_PATH;
-const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
+const API_BASE = getApiBase();
 
 if (!datasetMetadataPath || !storagePath || !datasetFilesPath) {
   throw new Error('Benchmark environment paths were not provided by Playwright configuration.');

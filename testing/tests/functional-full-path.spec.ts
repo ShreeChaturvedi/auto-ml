@@ -51,7 +51,9 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const API_BASE = `${process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000'}/api`;
+import { getApiBase } from '../helpers';
+
+const API_BASE = getApiBase();
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const DATASET_FILENAME = process.env.FUNCTIONAL_DATASET ?? 'mock_customer_churn_clean.csv';
 const DATASET_PATH = path.resolve(testDir, '../fixtures', DATASET_FILENAME);
@@ -339,8 +341,7 @@ test('seven-phase functional walk — data artifacts visible at each leg', async
         phase: 'preprocessing',
         datasetId: uploadDatasetId,
         targetColumn: TARGET_COLUMN,
-        prompt:
-          'Drop rows with missing values and one-hot encode any categorical columns. Keep the run short.',
+        prompt: 'Create a safe preprocessing checkpoint for this dataset and summarize the result.',
       }),
       240_000,
     );

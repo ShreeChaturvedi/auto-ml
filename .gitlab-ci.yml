@@ -106,7 +106,7 @@ assets:check:
           - backend/package-lock.json
       paths:
         - backend/node_modules/
-      policy: pull-push
+      policy: pull
     - key:
         files:
           - frontend/package-lock.json
@@ -114,7 +114,7 @@ assets:check:
       paths:
         - frontend/node_modules/
         - testing/node_modules/
-      policy: pull-push
+      policy: pull
     - key:
         files:
           - landing/package-lock.json
@@ -122,7 +122,7 @@ assets:check:
       paths:
         - landing/node_modules/
         - video/node_modules/
-      policy: pull-push
+      policy: pull
     - key:
         files:
           - poster/package-lock.json
@@ -130,7 +130,7 @@ assets:check:
       paths:
         - poster/node_modules/
         - booklet/node_modules/
-      policy: pull-push
+      policy: pull
   rules:
     - changes:
         - .gitlab-ci.yml

@@ -1,10 +1,11 @@
 import type { FileType } from '@/types/file';
 
 type DatasetUploadFileType = Extract<FileType, 'csv' | 'json' | 'excel'>;
+const JSON_LINES_EXTENSIONS = ['.jsonl', '.ndjson'] as const;
 
 const DATASET_UPLOAD_EXTENSIONS: Record<DatasetUploadFileType, readonly string[]> = {
   csv: ['.csv', '.tsv'],
-  json: ['.json', '.jsonl', '.ndjson'],
+  json: ['.json', ...JSON_LINES_EXTENSIONS],
   excel: ['.xlsx'],
 };
 
@@ -32,7 +33,8 @@ const DOCUMENT_UPLOAD_EXTENSIONS = {
 
 export const PROJECT_FILE_UPLOAD_ACCEPTED_TYPES = {
   'text/csv': DATASET_UPLOAD_EXTENSIONS.csv,
-  'application/json': DATASET_UPLOAD_EXTENSIONS.json,
+  'application/json': ['.json'],
+  'application/x-ndjson': JSON_LINES_EXTENSIONS,
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': DATASET_UPLOAD_EXTENSIONS.excel,
   'application/pdf': DOCUMENT_UPLOAD_EXTENSIONS.pdf,
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': DOCUMENT_UPLOAD_EXTENSIONS.word,

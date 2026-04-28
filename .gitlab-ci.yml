@@ -62,14 +62,57 @@ install:
   cache:
     key:
       files:
+        - package-lock.json
         - backend/package-lock.json
         - frontend/package-lock.json
+        - testing/package-lock.json
+        - landing/package-lock.json
+        - video/package-lock.json
+        - poster/package-lock.json
+        - booklet/package-lock.json
     paths:
       - backend/node_modules/
       - frontend/node_modules/
       - testing/node_modules/
+      - landing/node_modules/
       - video/node_modules/
+      - poster/node_modules/
+      - booklet/node_modules/
     policy: pull-push
+
+assets:check:
+  stage: check
+  script:
+    - npm run install:all
+    - npm run assets:check
+  cache:
+    key:
+      files:
+        - package-lock.json
+        - backend/package-lock.json
+        - frontend/package-lock.json
+        - testing/package-lock.json
+        - landing/package-lock.json
+        - video/package-lock.json
+        - poster/package-lock.json
+        - booklet/package-lock.json
+    paths:
+      - backend/node_modules/
+      - frontend/node_modules/
+      - testing/node_modules/
+      - landing/node_modules/
+      - video/node_modules/
+      - poster/node_modules/
+      - booklet/node_modules/
+    policy: pull-push
+  rules:
+    - changes:
+        - .gitlab-ci.yml
+        - package.json
+        - package-lock.json
+        - video/**/*
+        - poster/**/*
+        - booklet/**/*
 
 lint:
   extends: .run_on_branch_or_mr

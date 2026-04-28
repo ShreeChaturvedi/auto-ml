@@ -22,7 +22,10 @@ import {
 import { fail } from '../../llm/preprocessingTools/helpers.js';
 import { TOOL_HANDLERS } from '../../llm/preprocessingTools/index.js';
 import * as notebookService from '../../notebook/notebookService.js';
-import { buildPreprocessingCellContent } from '../../notebook/preprocessingExecutionContext.js';
+import {
+  buildPreprocessingCellContent,
+  buildPreprocessingSegmentedCellContent
+} from '../../notebook/preprocessingExecutionContext.js';
 import type { WorkflowGraphState } from '../graphState.js';
 import type {
   PhaseConfig,
@@ -112,9 +115,11 @@ export function buildPreprocessingCodeGenerationSystemPrompt(): string {
   return `You are a Python data preprocessing expert. Author executable Python code for the requested transformation.
 
 RULES:
-- Work on a DataFrame variable named \`df\` (already loaded in scope).
+- Work on a DataFrame variable named \`df\`.
+- The visible notebook scaffold already imports \`pandas as pd\` and \`numpy as np\`, loads \`df\`, and saves \`df\` after execution.
 - Modify \`df\` in-place. Do NOT re-read or re-create the DataFrame.
-- Use pandas/numpy idioms. Keep the code minimal and focused.
+- Use \`pd\` and \`np\` idioms. Keep the code minimal and focused.
+- Do NOT include imports, dataset load calls, or dataset save calls.
 - If the step has more than one logical notebook phase, you MUST separate it with explicit comment markers like \`# Cell 1\`, \`# Cell 2\`.
 - Treat audit/profile, transform, and post-transform validation as separate notebook phases whenever they are distinct.
 - Do NOT collapse audit + transform + validation into one monolithic cell.
@@ -436,23 +441,15 @@ export function buildSegmentedPreprocessingCellContent(params: {
     });
   }
 
-  if (params.segmentIndex === 0) {
-    return [
-      `df = load_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`,
-      '',
-      trimmedSegment
-    ].join('\n');
-  }
-
-  if (params.segmentIndex === params.segmentCount - 1) {
-    return [
-      trimmedSegment,
-      '',
-      `save_preprocessing_dataset(${JSON.stringify(dataset.filename)}, ${JSON.stringify(dataset.datasetId)}, ${JSON.stringify(dataset.fileType)}, "df")`
-    ].join('\n');
-  }
-
-  return trimmedSegment;
+  return buildPreprocessingSegmentedCellContent({
+    filename: dataset.filename,
+    datasetId: dataset.datasetId,
+    fileType: dataset.fileType,
+    dataframeName: 'df',
+    segment: trimmedSegment,
+    segmentIndex: params.segmentIndex,
+    segmentCount: params.segmentCount
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +760,14 @@ async function executePreprocessingToolCall(
     const existing = await runRepository.getById(sanitizedRunId);
     if (!existing) {
       return fail(sanitizedRunId, 'RUN_NOT_FOUND', `Run ${sanitizedRunId} not found.`);
+    }
+    if (existing.projectId !== projectId) {
+      return fail(
+        sanitizedRunId,
+        'RUN_PROJECT_MISMATCH',
+        `Run ${sanitizedRunId} belongs to project ${existing.projectId}, not ${projectId}.`,
+        { projectId, runProjectId: existing.projectId }
+      );
     }
     run = existing;
   } else {

@@ -41,7 +41,8 @@ npm install
 
 From the monorepo root, the same scripts are available as
 `video:dev`, `video:build`, `video:build:draft`, `video:voiceover`,
-`lint:video`.
+`video:present:build`, `video:present:export-pdf`, `lint:video`, and
+`assets:check`.
 
 ## Project layout
 
@@ -70,8 +71,8 @@ video/
 │   └── helpers/           BrowserChrome, WaitForFonts, small utilities
 ├── public/
 │   ├── fonts/             self-hosted Monaspace Neon (.woff2)
-│   ├── main/              screen-recording MP4s (gitignored; drop files here)
-│   └── voiceover/main/    ElevenLabs MP3s (gitignored; generated)
+│   ├── main/              committed Shree release/demo MP4 source assets
+│   └── voiceover/main/    committed Shree VO MP3s + alignment sidecars
 ├── voiceover/scripts/     hand-written narration .txt files
 ├── scripts/
 │   ├── voiceover.mts      .txt → MP3 driver
@@ -83,6 +84,10 @@ video/
 ├── remotion.config.ts     h264 / CRF 18 / yuv420p defaults
 └── package.json
 ```
+
+Shree's current `public/main/*.mp4`, `public/voiceover/main/*.mp3`, and paired
+`.alignment.json` files are intentional committed deliverables. Keep generated
+music, SFX, capture scratch files, and render outputs local/ignored.
 
 ## What goes where (cheatsheet)
 

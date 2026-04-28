@@ -87,6 +87,13 @@ export function resolveJwtSecret(
   return jwtSecret ?? DEFAULT_DEV_JWT_SECRET;
 }
 
+export function resolveBenchmarkAuthBypass(
+  nodeEnv: string,
+  benchmarkAuthBypass: string | undefined
+): boolean {
+  return nodeEnv !== 'production' && benchmarkAuthBypass === 'true';
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parsePort(process.env.PORT),
@@ -146,8 +153,10 @@ export const env = {
     process.env.NODE_ENV !== 'production'
     && process.env.DEV_BYPASS_EMAIL_VERIFICATION === 'true',
   benchmarkAuthBypass:
-    process.env.NODE_ENV !== 'production'
-    && process.env.BENCHMARK_AUTH_BYPASS === 'true',
+    resolveBenchmarkAuthBypass(
+      process.env.NODE_ENV ?? 'development',
+      process.env.BENCHMARK_AUTH_BYPASS
+    ),
 
   // Email (SMTP)
   smtpHost: process.env.SMTP_HOST ?? '',

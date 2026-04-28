@@ -96,10 +96,10 @@ For no-OpenAI preprocessing validation, run the backend with `LLM_PROVIDER=mock`
 
 ```bash
 LLM_PROVIDER=mock npm run benchmark:preprocessing:mock
-LLM_PROVIDER=mock AUTOML_BENCHMARK_AUTH_BYPASS=true npm run test:preprocessing:burnin
+LLM_PROVIDER=mock BENCHMARK_AUTH_BYPASS=true npm run test:preprocessing:burnin
 ```
 
-`AUTOML_BENCHMARK_AUTH_BYPASS=true` is non-production-only and exists solely for the raw backend burn-in helper, where requests are driven directly by the harness instead of the browser UI. The Playwright preprocessing benchmark uses normal register/login tokens so it exercises the same auth flow as the real app. Production must keep the bypass unset.
+`BENCHMARK_AUTH_BYPASS=true` is non-production-only and exists solely for benchmark and burn-in harnesses that drive authenticated backend requests with `x-benchmark-user-*` headers. The backend ignores this flag when `NODE_ENV=production`; production must keep the bypass unset. Do not use legacy auth-bypass aliases.
 
 Environment overrides:
 

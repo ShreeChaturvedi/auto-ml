@@ -99,7 +99,11 @@ function buildNodeSpecificSystemSections(node: PreprocessingControllerNode): str
         'Batch your understanding from one profile call — do not call profile_active_dataset repeatedly.'
       ];
     case 'generate_code':
-      return ['Your next action should materialize executable code for the current step.'];
+      return [
+        'Your next action should materialize executable code for the current step.',
+        'The visible preprocessing cell scaffold already imports pandas as pd and numpy as np, loads the active dataframe, and saves it after execution.',
+        'Generate only transformation or audit code for the current dataframe; do not include dataset load/save calls or duplicate canonical imports.'
+      ];
     case 'write_code':
       return ['Your next action should bind code to notebook cells and/or execute the prepared cell.'];
     case 'record_execution':

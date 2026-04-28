@@ -6,7 +6,11 @@ import * as notebookService from '../../notebook/notebookService.js';
 import type { WorkflowGraphState } from '../graphState.js';
 
 import { inferPreprocessingActionNode } from './preprocessing/transition.js';
-import { preprocessingPhaseConfig } from './preprocessing.js';
+import {
+  buildPreprocessingCodeGenerationSystemPrompt,
+  buildSegmentedPreprocessingCellContent,
+  preprocessingPhaseConfig
+} from './preprocessing.js';
 
 describe('preprocessingPhaseConfig', () => {
   it('routes failed execution status back to generate_code for repair', () => {
@@ -81,6 +85,105 @@ describe('preprocessingPhaseConfig', () => {
         }
       }
     ])).toBe('summarize');
+  });
+
+  it('builds segmented preprocessing cells with visible pd and np imports on the load cell', () => {
+    const firstCell = buildSegmentedPreprocessingCellContent({
+      segment: [
+        'import pandas as pd',
+        'import numpy as np',
+        'missing_summary = df.isna().sum()'
+      ].join('\n'),
+      segmentIndex: 0,
+      segmentCount: 2,
+      dataset: {
+        filename: 'data.csv',
+        datasetId: 'dataset-1',
+        fileType: 'csv'
+      }
+    });
+    const lastCell = buildSegmentedPreprocessingCellContent({
+      segment: 'df = df.fillna(0)',
+      segmentIndex: 1,
+      segmentCount: 2,
+      dataset: {
+        filename: 'data.csv',
+        datasetId: 'dataset-1',
+        fileType: 'csv'
+      }
+    });
+
+    expect(firstCell.split('\n').slice(0, 4)).toEqual([
+      'import pandas as pd',
+      'import numpy as np',
+      '',
+      'df = load_preprocessing_dataset("data.csv", "dataset-1", "csv", "df")'
+    ]);
+    expect(firstCell.match(/^import pandas as pd$/gm)).toHaveLength(1);
+    expect(firstCell.match(/^import numpy as np$/gm)).toHaveLength(1);
+    expect(lastCell).not.toContain('import pandas as pd');
+    expect(lastCell).not.toContain('import numpy as np');
+    expect(lastCell).toContain('save_preprocessing_dataset("data.csv", "dataset-1", "csv", "df")');
+  });
+
+  it('tells delegated code generation that the notebook scaffold owns imports and dataset I/O', () => {
+    const prompt = buildPreprocessingCodeGenerationSystemPrompt();
+
+    expect(prompt).toContain('imports `pandas as pd` and `numpy as np`');
+    expect(prompt).toContain('Do NOT include imports, dataset load calls, or dataset save calls.');
+  });
+
+  it('rejects explicit preprocessing runIds from another project in the phase executor', async () => {
+    const runRepository = createFilePreprocessingRunRepository(env.preprocessingRunsPath);
+    await runRepository.save({
+      runId: 'prep-run-project-mismatch',
+      projectId: 'project-1',
+      activeDatasetId: 'dataset-1',
+      derivedDatasetIds: [],
+      steps: {},
+      checkpoints: [],
+      events: [],
+      createdAt: '2026-04-03T00:00:00.000Z',
+      updatedAt: '2026-04-03T00:00:00.000Z'
+    });
+
+    const result = await preprocessingPhaseConfig.executePhaseSpecificTool(
+      'list_project_datasets',
+      { runId: 'prep-run-project-mismatch' },
+      {
+        projectId: 'project-2',
+        toolCallId: 'tool-call-project-mismatch',
+        args: { runId: 'prep-run-project-mismatch' },
+        run: {
+          runId: 'workflow-run-project-mismatch',
+          threadId: 'workflow-thread-project-mismatch',
+          projectId: 'project-2',
+          phase: 'preprocessing',
+          status: 'running',
+          currentNode: 'context',
+          revision: 1,
+          retryBudget: 3,
+          repairAttemptCount: 0,
+          createdAt: '2026-04-03T00:00:00.000Z',
+          updatedAt: '2026-04-03T00:00:00.000Z'
+        },
+        turn: {
+          projectId: 'project-2',
+          phase: 'preprocessing'
+        }
+      } as never
+    );
+
+    expect(result).toMatchObject({
+      error: expect.stringContaining('belongs'),
+      output: {
+        isError: true,
+        runId: 'prep-run-project-mismatch',
+        reasonCode: 'RUN_PROJECT_MISMATCH',
+        projectId: 'project-2',
+        runProjectId: 'project-1'
+      }
+    });
   });
 
   it('falls back to persisted preprocessing run state for deterministic validate actions', async () => {

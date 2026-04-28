@@ -8,7 +8,7 @@ const API_BASE = getApiBase();
 const WORKFLOW_PROMPT = 'Create a safe preprocessing checkpoint for this dataset and summarize the result.';
 const CHECKPOINT_TITLE_PATTERN = /preprocessing.*checkpoint/i;
 const variantMap = new Map(buildPreprocessingMockDatasetVariants().map((variant) => [variant.name, variant]));
-const AUTH_BYPASS = process.env.AUTOML_BENCHMARK_AUTH_BYPASS === 'true' || process.env.BENCHMARK_AUTH_BYPASS === 'true';
+const AUTH_BYPASS = process.env.BENCHMARK_AUTH_BYPASS === 'true';
 
 interface AuthResponse {
   accessToken: string;
@@ -31,13 +31,26 @@ interface ApiProject {
   metadata?: Record<string, unknown>;
 }
 
+function buildUnsignedClientJwt(userId: string) {
+  const encode = (value: unknown) => Buffer
+    .from(JSON.stringify(value), 'utf8')
+    .toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({
+    sub: userId,
+    exp: now + 60 * 60,
+    iat: now
+  })}.benchmark`;
+}
+
 async function registerUser(request: APIRequestContext): Promise<BenchmarkAuthContext> {
   if (AUTH_BYPASS) {
     const userId = randomUUID();
     const email = `${userId.slice(0, 12)}@benchmark.local`;
+    const clientToken = buildUnsignedClientJwt(userId);
     return {
-      accessToken: 'benchmark-bypass',
-      refreshToken: 'benchmark-bypass',
+      accessToken: clientToken,
+      refreshToken: clientToken,
       user: {
         user_id: userId,
         email,
@@ -152,12 +165,20 @@ async function seedAuth(page: Page, auth: AuthResponse, project: ApiProject) {
   }, { a: auth, p: project });
 }
 
-async function interceptVerifiedAuth(page: Page, auth: AuthResponse) {
+async function routeAuthenticatedApi(page: Page, auth: BenchmarkAuthContext) {
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ user: { ...auth.user, email_verified: true } })
+    });
+  });
+  await page.route('**/api/**', async (route) => {
+    await route.continue({
+      headers: {
+        ...route.request().headers(),
+        ...auth.headers
+      }
     });
   });
 }
@@ -268,7 +289,7 @@ test.describe.serial('preprocessing mock regression', () => {
       const uploadedDataset = await uploadDataset(request, auth, project.id, variant);
 
       await seedAuth(page, auth, project);
-      await interceptVerifiedAuth(page, auth);
+      await routeAuthenticatedApi(page, auth);
       await page.goto(`/project/${project.id}/preprocessing`);
       await selectDatasetAndSubmit(page, uploadedDataset.filename);
       await assertWorkflowSucceeded(page);

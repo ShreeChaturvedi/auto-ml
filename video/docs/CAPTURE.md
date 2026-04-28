@@ -127,6 +127,6 @@ Force MP4/H.264 in the export dialog. Remotion can decode webm but H.264 is
 more predictable for final delivery.
 
 **File feels too big (>200 MB for 30 s).**
-That's expected at 60 fps 1920×1080. We `.gitignore` `public/main/*.mp4`
-specifically for this reason; each teammate regenerates locally or pulls
-from shared storage (if we set it up).
+That's expected at 60 fps 1920×1080. The current Shree `public/main/*.mp4`
+release/demo assets are intentionally committed. Keep ad hoc capture scratch
+files in `public/captures/` so they stay local/ignored until promoted.

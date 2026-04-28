@@ -67,4 +67,28 @@ describe('buildPreprocessingActionRequest', () => {
     );
     expect(request.messages[1]?.content).toContain('RAG snippets:\n1. playbook.md: Mention row-count checks before committing.');
   });
+
+  it('tells code generation turns that the scaffold already imports pd and np', () => {
+    const summary: PreprocessingControllerSummary = {
+      threadId: 'prep-thread:test:generate-request',
+      runId: 'prep-run-1',
+      turnMode: 'action_required',
+      currentNode: 'generate_code',
+      allowedTools: ['materialize_step_code'],
+      allowTextResponse: false,
+      requireToolCall: true,
+      pendingApproval: false,
+      activeStepId: 'step-1',
+      updatedAt: '2026-03-01T00:00:00.000Z'
+    };
+
+    const request = buildPreprocessingActionRequest({ dataset }, summary);
+
+    expect(request.messages[0]?.content).toContain(
+      'already imports pandas as pd and numpy as np'
+    );
+    expect(request.messages[0]?.content).toContain(
+      'Generate only transformation or audit code'
+    );
+  });
 });

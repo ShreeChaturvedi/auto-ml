@@ -13,7 +13,7 @@ const API_BASE = process.env.AUTOML_API_BASE_URL ?? 'http://127.0.0.1:4000/api';
 const PROMPT = 'Create a safe preprocessing checkpoint for this dataset and summarize the result.';
 const OUT_DIR = path.resolve(ROOT, `tmp/preprocessing_mock_burn_in_${Date.now()}`);
 const variantMap = new Map(buildPreprocessingMockDatasetVariants().map((variant) => [variant.name, variant]));
-const AUTH_BYPASS = process.env.AUTOML_BENCHMARK_AUTH_BYPASS === 'true' || process.env.BENCHMARK_AUTH_BYPASS === 'true';
+const AUTH_BYPASS = process.env.BENCHMARK_AUTH_BYPASS === 'true';
 
 mkdirSync(OUT_DIR, { recursive: true });
 

@@ -47,6 +47,8 @@ stages:
 noop:
   stage: noop
   image: alpine:3.20
+  variables:
+    GIT_STRATEGY: none
   script:
     - echo "noop — satisfies 'pipelines must succeed' when the heavy jobs are rule-skipped"
   rules:

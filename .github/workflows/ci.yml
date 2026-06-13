@@ -57,7 +57,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: landing/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            landing/package-lock.json
+
+      # Landing reuses shared components from frontend/src (e.g. theme-toggle
+      # pulls in lucide-react), so frontend deps must be installed for the
+      # astro build to resolve those imports.
+      - name: Install frontend (shared components)
+        run: npm --prefix frontend ci --no-audit --no-fund
 
       - name: Install landing
         run: npm --prefix landing ci --no-audit --no-fund

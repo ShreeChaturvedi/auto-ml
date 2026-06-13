@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, sprint11, sprint12]
+  pull_request:
+    branches: [main, sprint11, sprint12]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+
+jobs:
+  app:
+    name: Backend + Frontend (lint, build, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend
+        run: npm --prefix backend ci --no-audit --no-fund
+
+      - name: Install frontend
+        run: npm --prefix frontend ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test
+
+  landing:
+    name: Landing (typecheck, build, test, lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Install landing
+        run: npm --prefix landing ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm --prefix landing run typecheck
+
+      - name: Build
+        run: npm --prefix landing run build
+
+      - name: Test
+        run: npm --prefix landing run test
+
+      - name: Lint
+        run: npm --prefix landing run lint

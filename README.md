@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/last-commit/ShreeChaturvedi/auto-ml/main?style=flat-square&label=main" alt="last commit on main">
+  <a href="https://github.com/ShreeChaturvedi/auto-ml/actions/workflows/ci.yml"><img src="https://github.com/ShreeChaturvedi/auto-ml/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license">
   <img src="https://img.shields.io/badge/node-22%20LTS-brightgreen?style=flat-square&logo=nodedotjs" alt="node">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="typescript">

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://gitlab.csi.miamioh.edu/2026-senior-design-projects/ai-augmented-automl-toolchain/ai-augmented-auto-ml-toolchain/badges/main/pipeline.svg?style=flat-square" alt="pipeline">
+  <img src="https://img.shields.io/github/last-commit/ShreeChaturvedi/auto-ml/main?style=flat-square&label=main" alt="last commit on main">
   <img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license">
   <img src="https://img.shields.io/badge/node-22%20LTS-brightgreen?style=flat-square&logo=nodedotjs" alt="node">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="typescript">

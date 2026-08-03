@@ -36,17 +36,33 @@ export function useDatasetPreviewPagination({
       return;
     }
 
+    // Capture identity at call time so a file switch / unmount race does not
+    // toast a stale failure from the previous dataset's in-flight request.
+    const datasetId = file.metadata.datasetId;
+    const fileId = file.id;
+    const offset = preview.rows.length;
+
     setIsLoadingMore(true);
     try {
-      const page = await getDatasetRows(file.metadata.datasetId, {
-        offset: preview.rows.length,
+      const page = await getDatasetRows(datasetId, {
+        offset,
         limit: pageSize
       });
-      appendPreviewPage(file.id, page);
+      appendPreviewPage(fileId, page);
     } catch (error) {
-      toast.error('Failed to load more rows', {
-        description: extractApiErrorMessage(error)
-      });
+      // Do not toast on abort/cancel or empty-page races common on first load
+      // when the explorer mounts, cancels, and remounts pagination.
+      const message = extractApiErrorMessage(error).toLowerCase();
+      const isCancelled =
+        (error instanceof DOMException && error.name === 'AbortError')
+        || (error instanceof Error && /abort|cancel/i.test(error.message))
+        || message.includes('abort')
+        || message.includes('cancel');
+      if (!isCancelled) {
+        toast.error('Failed to load more rows', {
+          description: extractApiErrorMessage(error)
+        });
+      }
     } finally {
       setIsLoadingMore(false);
     }

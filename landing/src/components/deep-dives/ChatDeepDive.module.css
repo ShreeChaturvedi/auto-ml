@@ -193,3 +193,15 @@
     animation: none;
   }
 }
+
+/* Ensure the text caret is visible on white/light input chrome. */
+.root :global(input),
+.root :global(textarea) {
+  caret-color: #0a0a0a;
+}
+
+:global(.light) .root :global(input),
+:global(.light) .root :global(textarea) {
+  caret-color: #0a0a0a;
+  color: #0a0a0a;
+}

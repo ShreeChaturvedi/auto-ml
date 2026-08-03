@@ -11,3 +11,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Text caret contrast on light/white interactive controls (deep-dive + chrome). */
+.light input,
+.light textarea,
+.light [contenteditable="true"],
+.light [data-slot="input"],
+.light [data-slot="textarea"] {
+  caret-color: #0a0a0a;
+  color: #0a0a0a;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: rgb(10 10 10 / 0.45);
+}
+

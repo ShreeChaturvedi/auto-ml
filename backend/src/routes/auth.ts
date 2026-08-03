@@ -6,6 +6,7 @@ import { appLogger } from '../logging/logger.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth, requireAuthAllowUnverified, invalidateUserCache } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
+import { loginRateLimit, recordLoginFailure, clearLoginFailures } from '../middleware/loginRateLimit.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { authService } from '../services/authService.js';
 import { emailService } from '../services/emailService.js';
@@ -119,24 +120,31 @@ export function registerAuthRoutes(router: Router, pool: Pool) {
   );
 
   // POST /auth/login
+  // Rate limits: per-IP (default 30/15m) and per-email (default 10/15m);
+  // optional lockout after AUTH_LOGIN_LOCKOUT_FAILURES failed attempts.
   router.post(
     '/auth/login',
+    loginRateLimit,
     validateRequest(loginSchema),
     asyncHandler(async (req, res) => {
       const { email, password, rememberMe } = req.body;
+      const ip = (req.ip || req.socket?.remoteAddress || 'unknown').toString();
 
       const userWithHash = await userRepository.findByEmail(email);
       if (!userWithHash) {
+        recordLoginFailure(email, ip);
         sendUnauthorized(res, 'Invalid email or password');
         return;
       }
 
       const validPassword = await authService.verifyPassword(password, userWithHash.password_hash);
       if (!validPassword) {
+        recordLoginFailure(email, ip);
         sendUnauthorized(res, 'Invalid email or password');
         return;
       }
 
+      clearLoginFailures(email, ip);
       const user = userRepository.toSafeUser(userWithHash);
       await userRepository.updateLastLogin(user.user_id);
       const tokens = await issueAndStoreTokens(user, req, rememberMe);

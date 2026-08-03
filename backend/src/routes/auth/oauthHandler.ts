@@ -85,12 +85,38 @@ export async function handleGoogleCallback(
     verified_email?: boolean;
   };
 
+  // Require Google-verified email to prevent account takeover via unverified aliases.
+  if (!googleUser.verified_email) {
+    appLogger.warn(`[auth] Google OAuth rejected unverified email ${googleUser.email}`);
+    return res.status(403).json({
+      error: 'Google account email is not verified. Verify the email with Google and try again.'
+    });
+  }
+
   // Check if user exists by email
   const existingUser = await userRepository.findByEmail(googleUser.email);
   let safeUser: SafeUser;
 
   if (existingUser) {
-    // User exists, update last login
+    // Do not silently merge OAuth into a password-registered account without
+    // proof of control. Password accounts keep a password_hash; OAuth-only
+    // accounts were created with a random unusable password but are marked
+    // email_verified at creation. Require an already-verified email on the
+    // local user before linking (login), otherwise ask them to sign in with
+    // password first or contact support to link.
+    const isEmailVerified = Boolean(
+      (existingUser as { email_verified?: boolean; emailVerified?: boolean }).email_verified
+      ?? (existingUser as { emailVerified?: boolean }).emailVerified
+    );
+    if (!isEmailVerified) {
+      appLogger.warn(
+        `[auth] Google OAuth blocked silent merge into unverified password account ${googleUser.email}`
+      );
+      return res.status(409).json({
+        error:
+          'An account with this email already exists. Sign in with your password, then link Google from settings.'
+      });
+    }
     await userRepository.updateLastLogin(existingUser.user_id);
     safeUser = userRepository.toSafeUser(existingUser);
   } else {

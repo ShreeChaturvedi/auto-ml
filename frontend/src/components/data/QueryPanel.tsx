@@ -366,7 +366,7 @@ export function QueryPanel({
               connectorColorClassName={executeIconColorClass}
               ref={nlWorkflowRef}
             />
-            {nlPhase === 'idle' && <ContextualTipBar tips={nlTips} />}
+            {nlPhase === 'idle' && !englishQuery.trim() && <ContextualTipBar tips={nlTips} />}
           </>
         )}
       </div>

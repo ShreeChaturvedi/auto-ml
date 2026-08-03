@@ -16,6 +16,7 @@ import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates, resolveModelTemplateId } from './modelTemplates.js';
 import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
 import { deleteTuningStudiesByModelId } from './tuningService.js';
+import { resolveContainerSafeNJobs } from './parallelism.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);
@@ -405,8 +406,10 @@ export async function trainModel(input: TrainModelRequest): Promise<{ model: Mod
       ...(input.parameters ?? {})
     }).filter(([, value]) => value !== undefined)
   );
+  // Prefer a container-safe worker count over blind n_jobs=-1 (Docker cgroup).
+  const defaultNJobs = resolveContainerSafeNJobs(process.env.TRAINING_N_JOBS, 2);
   const optimizedParams = template.id.startsWith('random_forest_') && mergedParams.n_jobs === undefined
-    ? { ...mergedParams, n_jobs: -1 }
+    ? { ...mergedParams, n_jobs: defaultNJobs }
     : mergedParams;
 
   const container = await getOrCreateContainer({

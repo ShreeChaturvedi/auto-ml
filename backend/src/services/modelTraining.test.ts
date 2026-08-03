@@ -258,7 +258,7 @@ describe('trainModel', () => {
     expect(mockRunEvaluation).toHaveBeenCalledWith('persisted-model-id');
   });
 
-  it('adds n_jobs=-1 for random-forest direct training when not explicitly provided', async () => {
+  it('adds n_jobs=2 for random-forest direct training when not explicitly provided', async () => {
     mockReadFile.mockResolvedValue(JSON.stringify({
       metrics: { rmse: 1.23 },
       featureColumns: ['feat_a'],
@@ -281,8 +281,8 @@ describe('trainModel', () => {
       targetColumn: 'target',
     });
 
-    expect(mockKernelExecute.mock.calls[0]?.[1]).toContain('RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1)');
-    expect(mockModelCreate.mock.calls[0]?.[0]?.parameters).toMatchObject({ n_jobs: -1 });
+    expect(mockKernelExecute.mock.calls[0]?.[1]).toContain('RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42, n_jobs=2)');
+    expect(mockModelCreate.mock.calls[0]?.[0]?.parameters).toMatchObject({ n_jobs: 2 });
   });
 
   it('writes a clustering evaluation artifact immediately and skips background evaluation', async () => {

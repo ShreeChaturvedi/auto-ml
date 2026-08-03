@@ -27,6 +27,7 @@ import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 import { getModelTemplate } from './modelTemplates.js';
 import { resolveModelTestSize } from './modelTestSize.js';
 import {
+import { buildNJobsPythonSnippet } from './parallelism.js';
   buildOutputDirSetup,
   buildResultSaving,
   buildStandardImports,
@@ -202,6 +203,10 @@ export function buildTuningScript(options: BuildTuningScriptOptions): string {
 
   // ── Suppress Optuna default logging (we stream our own) ──
   lines.push('optuna.logging.set_verbosity(optuna.logging.WARNING)');
+  lines.push('');
+  lines.push('# Container-safe n_jobs (cgroup/CPU detect or TUNING_N_JOBS env; default cap 4)');
+  lines.push(...buildNJobsPythonSnippet('TUNING_N_JOBS', 4).split('\n'));
+
   lines.push(`sampler = optuna.samplers.TPESampler(seed=42) if '${options.sampler ?? 'tpe'}' == 'tpe' else optuna.samplers.RandomSampler(seed=42)`);
   lines.push('');
 

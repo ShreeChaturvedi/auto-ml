@@ -1,4 +1,19 @@
+import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const {
+  hashPassword,
+  generatePasswordResetToken,
+  generateTokens,
+  hashRefreshToken,
+  refreshTokenExpiryMs,
+} = vi.hoisted(() => ({
+  hashPassword: vi.fn().mockResolvedValue('hash'),
+  generatePasswordResetToken: vi.fn().mockReturnValue('rand'),
+  generateTokens: vi.fn().mockReturnValue({ accessToken: 'a', refreshToken: 'r' }),
+  hashRefreshToken: vi.fn().mockReturnValue('rh'),
+  refreshTokenExpiryMs: vi.fn().mockReturnValue(1000),
+}));
 
 vi.mock('../../../config.js', () => ({
   env: {
@@ -12,12 +27,6 @@ vi.mock('../../../logging/logger.js', () => ({
   appLogger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }));
 
-const hashPassword = vi.fn().mockResolvedValue('hash');
-const generatePasswordResetToken = vi.fn().mockReturnValue('rand');
-const generateTokens = vi.fn().mockReturnValue({ accessToken: 'a', refreshToken: 'r' });
-const hashRefreshToken = vi.fn().mockReturnValue('rh');
-const refreshTokenExpiryMs = vi.fn().mockReturnValue(1000);
-
 vi.mock('../../../services/authService.js', () => ({
   authService: {
     hashPassword,
@@ -28,58 +37,81 @@ vi.mock('../../../services/authService.js', () => ({
   },
 }));
 
+import type { UserRepository } from '../../../repositories/userRepository.js';
 import { handleGoogleCallback } from '../oauthHandler.js';
 
+type GoogleUser = {
+  id: string;
+  email: string;
+  name: string;
+  verified_email: boolean;
+};
+
+const googleUserStore: { current: GoogleUser | null } = { current: null };
+
 function mockRes() {
-  const res: any = {};
-  res.status = vi.fn().mockReturnValue(res);
-  res.json = vi.fn().mockReturnValue(res);
-  return res;
+  const res = {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  };
+  return res as unknown as Response & {
+    status: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+  };
 }
 
-function mockRepo(overrides: Record<string, unknown> = {}) {
+function mockRepo(overrides: Partial<Record<keyof UserRepository, unknown>> = {}): UserRepository {
   return {
     findByEmail: vi.fn().mockResolvedValue(null),
     create: vi.fn(),
     markEmailVerified: vi.fn(),
     findById: vi.fn(),
     updateLastLogin: vi.fn(),
-    toSafeUser: vi.fn((u) => u),
+    toSafeUser: vi.fn((u: unknown) => u),
     storeRefreshToken: vi.fn(),
     ...overrides,
-  } as any;
+  } as unknown as UserRepository;
+}
+
+function mockReq(): Request {
+  return { body: { code: 'c' }, ip: '1', get: () => 'ua' } as unknown as Request;
+}
+
+function mockFetchResponse(body: unknown): globalThis.Response {
+  return {
+    ok: true,
+    json: async () => body,
+  } as unknown as globalThis.Response;
 }
 
 describe('handleGoogleCallback', () => {
   beforeEach(() => {
+    googleUserStore.current = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string) => {
+      vi.fn(async (url: string | URL | globalThis.Request) => {
         if (String(url).includes('oauth2.googleapis.com/token')) {
-          return { ok: true, json: async () => ({ access_token: 'tok', id_token: 'id' }) } as any;
+          return mockFetchResponse({ access_token: 'tok', id_token: 'id' });
         }
-        return {
-          ok: true,
-          json: async () => (globalThis as any).__googleUser,
-        } as any;
+        return mockFetchResponse(googleUserStore.current);
       })
     );
   });
 
   it('rejects unverified Google emails', async () => {
-    (globalThis as any).__googleUser = {
+    googleUserStore.current = {
       id: 'g1',
       email: 'a@x.com',
       name: 'A',
       verified_email: false,
     };
     const res = mockRes();
-    await handleGoogleCallback({ body: { code: 'c' }, ip: '1', get: () => 'ua' } as any, res, mockRepo());
+    await handleGoogleCallback(mockReq(), res, mockRepo());
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('blocks silent merge into unverified password account', async () => {
-    (globalThis as any).__googleUser = {
+    googleUserStore.current = {
       id: 'g1',
       email: 'a@x.com',
       name: 'A',
@@ -88,7 +120,7 @@ describe('handleGoogleCallback', () => {
     const existing = { user_id: 'u1', email: 'a@x.com', email_verified: false };
     const res = mockRes();
     await handleGoogleCallback(
-      { body: { code: 'c' }, ip: '1', get: () => 'ua' } as any,
+      mockReq(),
       res,
       mockRepo({ findByEmail: vi.fn().mockResolvedValue(existing) })
     );
@@ -96,7 +128,7 @@ describe('handleGoogleCallback', () => {
   });
 
   it('logs into verified existing account', async () => {
-    (globalThis as any).__googleUser = {
+    googleUserStore.current = {
       id: 'g1',
       email: 'a@x.com',
       name: 'A',
@@ -108,7 +140,7 @@ describe('handleGoogleCallback', () => {
       toSafeUser: vi.fn().mockReturnValue(existing),
     });
     const res = mockRes();
-    await handleGoogleCallback({ body: { code: 'c' }, ip: '1', get: () => 'ua' } as any, res, repo);
+    await handleGoogleCallback(mockReq(), res, repo);
     expect(repo.updateLastLogin).toHaveBeenCalledWith('u1');
     expect(res.json).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalledWith(409);

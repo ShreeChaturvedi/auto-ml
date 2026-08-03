@@ -1,4 +1,6 @@
+import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import {
   clearLoginFailures,
   loginRateLimit,
@@ -7,10 +9,18 @@ import {
 } from '../loginRateLimit.js';
 
 function mockRes() {
-  const res: any = {};
-  res.status = vi.fn().mockReturnValue(res);
-  res.json = vi.fn().mockReturnValue(res);
-  return res;
+  const res = {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  };
+  return res as unknown as Response & {
+    status: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+  };
+}
+
+function mockReq(ip: string, email: string): Request {
+  return { ip, body: { email }, socket: {} } as unknown as Request;
 }
 
 describe('loginRateLimit', () => {
@@ -23,9 +33,9 @@ describe('loginRateLimit', () => {
   });
 
   it('allows requests under the limit', () => {
-    const req: any = { ip: '1.1.1.1', body: { email: 'a@x.com' }, socket: {} };
+    const req = mockReq('1.1.1.1', 'a@x.com');
     const res = mockRes();
-    const next = vi.fn();
+    const next = vi.fn() as unknown as NextFunction;
     loginRateLimit(req, res, next);
     expect(next).toHaveBeenCalled();
   });
@@ -33,18 +43,10 @@ describe('loginRateLimit', () => {
   it('429s after per-email max', () => {
     const res = mockRes();
     for (let i = 0; i < 2; i++) {
-      loginRateLimit(
-        { ip: '2.2.2.2', body: { email: 'b@x.com' }, socket: {} } as any,
-        mockRes(),
-        vi.fn()
-      );
+      loginRateLimit(mockReq('2.2.2.2', 'b@x.com'), mockRes(), vi.fn() as unknown as NextFunction);
     }
-    const next = vi.fn();
-    loginRateLimit(
-      { ip: '2.2.2.2', body: { email: 'b@x.com' }, socket: {} } as any,
-      res,
-      next
-    );
+    const next = vi.fn() as unknown as NextFunction;
+    loginRateLimit(mockReq('2.2.2.2', 'b@x.com'), res, next);
     expect(res.status).toHaveBeenCalledWith(429);
     expect(next).not.toHaveBeenCalled();
   });
@@ -54,12 +56,8 @@ describe('loginRateLimit', () => {
     recordLoginFailure('c@x.com', '3.3.3.3');
     recordLoginFailure('c@x.com', '3.3.3.3');
     const res = mockRes();
-    const next = vi.fn();
-    loginRateLimit(
-      { ip: '3.3.3.3', body: { email: 'c@x.com' }, socket: {} } as any,
-      res,
-      next
-    );
+    const next = vi.fn() as unknown as NextFunction;
+    loginRateLimit(mockReq('3.3.3.3', 'c@x.com'), res, next);
     expect(res.status).toHaveBeenCalledWith(429);
     clearLoginFailures('c@x.com', '3.3.3.3');
   });

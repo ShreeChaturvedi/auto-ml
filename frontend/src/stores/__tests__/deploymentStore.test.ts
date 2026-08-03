@@ -44,25 +44,56 @@ describe('deploymentStore.deploy', () => {
     vi.clearAllMocks();
   });
 
-  it('hydrates persisted failed deployments after createDeployment rejects', async () => {
-    const failedDeployment = buildDeployment({
+  it('inserts an optimistic failed deployment when createDeployment rejects', async () => {
+    createDeploymentMock.mockRejectedValueOnce(new Error('Inference container exited with code 3'));
+    // Create never persisted — server list empty; optimistic row must remain.
+    listDeploymentsMock.mockResolvedValueOnce({ deployments: [] });
+
+    await expect(
+      useDeploymentStore.getState().deploy('model-1', 'project-1', 'Endpoint 1'),
+    ).rejects.toThrow('Inference container exited with code 3');
+
+    // Allow the fire-and-forget reconcile microtask to finish.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(listDeploymentsMock).toHaveBeenCalledWith('project-1');
+
+    const state = useDeploymentStore.getState();
+    expect(state.deployments).toHaveLength(1);
+    const failed = state.deployments[0];
+    expect(failed.status).toBe('failed');
+    expect(failed.modelId).toBe('model-1');
+    expect(failed.projectId).toBe('project-1');
+    expect(failed.name).toBe('Endpoint 1');
+    expect(failed.errorMessage).toBe('Inference container exited with code 3');
+    expect(failed.deploymentId).toMatch(/^failed-\d+$/);
+    expect(state.selectedDeploymentId).toBe(failed.deploymentId);
+    expect(state.error).toBe('Inference container exited with code 3');
+    expect(state.isLoading).toBe(false);
+  });
+
+  it('prefers a server-persisted failed deployment over the optimistic row', async () => {
+    const persisted = buildDeployment({
       deploymentId: 'dep-failed',
       status: 'failed',
       errorMessage: 'Inference container exited with code 3',
     });
 
     createDeploymentMock.mockRejectedValueOnce(new Error('Inference container exited with code 3'));
-    listDeploymentsMock.mockResolvedValueOnce({ deployments: [failedDeployment] });
+    listDeploymentsMock.mockResolvedValueOnce({ deployments: [persisted] });
 
     await expect(
       useDeploymentStore.getState().deploy('model-1', 'project-1', 'Endpoint 1'),
     ).rejects.toThrow('Inference container exited with code 3');
 
-    expect(listDeploymentsMock).toHaveBeenCalledWith('project-1');
-    expect(useDeploymentStore.getState().deployments).toEqual([failedDeployment]);
-    expect(useDeploymentStore.getState().selectedDeploymentId).toBe('dep-failed');
-    expect(useDeploymentStore.getState().error).toBe('Inference container exited with code 3');
-    expect(useDeploymentStore.getState().isLoading).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const state = useDeploymentStore.getState();
+    expect(state.deployments).toEqual([persisted]);
+    expect(state.selectedDeploymentId).toBe('dep-failed');
+    expect(state.error).toBe('Inference container exited with code 3');
   });
 
   it('stores successful deployments without an extra refresh', async () => {

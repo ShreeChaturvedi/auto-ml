@@ -6,11 +6,11 @@ import { verifyProjectOwnership } from '../../middleware/resourceOwnership.js';
 import { getProjectRepository } from '../../repositories/projectRepository.js';
 import * as kernelManager from '../../services/kernelManager.js';
 import { getOrEnsureContainer } from '../../services/notebook/cellExecutionService.js';
-import * as notebookService from '../../services/notebook/notebookService.js';
 import {
   getNotebookRecoveryCandidate,
   recoverNotebookFromWorkflowHistory
 } from '../../services/notebook/notebookRecoveryService.js';
+import * as notebookService from '../../services/notebook/notebookService.js';
 import type { AuthRequest } from '../../types/auth.js';
 import { NotebookKindSchema } from '../../types/notebook.js';
 

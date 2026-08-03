@@ -26,8 +26,8 @@ import { resolveAndHealTargetColumn } from '../utils/modelUtils.js';
 
 import { getModelTemplate } from './modelTemplates.js';
 import { resolveModelTestSize } from './modelTestSize.js';
-import {
 import { buildNJobsPythonSnippet } from './parallelism.js';
+import {
   buildOutputDirSetup,
   buildResultSaving,
   buildStandardImports,

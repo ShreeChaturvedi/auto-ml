@@ -4,8 +4,8 @@
 
 import type { DatasetProfile } from '../../../types/dataset.js';
 import type { ToolResult } from '../../../types/llm.js';
-import type { FeatureSpec } from '../../featureEngineering.js';
 import { findLikelyIdentifierColumns } from '../../columnClassification.js';
+import type { FeatureSpec } from '../../featureEngineering.js';
 import { buildTemplateSummary } from '../../modelTemplates.js';
 import type {
   LlmRequest,

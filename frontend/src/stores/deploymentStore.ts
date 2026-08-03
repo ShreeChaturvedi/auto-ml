@@ -73,8 +73,37 @@ export const useDeploymentStore = create<DeploymentState>((set, get) => ({
         error,
         isLoading: false,
       }));
-      // Best-effort reconcile with server (may no-op if create never persisted).
-      void get().refreshDeployments(projectId).catch(() => undefined);
+      // Best-effort reconcile: if the server persisted a failed row, prefer it.
+      // Do not call refreshDeployments here — it clears `error` and would wipe
+      // the optimistic row when create never persisted.
+      void api
+        .listDeployments(projectId)
+        .then(({ deployments: serverDeployments }) => {
+          if (serverDeployments.length === 0) return;
+          set(state => {
+            const serverIds = new Set(serverDeployments.map(d => d.deploymentId));
+            // Drop optimistic rows that the server has already persisted (same model + name).
+            const keepOptimistic = state.deployments.filter(d => {
+              if (!d.deploymentId.startsWith('failed-') || serverIds.has(d.deploymentId)) {
+                return false;
+              }
+              return !serverDeployments.some(
+                s => s.modelId === d.modelId && s.name === d.name,
+              );
+            });
+            const deployments = [...serverDeployments, ...keepOptimistic];
+            const selectedStillPresent = deployments.some(
+              d => d.deploymentId === state.selectedDeploymentId,
+            );
+            return {
+              deployments,
+              selectedDeploymentId: selectedStillPresent
+                ? state.selectedDeploymentId
+                : (serverDeployments[0]?.deploymentId ?? state.selectedDeploymentId),
+            };
+          });
+        })
+        .catch(() => undefined);
       throw err;
     }
   },

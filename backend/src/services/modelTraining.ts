@@ -15,8 +15,8 @@ import { syncWorkspaceDatasets } from './executionWorkspace.js';
 import * as kernelManager from './kernelManager.js';
 import { getModelTemplate, listModelTemplates, resolveModelTemplateId } from './modelTemplates.js';
 import { DEFAULT_MODEL_TEST_SIZE, normalizeModelTestSize } from './modelTestSize.js';
-import { deleteTuningStudiesByModelId } from './tuningService.js';
 import { resolveContainerSafeNJobs } from './parallelism.js';
+import { deleteTuningStudiesByModelId } from './tuningService.js';
 
 const datasetRepository = createDatasetRepository(env.datasetMetadataPath);
 const modelRepository = createModelRepository(env.modelMetadataPath);

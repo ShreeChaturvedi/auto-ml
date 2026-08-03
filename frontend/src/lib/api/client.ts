@@ -263,6 +263,10 @@ export async function apiFetch(path: string, options: RequestOptions = {}): Prom
 
   await applyAuthSideEffects(response);
 
+  if (response.ok) {
+    notifyApiActivity();
+  }
+
   return response;
 }
 

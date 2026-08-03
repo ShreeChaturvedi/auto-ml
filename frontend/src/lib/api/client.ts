@@ -1,5 +1,13 @@
 import { useAuthStore } from '@/stores/authStore';
 
+/** Notify session idle tracking that authenticated API traffic occurred. */
+function notifyApiActivity(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('automl:api-activity'));
+  }
+}
+
+
 const BASE_URL = (import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api').replace(/\/$/, '');
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

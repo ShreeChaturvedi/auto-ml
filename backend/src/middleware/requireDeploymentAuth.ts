@@ -45,8 +45,9 @@ export async function requireDeploymentAuth(
   const apiKey = req.headers['x-api-key'] as string | undefined;
   if (apiKey) {
     const keyRecord = await verifyApiKey(apiKey, deploymentRepo);
+    // Same 404 body as a missing deployment so API keys cannot enumerate IDs.
     if (!keyRecord || keyRecord.deploymentId !== deployment.deploymentId) {
-      res.status(403).json({ error: 'Forbidden' });
+      res.status(404).json({ error: 'Not found' });
       return;
     }
     req.deployment = deployment;

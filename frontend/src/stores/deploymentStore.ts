@@ -54,8 +54,27 @@ export const useDeploymentStore = create<DeploymentState>((set, get) => ({
       return deployment;
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Deploy failed';
-      await get().refreshDeployments(projectId);
-      set({ error, isLoading: false });
+      // Optimistically surface a failed deployment in the sidebar so the user
+      // sees it without a full page refresh (matches success-path list update).
+      const failedId = `failed-${Date.now()}`;
+      const failedDeployment = {
+        deploymentId: failedId,
+        projectId,
+        modelId,
+        name,
+        status: 'failed' as const,
+        errorMessage: error,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as DeploymentRecord;
+      set(state => ({
+        deployments: [...state.deployments, failedDeployment],
+        selectedDeploymentId: failedId,
+        error,
+        isLoading: false,
+      }));
+      // Best-effort reconcile with server (may no-op if create never persisted).
+      void get().refreshDeployments(projectId).catch(() => undefined);
       throw err;
     }
   },

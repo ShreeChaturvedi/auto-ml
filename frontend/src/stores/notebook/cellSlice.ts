@@ -5,7 +5,6 @@
  * updates for notebook cells.
  */
 
-import { toast } from 'sonner';
 import type {
   NotebookCell,
   CellSummary,
@@ -302,21 +301,13 @@ export const createCellSlice: NotebookSlice<CellSlice> = (set, get) => ({
 
       // If the cell exported datasets via save_to_project(), re-hydrate the
       // data store so they appear in the file sidebar and toast the user.
-      // Dynamic import breaks the dataStore→fileSlice→notebookStore→cellSlice
-      // module-initialization cycle.
+      // Hydration lives in a dedicated helper (dynamic import) so this slice
+      // never static- or dynamic-imports dataStore directly — avoids the Vite
+      // dual-import warning without reintroducing the module cycle.
       const exported = result.exportedDatasets;
       if (exported && exported.length > 0) {
-        try {
-          const { useDataStore } = await import('@/stores/dataStore');
-          await useDataStore.getState().hydrateFromBackend(projectId, { force: true });
-        } catch (hydrateError) {
-          console.error('[notebookStore] Failed to hydrate exported datasets:', hydrateError);
-        }
-        for (const dataset of exported) {
-          toast.success(`Saved '${dataset.name}' to project`, {
-            description: `${dataset.rows} rows × ${dataset.cols} columns`
-          });
-        }
+        const { hydrateExportedDatasets } = await import('./hydrateExportedDatasets');
+        await hydrateExportedDatasets(projectId, exported);
       }
     } catch (error) {
       console.error('[notebookStore] Failed to run cell:', error);
